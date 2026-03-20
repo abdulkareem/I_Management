@@ -1,0 +1,322 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  PRINCIPAL
+  INTERNSHIP_COORDINATOR
+  DEPARTMENT_COORDINATOR
+  FACULTY_MENTOR
+  STUDENT
+  INDUSTRY_ADMIN
+  INDUSTRY_SUPERVISOR
+}
+
+enum InternshipType {
+  MAJOR
+  MINOR
+  INTERDISCIPLINARY
+  ALLIED
+}
+
+enum InternshipMode {
+  OFFLINE
+  ONLINE
+}
+
+enum ProviderCategory {
+  EDUCATIONAL_INSTITUTION
+  RESEARCH_LAB
+  GOVERNMENT_INSTITUTION
+  NGO
+  MSME_OR_INDUSTRY
+  BANK_OR_FINANCIAL
+  IT_OR_DIGITAL
+  HEALTHCARE_OR_WELLNESS
+  MEDIA_OR_CULTURAL
+  AGRICULTURE_OR_ENVIRONMENT
+}
+
+enum InternshipStatus {
+  DRAFT
+  SUBMITTED
+  DEPARTMENT_REVIEW
+  DEPARTMENT_APPROVED
+  COLLEGE_APPROVED
+  ACTIVE
+  COMPLETED
+  REJECTED
+}
+
+enum PaymentStatus {
+  PENDING
+  FACULTY_VERIFIED
+  COORDINATOR_VERIFIED
+  PAID
+  FAILED
+}
+
+model User {
+  id           String                  @id @default(cuid())
+  email        String                  @unique
+  name         String
+  phone        String?
+  role         UserRole
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  memberships  UserCollegeMembership[]
+  student      Student?
+  logApprovals Logbook[]               @relation("LogbookApprover")
+}
+
+model College {
+  id                String                       @id @default(cuid())
+  name              String
+  code              String                       @unique
+  emblemUrl         String?
+  domain            String?
+  subscriptionPlan  String                       @default("₹5/student/month")
+  departments       Department[]
+  students          Student[]
+  memberships       UserCollegeMembership[]
+  internships       Internship[]
+  subscriptions     Subscription[]
+  programRules      ProgramRule[]
+  applications      Application[]
+  payments          Payment[]
+  mous              MoU[]
+  reports           Report[]
+}
+
+model UserCollegeMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  collegeId String
+  role      UserRole
+  user      User     @relation(fields: [userId], references: [id])
+  college   College  @relation(fields: [collegeId], references: [id])
+
+  @@unique([userId, collegeId, role])
+}
+
+model Department {
+  id        String      @id @default(cuid())
+  collegeId String
+  name      String
+  code      String
+  college   College     @relation(fields: [collegeId], references: [id])
+  students  Student[]
+
+  @@unique([collegeId, code])
+}
+
+model Student {
+  id               String          @id @default(cuid())
+  userId           String          @unique
+  collegeId        String
+  departmentId     String
+  registerNumber   String          @unique
+  semester         Int
+  program          String
+  skillProfile     Json?
+  user             User            @relation(fields: [userId], references: [id])
+  college          College         @relation(fields: [collegeId], references: [id])
+  department       Department      @relation(fields: [departmentId], references: [id])
+  internships      Internship[]
+  applications     Application[]
+  reports          Report[]
+  certificates     Certificate[]
+  evaluations      Evaluation[]
+  payments         Payment[]
+  attendance       Attendance[]
+  logbooks         Logbook[]
+}
+
+model Industry {
+  id                      String       @id @default(cuid())
+  name                    String
+  isPrivate               Boolean      @default(false)
+  yearsOfExperience       Int          @default(0)
+  linkedPartnerExperience Int?
+  providerCategory        ProviderCategory
+  district                String?
+  contactEmail            String?
+  contactPhone            String?
+  internships             Internship[]
+  mous                    MoU[]
+}
+
+model Internship {
+  id                        String           @id @default(cuid())
+  collegeId                 String
+  studentId                 String
+  industryId                String
+  title                     String
+  internshipType            InternshipType
+  mode                      InternshipMode
+  status                    InternshipStatus @default(DRAFT)
+  externalPlatform          String?
+  startDate                 DateTime
+  endDate                   DateTime
+  totalHours                Int
+  departmentCouncilApproved Boolean          @default(false)
+  industrySupervisorName    String
+  ownCollegeRestricted      Boolean          @default(true)
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+  college                   College          @relation(fields: [collegeId], references: [id])
+  student                   Student          @relation(fields: [studentId], references: [id])
+  industry                  Industry         @relation(fields: [industryId], references: [id])
+  applications              Application[]
+  attendance                Attendance[]
+  logbooks                  Logbook[]
+  report                    Report?
+  certificate               Certificate?
+  evaluation                Evaluation?
+  payment                   Payment?
+}
+
+model Application {
+  id            String           @id @default(cuid())
+  collegeId     String
+  studentId     String
+  internshipId  String
+  preference    Int
+  rankScore     Float
+  workflowState InternshipStatus @default(SUBMITTED)
+  createdAt     DateTime         @default(now())
+  college       College          @relation(fields: [collegeId], references: [id])
+  student       Student          @relation(fields: [studentId], references: [id])
+  internship    Internship       @relation(fields: [internshipId], references: [id])
+
+  @@unique([studentId, internshipId])
+}
+
+model Attendance {
+  id            String     @id @default(cuid())
+  studentId     String
+  internshipId  String
+  date          DateTime
+  present       Boolean
+  remarks       String?
+  supervisorSig String?
+  student       Student    @relation(fields: [studentId], references: [id])
+  internship    Internship @relation(fields: [internshipId], references: [id])
+
+  @@unique([studentId, internshipId, date])
+}
+
+model Logbook {
+  id               String     @id @default(cuid())
+  studentId        String
+  internshipId     String
+  workDate         DateTime
+  taskSummary      String
+  outcomes         String?
+  approvedAt       DateTime?
+  approverUserId   String?
+  supervisorRemark String?
+  student          Student    @relation(fields: [studentId], references: [id])
+  internship       Internship @relation(fields: [internshipId], references: [id])
+  approver         User?      @relation("LogbookApprover", fields: [approverUserId], references: [id])
+}
+
+model Report {
+  id                String     @id @default(cuid())
+  collegeId         String
+  studentId         String
+  internshipId      String     @unique
+  title             String
+  language          String     @default("English")
+  durationSummary   String
+  workDone          String
+  outcomes          String
+  supervisorSignUrl String?
+  submittedAt       DateTime?
+  college           College    @relation(fields: [collegeId], references: [id])
+  student           Student    @relation(fields: [studentId], references: [id])
+  internship        Internship @relation(fields: [internshipId], references: [id])
+}
+
+model Certificate {
+  id             String     @id @default(cuid())
+  studentId      String
+  internshipId   String     @unique
+  certificateUrl String
+  issuedAt       DateTime?
+  student        Student    @relation(fields: [studentId], references: [id])
+  internship     Internship @relation(fields: [internshipId], references: [id])
+}
+
+model Evaluation {
+  id            String     @id @default(cuid())
+  studentId     String
+  internshipId  String     @unique
+  ccaMarks      Int
+  eseMarks      Int
+  totalMarks    Int
+  evaluatedAt   DateTime?
+  student       Student    @relation(fields: [studentId], references: [id])
+  internship    Internship @relation(fields: [internshipId], references: [id])
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  collegeId             String
+  studentId             String
+  internshipId          String?       @unique
+  amountInInr           Int
+  source                String
+  status                PaymentStatus @default(PENDING)
+  facultyVerifiedAt     DateTime?
+  coordinatorVerifiedAt DateTime?
+  transactionRef        String?
+  college               College       @relation(fields: [collegeId], references: [id])
+  student               Student       @relation(fields: [studentId], references: [id])
+  internship            Internship?   @relation(fields: [internshipId], references: [id])
+}
+
+model Subscription {
+  id             String   @id @default(cuid())
+  collegeId      String
+  pricePerStudent Int     @default(5)
+  activeFrom     DateTime
+  activeTo       DateTime?
+  college        College   @relation(fields: [collegeId], references: [id])
+}
+
+model ProgramRule {
+  id             String   @id @default(cuid())
+  collegeId      String?
+  programName    String
+  minimumHours   Int
+  submissionDue  String
+  college        College? @relation(fields: [collegeId], references: [id])
+}
+
+model SystemRule {
+  id          String   @id @default(cuid())
+  ruleKey     String   @unique
+  ruleValue   Json
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model MoU {
+  id               String    @id @default(cuid())
+  collegeId        String
+  industryId       String
+  documentUrl      String
+  signedAt         DateTime?
+  expiresAt        DateTime?
+  college          College   @relation(fields: [collegeId], references: [id])
+  industry         Industry  @relation(fields: [industryId], references: [id])
+
+  @@unique([collegeId, industryId])
+}
