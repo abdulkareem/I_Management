@@ -40,8 +40,8 @@
 
 ## Suggested Production Deployment
 
-- **Cloudflare Pages** for the Next.js app with edge caching and static assets.
-- **Railway** for the Node.js API, background jobs, and PDF generation workers.
+- **Cloudflare Pages** for the Next.js app served from the `frontend/` directory with edge caching and static assets.
+- **Railway** for the Node.js API served from the `backend/` directory, background jobs, and PDF generation workers.
 - **PostgreSQL** as the transactional system of record.
 - **Object storage** (S3/R2) for MoUs, reports, certificates, and attendance PDFs.
 - **Queue** for WhatsApp alerts, reminders, and report-generation jobs.
