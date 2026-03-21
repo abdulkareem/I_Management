@@ -58,8 +58,17 @@ pnpm dev
 ## Deployment Targets
 
 - **Frontend:** Cloudflare Pages
+  - Root directory: `frontend`
+  - Build command: `npm run build`
+  - Output directory: `out`
 - **Backend:** Railway
 - **Database:** PostgreSQL
+
+### Frontend Static Export Notes
+
+- `frontend/next.config.ts` uses `output: 'export'` so `next build` emits a static `out/` directory.
+- `trailingSlash: true` is enabled so routes such as `/portal/student` export to `out/portal/student/index.html`, which is friendly to Cloudflare Pages static routing.
+- Prisma lives under `packages/database/prisma/schema.prisma` and is isolated from the frontend build pipeline.
 
 ## Super Admin
 
