@@ -98,3 +98,56 @@ export interface PaymentRule {
   requiresFacultyVerification: true;
   requiresCoordinatorVerification: true;
 }
+
+
+export interface StorageBreakdownMb {
+  studentData: number;
+  industryData: number;
+  documents: number;
+}
+
+export interface CollegeStorageUsage {
+  collegeId: string;
+  collegeName: string;
+  studentsRegistered: number;
+  industriesRegistered: number;
+  storageBreakdownMb: StorageBreakdownMb;
+  totalStorageMb: number;
+  estimatedMonthlyChargeInInr: number;
+}
+
+export interface StorageSummary {
+  collegesRegistered: number;
+  studentsRegistered: number;
+  industriesRegistered: number;
+  totalStorageMb: number;
+  estimatedMonthlyChargeInInr: number;
+}
+
+export interface PricingPlan {
+  name: string;
+  audience: string;
+  basePricePerStudentInInr: number;
+  storagePricePerGbInInr: number;
+  highlights: string[];
+}
+
+export interface PlatformOverview {
+  platform: string;
+  deployment: {
+    frontendDirectory: string;
+    frontendTarget: string;
+    backendDirectory: string;
+    backendTarget: string;
+  };
+  superAdminEmail: string;
+  headlineMetrics: {
+    collegesRegistered: number;
+    studentsRegistered: number;
+    industriesRegistered: number;
+    totalStorageMb: number;
+  };
+  pricingPlans: PricingPlan[];
+  storageSummary: StorageSummary;
+  storageUsage: CollegeStorageUsage[];
+}

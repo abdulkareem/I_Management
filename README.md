@@ -13,12 +13,16 @@ PRISM is a production-oriented multi-tenant SaaS PWA for colleges that need to m
 
 ## Monorepo Layout
 
-- `apps/web` – Next.js Cloudflare Pages frontend.
-- `apps/api` – Fastify backend for Railway.
+This repository now keeps the deployable applications in dedicated top-level directories:
+
+- `frontend/` – Next.js Cloudflare Pages frontend with the public landing page and role portals.
+- `backend/` – Fastify backend for Railway with bootstrap, overview, and storage-usage endpoints.
 - `packages/database` – Prisma schema for all core entities.
 - `packages/compliance` – Calicut FYUGP rule engine.
 - `packages/types` – Shared domain types.
 - `docs/architecture.md` – System architecture and deployment notes.
+
+The frontend homepage is the common entry point for colleges, students, industries, and the super admin, while the backend exposes storage-usage analytics for usage-based billing.
 
 ## Core Compliance Built In
 
