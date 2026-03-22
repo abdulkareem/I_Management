@@ -1,32 +1,30 @@
-# PRISM – PSMO Rural Internship & Skill Mission
+# Internship Cloud ERP for Colleges
 
-PRISM is a production-oriented multi-tenant SaaS PWA for colleges that need to manage internship governance, host-industry collaboration, payments, attendance, evaluation, and academic compliance under the University of Calicut FYUGP internship framework.
+Internship Cloud ERP is a production-oriented multi-tenant SaaS PWA for colleges that need to manage internship governance, host-industry collaboration, semester-based student lifecycles, archival retention, payments, attendance, evaluation, and academic compliance under existing university internship frameworks.
 
 ## Platform Highlights
 
-- **Multi-tenant architecture** for multiple colleges with isolated dashboards and subscriptions.
-- **Shared industry network** so approved organizations can partner with several colleges while still signing separate MoUs per college.
-- **FYUGP compliance engine** that validates internship type, minimum hours, semester window, own-college restrictions, private organization eligibility, MoU requirements, mandatory host supervisor assignment, and submission deadlines.
+- **College-paid SaaS model** where colleges are the only paying customers.
+- **Free industry participation** to grow internship supply without subscription friction.
+- **Semester lifecycle architecture** so completed students move to archive and stop counting in active billing.
+- **Logical multi-tenancy** with isolated college dashboards, billing, students, and analytics.
+- **Shared internship discovery** through public and selected-college listing visibility.
 - **PWA-ready Next.js frontend** for mobile-first access and installability.
 - **Node.js + PostgreSQL + Prisma backend** ready for Railway deployment.
-- **AI-ready matching contracts** for internship recommendations, local opportunity discovery, and rank-based allocation.
+- **Preserved compliance engine** for internship duration, semester window, MoU, private provider, own-college, and evaluation rules.
 
 ## Monorepo Layout
 
-This repository now keeps the deployable applications in dedicated top-level directories:
+- `frontend/` – Next.js Cloudflare Pages frontend with the landing page, pricing page, and role portals.
+- `backend/` – Fastify backend for Railway with bootstrap, overview, allocation, and SaaS-readiness endpoints.
+- `packages/database` – Prisma schema for multi-tenant entities, semester cycles, archive snapshots, and partner-college sharing.
+- `packages/compliance` – University rule engine that preserves existing workflow logic.
+- `packages/types` – Shared domain and reporting types.
+- `docs/saas-upgrade.md` – Cost model, pricing strategy, architecture decisions, and SaaS readiness blueprint.
 
-- `frontend/` – Next.js Cloudflare Pages frontend with the public landing page and role portals.
-- `backend/` – Fastify backend for Railway with bootstrap, overview, and storage-usage endpoints.
-- `packages/database` – Prisma schema for all core entities.
-- `packages/compliance` – Calicut FYUGP rule engine.
-- `packages/types` – Shared domain types.
-- `docs/architecture.md` – System architecture and deployment notes.
+## Core Rules Preserved
 
-The frontend homepage is the common entry point for colleges, students, industries, and the super admin, while the backend exposes storage-usage analytics for usage-based billing.
-
-## Core Compliance Built In
-
-The shared compliance engine enforces:
+The compliance package continues to enforce:
 
 1. Internship type tagging for major, minor, interdisciplinary, and allied streams.
 2. Minimum hours of **60**, or **120** for **BBA/BCA**.
@@ -40,12 +38,10 @@ The shared compliance engine enforces:
 10. Online and offline internship modes.
 11. Semester 1–5 and schedule-safe timeline guardrails.
 12. Mandatory host-industry supervisor assignment.
-13. Internship cell structure for principal, coordinator, and department coordinators.
-14. Digital logbook + supervisor approval flow.
-15. Report, certificate, and work-register submission before semester 6.
-16. Report template guidance.
-17. English and Malayalam report support.
-18. Evaluation split: **CCA 15 / ESE 35 / Total 50**.
+13. Digital logbook + supervisor approval flow.
+14. Report, certificate, and work-register submission before semester 6.
+15. English and Malayalam report support.
+16. Evaluation split: **CCA 15 / ESE 35 / Total 50**.
 
 ## Getting Started
 
@@ -64,14 +60,13 @@ pnpm dev
 - **Backend:** Railway
 - **Database:** PostgreSQL
 
-### Frontend Static Export Notes
+## Key Product Pages
 
-- `frontend/next.config.ts` uses `output: 'export'` so `next build` emits a static `out/` directory.
-- `trailingSlash: true` is enabled so routes such as `/portal/student` export to `out/portal/student/index.html`, which is friendly to Cloudflare Pages static routing.
-- Prisma lives under `packages/database/prisma/schema.prisma` and is isolated from the frontend build pipeline.
-
-## Super Admin
-
-Default super-admin bootstrap email:
-
-- `abdulkareem@psmocollege.ac.in`
+- `/` – Landing page for colleges
+- `/pricing` – College-only pricing and cost comparison
+- `/portal/college` – Semester operations dashboard
+- `/portal/student` – Student application workspace
+- `/portal/industry` – Free industry posting panel
+- `/portal/college/archive` – Past internship records and archived students
+- `/portal/college/partners` – Connected institutions and sharing rules
+- `/portal/super-admin` – SaaS profitability and readiness overview

@@ -1,26 +1,28 @@
-import type { Metadata, Viewport } from 'next';
-import type { ReactNode } from 'react';
-import './globals.css';
+import type { Metadata, Viewport } from "next";
+import type { ReactNode } from "react";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: 'PRISM – Rural Internship & Skill Mission',
+  title: "Internship Cloud ERP for Colleges",
   description:
-    'Production-ready multi-tenant SaaS PWA for Calicut FYUGP internship compliance, industry partnerships, and academic governance.',
-  manifest: '/manifest.webmanifest',
+    "Production-ready multi-tenant internship SaaS for colleges with free industry participation, semester lifecycle billing, archive retention, and mobile-first PWA delivery.",
+  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: 'PRISM',
-    statusBarStyle: 'default',
+    title: "Internship Cloud ERP",
+    statusBarStyle: "default",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: '#071321',
-  width: 'device-width',
+  themeColor: "#1E3A8A",
+  width: "device-width",
   initialScale: 1,
 };
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
       <body>{children}</body>

@@ -1,10 +1,10 @@
 {
-  "name": "PRISM – PSMO Rural Internship & Skill Mission",
-  "short_name": "PRISM",
-  "description": "Multi-tenant SaaS PWA for Calicut FYUGP internship compliance and industry collaboration.",
+  "name": "Internship Cloud ERP for Colleges",
+  "short_name": "Internship ERP",
+  "description": "Mobile-first internship SaaS for colleges with semester lifecycle billing, archive retention, and free industry participation.",
   "display": "standalone",
-  "background_color": "#071321",
-  "theme_color": "#071321",
+  "background_color": "#F8FAFC",
+  "theme_color": "#1E3A8A",
   "start_url": "/",
   "icons": [
     {

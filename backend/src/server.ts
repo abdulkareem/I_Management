@@ -12,9 +12,9 @@ export function buildServer() {
   app.register(swagger, {
     openapi: {
       info: {
-        title: 'PRISM API',
-        version: '1.0.0',
-        description: 'Multi-tenant rural internship compliance and management platform for FYUGP colleges.',
+        title: 'Internship Cloud ERP API',
+        version: '2.0.0',
+        description: 'College-paid internship ERP API with semester lifecycle governance, archive economics, and preserved FYUGP compliance rules.',
       },
     },
   });
