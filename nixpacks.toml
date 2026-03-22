@@ -1,0 +1,23 @@
+[variables]
+CI = "true"
+NODE_ENV = "production"
+NPM_CONFIG_UPDATE_NOTIFIER = "false"
+
+[phases.setup]
+nixPkgs = ["nodejs_22", "pnpm"]
+
+[phases.install]
+cmds = [
+  "corepack enable",
+  "corepack prepare pnpm@latest --activate",
+  "pnpm install --frozen-lockfile"
+]
+
+[phases.build]
+cmds = [
+  "pnpm --filter @prism/database prisma:generate",
+  "pnpm build"
+]
+
+[start]
+cmd = "pnpm prisma:migrate:deploy && pnpm --filter @prism/api start"

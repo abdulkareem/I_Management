@@ -129,6 +129,53 @@ export const roleAccessCards = [
   },
 ];
 
+
+export const lifecycleSteps = [
+  {
+    title: '1. Industry posting',
+    detail:
+      'Industry partners publish internships, attach terms, and select approved colleges before any student can see the opening.',
+  },
+  {
+    title: '2. College approval + MoU',
+    detail:
+      'Colleges approve the request, then InternSuite generates a branded MoU PDF with logo slots and signature placeholders.',
+  },
+  {
+    title: '3. Student application + approval letter',
+    detail:
+      'Students apply through verified accounts, and approved applications trigger a downloadable approval-letter PDF.',
+  },
+  {
+    title: '4. Attendance + marksheet',
+    detail:
+      'Supervisors mark attendance, colleges review it, and final evaluation data becomes a marksheet PDF for the student portal.',
+  },
+];
+
+export const erpCapabilityCards = [
+  {
+    title: 'Verified identity onboarding',
+    detail:
+      'Email-first onboarding with verification, password creation after verification, and role-specific access boundaries.',
+  },
+  {
+    title: 'Tenant-safe file storage',
+    detail:
+      'Cloudflare R2 upload policies isolate college logos, student photos, resumes, and generated PDFs by tenant path.',
+  },
+  {
+    title: 'Reusable document engine',
+    detail:
+      'Shared templates generate MoUs, approval letters, attendance reports, and marksheets from live workflow data.',
+  },
+  {
+    title: 'Lifecycle automation',
+    detail:
+      'Industry, college, student, supervisor, and evaluator actions are linked as one auditable internship ERP workflow.',
+  },
+];
+
 export const collegeNav = [
   { label: "Dashboard", href: "/portal/college" },
   { label: "Students", href: "/portal/college/students" },

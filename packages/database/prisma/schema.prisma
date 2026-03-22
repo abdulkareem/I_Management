@@ -7,22 +7,52 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
 enum UserRole {
   SUPER_ADMIN
-  PRINCIPAL
-  INTERNSHIP_COORDINATOR
-  DEPARTMENT_COORDINATOR
-  FACULTY_MENTOR
+  COLLEGE_ADMIN
+  COLLEGE_STAFF
   STUDENT
   INDUSTRY_ADMIN
   INDUSTRY_SUPERVISOR
 }
 
-enum AuthScope {
-  COLLEGE
-  STUDENT
-  INDUSTRY
-  SUPER_ADMIN
+enum IdentityStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  PASSWORD_SET
+  SUSPENDED
+}
+
+enum ChallengePurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  PASSWORD_SET
+}
+
+enum ChallengeChannel {
+  EMAIL_LINK
+  EMAIL_OTP
+}
+
+enum FileKind {
+  COLLEGE_LOGO
+  INDUSTRY_LOGO
+  STUDENT_PASSPORT_PHOTO
+  STUDENT_RESUME
+  GENERATED_PDF
+  SUPPORTING_ATTACHMENT
+}
+
+enum FileVisibility {
+  PRIVATE
+  TENANT
+  SHARED
 }
 
 enum InternshipType {
@@ -35,6 +65,7 @@ enum InternshipType {
 enum InternshipMode {
   OFFLINE
   ONLINE
+  HYBRID
 }
 
 enum ProviderCategory {
@@ -52,70 +83,133 @@ enum ProviderCategory {
 
 enum InternshipStatus {
   DRAFT
-  SUBMITTED
-  DEPARTMENT_REVIEW
-  DEPARTMENT_APPROVED
-  COLLEGE_APPROVED
+  PENDING_COLLEGE_APPROVAL
+  APPROVED
+  REJECTED
+  OPEN_FOR_APPLICATIONS
+  PLACEMENT_IN_PROGRESS
   ACTIVE
   COMPLETED
+  CLOSED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
   REJECTED
 }
 
-enum PaymentStatus {
-  PENDING
-  FACULTY_VERIFIED
-  COORDINATOR_VERIFIED
-  PAID
-  FAILED
+enum ApplicationStatus {
+  SUBMITTED
+  COLLEGE_REVIEW
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  SELECTED
 }
 
-enum StudentLifecycleStatus {
-  ACTIVE
-  AT_RISK
-  READY_TO_ARCHIVE
+enum AttendancePeriod {
+  DAILY
+  WEEKLY
+}
+
+enum AttendanceReviewStatus {
+  DRAFT
+  SUBMITTED_TO_COLLEGE
+  APPROVED_BY_COLLEGE
+  REJECTED_BY_COLLEGE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  ON_LEAVE
+}
+
+enum DocumentType {
+  MOU
+  APPROVAL_LETTER
+  ATTENDANCE_REPORT
+  MARKSHEET
+}
+
+enum DocumentStatus {
+  DRAFT
+  GENERATED
+  SHARED
+  SIGNED
   ARCHIVED
 }
 
-enum CollegePlanTier {
-  FOUNDATION
-  GROWTH
-  STATEWIDE
+enum EvaluationStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
 }
 
-enum SemesterCycleStatus {
-  PLANNING
-  ACTIVE
-  CLOSED
-  ARCHIVED
+enum MarksheetStatus {
+  DRAFT
+  PUBLISHED
 }
 
-enum ListingVisibility {
-  PUBLIC
-  SELECTED_COLLEGES
+model Tenant {
+  id          String          @id @default(cuid())
+  name        String
+  slug        String          @unique
+  status      TenantStatus    @default(ACTIVE)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  users       User[]
+  colleges    College[]
+  industries  Industry[]
+  students    Student[]
+  internships Internship[]
+  applications Application[]
+  files       FileStorage[]
+  documents   GeneratedDocument[]
+  mous        Mou[]
+  attendanceBatches AttendanceBatch[]
+  evaluations Evaluation[]
+  marksheets  Marksheet[]
+
+  @@index([status])
 }
 
 model User {
-  id                 String                  @id @default(cuid())
-  email              String                  @unique
+  id                 String              @id @default(cuid())
+  tenantId           String
+  email              String              @unique
   name               String
   phone              String?
   role               UserRole
-  authScope          AuthScope               @default(COLLEGE)
-  emailVerifiedAt    DateTime?
+  identityStatus     IdentityStatus      @default(PENDING_VERIFICATION)
   passwordHash       String?
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
-  memberships        UserCollegeMembership[]
+  emailVerifiedAt    DateTime?
+  lastLoginAt        DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  college            College?
+  industry           Industry?
   student            Student?
   sessions           Session[]
-  passwordResetTokens PasswordResetToken[]
-  emailVerificationTokens EmailVerificationToken[]
-  logApprovals       Logbook[]               @relation("LogbookApprover")
+  challenges         IdentityChallenge[]
+  uploadedFiles      FileStorage[]       @relation("FileUploader")
+  approvedInternships CollegeApproval[]  @relation("ApprovalActor")
+  reviewedApplications Application[]     @relation("ApplicationReviewer")
+  attendanceBatches  AttendanceBatch[]   @relation("AttendanceSubmitter")
+  attendanceRecords  AttendanceRecord[]  @relation("AttendanceMarker")
+  evaluations        Evaluation[]        @relation("EvaluationAuthor")
+
+  @@index([tenantId, role])
+  @@index([tenantId, identityStatus])
 }
 
 model Session {
-  id           String   @id @default(cuid())
+  id          String   @id @default(cuid())
   userId       String
+  jwtId        String   @unique
   audience     String
   ipAddress    String?
   userAgent    String?
@@ -128,417 +222,362 @@ model Session {
   @@index([audience, revokedAt])
 }
 
-model EmailVerificationToken {
-  id         String   @id @default(cuid())
-  userId      String
-  tokenHash   String   @unique
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id])
+model IdentityChallenge {
+  id          String            @id @default(cuid())
+  userId       String
+  purpose      ChallengePurpose
+  channel      ChallengeChannel
+  tokenHash    String            @unique
+  otpHash      String?
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  createdAt    DateTime          @default(now())
+  metadata     Json?
+  user         User              @relation(fields: [userId], references: [id])
 
-  @@index([userId, expiresAt])
-}
-
-model PasswordResetToken {
-  id         String   @id @default(cuid())
-  userId      String
-  tokenHash   String   @unique
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id])
-
-  @@index([userId, expiresAt])
+  @@index([userId, purpose, expiresAt])
 }
 
 model College {
-  id                           String                       @id @default(cuid())
-  name                         String
-  code                         String                       @unique
-  tenantKey                    String                       @unique
-  emblemUrl                    String?
-  domain                       String?
-  planTier                     CollegePlanTier              @default(FOUNDATION)
-  activeStudentCapPerSemester  Int                          @default(500)
-  archiveAllowanceStudents     Int                          @default(2000)
-  subscriptionPlan             String                       @default("Foundation")
-  departments                  Department[]
-  students                     Student[]
-  memberships                  UserCollegeMembership[]
-  internships                  Internship[]
-  subscriptions                Subscription[]
-  semesterCycles               SemesterCycle[]
-  programRules                 ProgramRule[]
-  applications                 Application[]
-  payments                     Payment[]
-  mous                         MoU[]
-  reports                      Report[]
-  sharedListings               InternshipListingCollege[]
-  partnerColleges              PartnerCollegeLink[]         @relation("PartnerCollegeSource")
-  partnerWithColleges          PartnerCollegeLink[]         @relation("PartnerCollegeTarget")
-  archivedStudentSnapshots     ArchivedStudentSnapshot[]
+  id              String             @id @default(cuid())
+  tenantId        String
+  primaryUserId   String             @unique
+  code            String             @unique
+  name            String
+  logoFileId      String?
+  domain          String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  tenant          Tenant             @relation(fields: [tenantId], references: [id])
+  primaryUser     User               @relation(fields: [primaryUserId], references: [id])
+  logoFile        FileStorage?       @relation("CollegeLogo", fields: [logoFileId], references: [id])
+  students        Student[]
+  internships     Internship[]
+  applications    Application[]
+  targetListings  InternshipTargetCollege[]
+  approvals       CollegeApproval[]
+  attendanceBatches AttendanceBatch[]
+  evaluations     Evaluation[]
+  marksheets      Marksheet[]
+  documents       GeneratedDocument[]
 
-  @@index([planTier])
-}
-
-model UserCollegeMembership {
-  id        String   @id @default(cuid())
-  userId    String
-  collegeId String
-  role      UserRole
-  user      User     @relation(fields: [userId], references: [id])
-  college   College  @relation(fields: [collegeId], references: [id])
-
-  @@unique([userId, collegeId, role])
-  @@index([collegeId, role])
-}
-
-model Department {
-  id        String      @id @default(cuid())
-  collegeId String
-  name      String
-  code      String
-  college   College     @relation(fields: [collegeId], references: [id])
-  students  Student[]
-
-  @@unique([collegeId, code])
-  @@index([collegeId, name])
-}
-
-model SemesterCycle {
-  id             String              @id @default(cuid())
-  collegeId      String
-  label          String
-  academicYear   String
-  semesterNumber Int
-  startsOn       DateTime
-  endsOn         DateTime
-  archiveOn      DateTime
-  status         SemesterCycleStatus @default(PLANNING)
-  college        College             @relation(fields: [collegeId], references: [id])
-  students       Student[]
-  internships    Internship[]
-  applications   Application[]
-  archivedStudentSnapshots ArchivedStudentSnapshot[]
-
-  @@unique([collegeId, academicYear, semesterNumber])
-  @@index([collegeId, status, semesterNumber])
-}
-
-model Student {
-  id                  String                 @id @default(cuid())
-  userId              String                 @unique
-  collegeId           String
-  departmentId        String
-  semesterCycleId     String?
-  registerNumber      String                 @unique
-  semester            Int
-  program             String
-  lifecycleStatus     StudentLifecycleStatus @default(ACTIVE)
-  archivedAt          DateTime?
-  archiveCompressedAt DateTime?
-  skillProfile        Json?
-  user                User                   @relation(fields: [userId], references: [id])
-  college             College                @relation(fields: [collegeId], references: [id])
-  department          Department             @relation(fields: [departmentId], references: [id])
-  semesterCycle       SemesterCycle?         @relation(fields: [semesterCycleId], references: [id])
-  internships         Internship[]
-  applications        Application[]
-  reports             Report[]
-  certificates        Certificate[]
-  evaluations         Evaluation[]
-  payments            Payment[]
-  attendance          Attendance[]
-  logbooks            Logbook[]
-  archiveSnapshots    ArchivedStudentSnapshot[]
-
-  @@index([collegeId, lifecycleStatus, semester])
-  @@index([semesterCycleId, lifecycleStatus])
-}
-
-model ArchivedStudentSnapshot {
-  id                String    @id @default(cuid())
-  collegeId         String
-  studentId         String
-  semesterCycleId   String?
-  registerNumber    String
-  studentName       String
-  departmentName    String
-  program           String
-  archivedAt        DateTime
-  reportSummary     String?
-  outcomeSummary    String?
-  compressedDocRefs Json?
-  college           College   @relation(fields: [collegeId], references: [id])
-  student           Student   @relation(fields: [studentId], references: [id])
-  semesterCycle     SemesterCycle? @relation(fields: [semesterCycleId], references: [id])
-
-  @@index([collegeId, archivedAt])
-  @@index([studentId])
+  @@index([tenantId, name])
 }
 
 model Industry {
-  id                      String                  @id @default(cuid())
-  name                    String
-  isPrivate               Boolean                 @default(false)
-  yearsOfExperience       Int                     @default(0)
-  linkedPartnerExperience Int?
-  providerCategory        ProviderCategory
-  district                String?
-  contactEmail            String?
-  contactPhone            String?
-  internships             Internship[]
-  listings                InternshipListing[]
-  mous                    MoU[]
+  id                String             @id @default(cuid())
+  tenantId          String
+  primaryUserId     String             @unique
+  name              String
+  companyName       String
+  logoFileId        String?
+  providerCategory  ProviderCategory
+  contactEmail      String             @unique
+  contactPhone      String?
+  yearsOfExperience Int                @default(0)
+  isPrivate         Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  primaryUser       User               @relation(fields: [primaryUserId], references: [id])
+  logoFile          FileStorage?       @relation("IndustryLogo", fields: [logoFileId], references: [id])
+  internships       Internship[]
+  approvals         CollegeApproval[]
+  attendanceBatches AttendanceBatch[]
+  documents         GeneratedDocument[]
 
-  @@index([providerCategory])
+  @@index([tenantId, providerCategory])
 }
 
-model InternshipListing {
-  id                  String                     @id @default(cuid())
-  industryId          String
-  title               String
-  description         String
-  visibility          ListingVisibility         @default(PUBLIC)
-  seats               Int
-  mode                InternshipMode
-  internshipType      InternshipType
-  semesterPreference  Int?
-  applicationDeadline DateTime
-  isPublished         Boolean                   @default(false)
-  createdAt           DateTime                  @default(now())
-  industry            Industry                  @relation(fields: [industryId], references: [id])
-  colleges            InternshipListingCollege[]
-  applications        Application[]
+model Student {
+  id                           String              @id @default(cuid())
+  tenantId                     String
+  userId                       String              @unique
+  collegeId                    String
+  email                        String
+  fullName                     String
+  collegeStudentId             String
+  universityRegistrationNumber String
+  departmentName               String
+  program                      String
+  semester                     Int
+  passportPhotoFileId          String?
+  resumeFileId                 String?
+  createdAt                    DateTime            @default(now())
+  updatedAt                    DateTime            @updatedAt
+  tenant                       Tenant              @relation(fields: [tenantId], references: [id])
+  user                         User                @relation(fields: [userId], references: [id])
+  college                      College             @relation(fields: [collegeId], references: [id])
+  passportPhotoFile            FileStorage?        @relation("StudentPassportPhoto", fields: [passportPhotoFileId], references: [id])
+  resumeFile                   FileStorage?        @relation("StudentResume", fields: [resumeFileId], references: [id])
+  applications                 Application[]
+  attendanceRecords            AttendanceRecord[]
+  evaluations                  Evaluation[]
+  marksheets                   Marksheet[]
+  documents                    GeneratedDocument[]
 
-  @@index([industryId, isPublished])
-  @@index([visibility, applicationDeadline])
-}
-
-model InternshipListingCollege {
-  id          String            @id @default(cuid())
-  listingId   String
-  collegeId   String
-  isPreferred Boolean           @default(false)
-  listing     InternshipListing @relation(fields: [listingId], references: [id])
-  college     College           @relation(fields: [collegeId], references: [id])
-
-  @@unique([listingId, collegeId])
-  @@index([collegeId, isPreferred])
-}
-
-model PartnerCollegeLink {
-  id              String    @id @default(cuid())
-  sourceCollegeId String
-  targetCollegeId String
-  status          String    @default("ACTIVE")
-  notes           String?
-  createdAt       DateTime  @default(now())
-  sourceCollege   College   @relation("PartnerCollegeSource", fields: [sourceCollegeId], references: [id])
-  targetCollege   College   @relation("PartnerCollegeTarget", fields: [targetCollegeId], references: [id])
-
-  @@unique([sourceCollegeId, targetCollegeId])
-  @@index([sourceCollegeId, status])
-  @@index([targetCollegeId, status])
+  @@unique([email, universityRegistrationNumber])
+  @@unique([collegeId, collegeStudentId])
+  @@index([tenantId, collegeId, semester])
 }
 
 model Internship {
-  id                        String           @id @default(cuid())
-  collegeId                 String
-  studentId                 String
-  industryId                String
-  semesterCycleId           String?
-  listingId                 String?
-  title                     String
-  internshipType            InternshipType
-  mode                      InternshipMode
-  status                    InternshipStatus @default(DRAFT)
-  externalPlatform          String?
-  startDate                 DateTime
-  endDate                   DateTime
-  totalHours                Int
-  departmentCouncilApproved Boolean          @default(false)
-  industrySupervisorName    String
-  ownCollegeRestricted      Boolean          @default(true)
-  createdAt                 DateTime         @default(now())
-  updatedAt                 DateTime         @updatedAt
-  college                   College          @relation(fields: [collegeId], references: [id])
-  student                   Student          @relation(fields: [studentId], references: [id])
-  industry                  Industry         @relation(fields: [industryId], references: [id])
-  semesterCycle             SemesterCycle?   @relation(fields: [semesterCycleId], references: [id])
-  listing                   InternshipListing? @relation(fields: [listingId], references: [id])
-  applications              Application[]
-  attendance                Attendance[]
-  logbooks                  Logbook[]
-  report                    Report?
-  certificate               Certificate?
-  evaluation                Evaluation?
-  payment                   Payment?
+  id                  String             @id @default(cuid())
+  tenantId            String
+  collegeId           String
+  industryId          String
+  title               String
+  description         String
+  terms               Json
+  seats               Int
+  internshipType      InternshipType
+  mode                InternshipMode
+  providerCategory    ProviderCategory
+  status              InternshipStatus   @default(DRAFT)
+  applicationDeadline DateTime
+  startsOn            DateTime
+  endsOn              DateTime
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  tenant              Tenant             @relation(fields: [tenantId], references: [id])
+  college             College            @relation(fields: [collegeId], references: [id])
+  industry            Industry           @relation(fields: [industryId], references: [id])
+  targetColleges      InternshipTargetCollege[]
+  approvals           CollegeApproval[]
+  applications        Application[]
+  attendanceBatches   AttendanceBatch[]
+  attendanceRecords   AttendanceRecord[]
+  evaluations         Evaluation[]
+  marksheets          Marksheet[]
+  documents           GeneratedDocument[]
 
-  @@index([collegeId, semesterCycleId, status])
-  @@index([studentId, status])
+  @@index([tenantId, status, applicationDeadline])
+  @@index([collegeId, status])
   @@index([industryId, status])
 }
 
-model Application {
-  id            String           @id @default(cuid())
-  collegeId     String
-  studentId     String
-  internshipId  String
-  semesterCycleId String?
-  listingId     String?
-  preference    Int
-  rankScore     Float
-  workflowState InternshipStatus @default(SUBMITTED)
-  createdAt     DateTime         @default(now())
-  college       College          @relation(fields: [collegeId], references: [id])
-  student       Student          @relation(fields: [studentId], references: [id])
-  internship    Internship       @relation(fields: [internshipId], references: [id])
-  semesterCycle SemesterCycle?   @relation(fields: [semesterCycleId], references: [id])
-  listing       InternshipListing? @relation(fields: [listingId], references: [id])
+model InternshipTargetCollege {
+  id           String      @id @default(cuid())
+  internshipId String
+  collegeId    String
+  createdAt    DateTime    @default(now())
+  ruleset      Json?
+  internship   Internship  @relation(fields: [internshipId], references: [id])
+  college      College     @relation(fields: [collegeId], references: [id])
 
-  @@unique([studentId, internshipId])
-  @@index([collegeId, workflowState])
-  @@index([semesterCycleId, workflowState])
+  @@unique([internshipId, collegeId])
+  @@index([collegeId])
 }
 
-model Attendance {
-  id            String     @id @default(cuid())
-  studentId     String
-  internshipId  String
-  date          DateTime
-  present       Boolean
-  remarks       String?
-  supervisorSig String?
-  student       Student    @relation(fields: [studentId], references: [id])
-  internship    Internship @relation(fields: [internshipId], references: [id])
-
-  @@unique([studentId, internshipId, date])
-  @@index([internshipId, date])
-}
-
-model Logbook {
-  id               String     @id @default(cuid())
-  studentId        String
+model CollegeApproval {
+  id               String         @id @default(cuid())
   internshipId     String
-  workDate         DateTime
-  taskSummary      String
-  outcomes         String?
-  approvedAt       DateTime?
-  approverUserId   String?
-  supervisorRemark String?
-  student          Student    @relation(fields: [studentId], references: [id])
-  internship       Internship @relation(fields: [internshipId], references: [id])
-  approver         User?      @relation("LogbookApprover", fields: [approverUserId], references: [id])
+  collegeId        String
+  industryId       String
+  approvedByUserId String?
+  status           ApprovalStatus @default(PENDING)
+  reviewedAt       DateTime?
+  notes            String?
+  internship       Internship     @relation(fields: [internshipId], references: [id])
+  college          College        @relation(fields: [collegeId], references: [id])
+  industry         Industry       @relation(fields: [industryId], references: [id])
+  approvedBy       User?          @relation("ApprovalActor", fields: [approvedByUserId], references: [id])
+  mou              Mou?
 
-  @@index([internshipId, workDate])
-}
-
-model Report {
-  id                String     @id @default(cuid())
-  collegeId         String
-  studentId         String
-  internshipId      String     @unique
-  title             String
-  language          String     @default("English")
-  durationSummary   String
-  workDone          String
-  outcomes          String
-  supervisorSignUrl String?
-  submittedAt       DateTime?
-  college           College    @relation(fields: [collegeId], references: [id])
-  student           Student    @relation(fields: [studentId], references: [id])
-  internship        Internship @relation(fields: [internshipId], references: [id])
-
-  @@index([collegeId, submittedAt])
-}
-
-model Certificate {
-  id             String     @id @default(cuid())
-  studentId      String
-  internshipId   String     @unique
-  certificateUrl String
-  issuedAt       DateTime?
-  student        Student    @relation(fields: [studentId], references: [id])
-  internship     Internship @relation(fields: [internshipId], references: [id])
-
-  @@index([studentId, issuedAt])
-}
-
-model Evaluation {
-  id            String     @id @default(cuid())
-  studentId     String
-  internshipId  String     @unique
-  ccaMarks      Int
-  eseMarks      Int
-  totalMarks    Int
-  evaluatedAt   DateTime?
-  student       Student    @relation(fields: [studentId], references: [id])
-  internship    Internship @relation(fields: [internshipId], references: [id])
-
-  @@index([studentId, evaluatedAt])
-}
-
-model Payment {
-  id                    String        @id @default(cuid())
-  collegeId             String
-  studentId             String
-  internshipId          String?       @unique
-  amountInInr           Int
-  source                String
-  status                PaymentStatus @default(PENDING)
-  facultyVerifiedAt     DateTime?
-  coordinatorVerifiedAt DateTime?
-  transactionRef        String?
-  college               College       @relation(fields: [collegeId], references: [id])
-  student               Student       @relation(fields: [studentId], references: [id])
-  internship            Internship?   @relation(fields: [internshipId], references: [id])
-
+  @@unique([internshipId, collegeId])
   @@index([collegeId, status])
 }
 
-model Subscription {
-  id              String          @id @default(cuid())
-  collegeId       String
-  tier            CollegePlanTier @default(FOUNDATION)
-  annualPriceInInr Int            @default(22000)
-  activeFrom      DateTime
-  activeTo        DateTime?
-  college         College         @relation(fields: [collegeId], references: [id])
+model Application {
+  id                 String            @id @default(cuid())
+  tenantId           String
+  collegeId          String
+  internshipId       String
+  studentId          String
+  reviewedByUserId   String?
+  status             ApplicationStatus @default(SUBMITTED)
+  coverLetter        String?
+  approvedAt         DateTime?
+  rejectedAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  tenant             Tenant            @relation(fields: [tenantId], references: [id])
+  college            College           @relation(fields: [collegeId], references: [id])
+  internship         Internship        @relation(fields: [internshipId], references: [id])
+  student            Student           @relation(fields: [studentId], references: [id])
+  reviewedBy         User?             @relation("ApplicationReviewer", fields: [reviewedByUserId], references: [id])
+  documents          GeneratedDocument[]
 
-  @@index([collegeId, tier])
+  @@unique([internshipId, studentId])
+  @@index([tenantId, status])
+  @@index([collegeId, status])
 }
 
-model ProgramRule {
-  id            String   @id @default(cuid())
-  collegeId     String?
-  programName   String
-  minimumHours  Int
-  submissionDue String
-  college       College? @relation(fields: [collegeId], references: [id])
+model Mou {
+  id                String          @id @default(cuid())
+  tenantId          String
+  collegeApprovalId String          @unique
+  documentId        String          @unique
+  status            DocumentStatus  @default(GENERATED)
+  signedAt          DateTime?
+  expiresAt         DateTime?
+  createdAt         DateTime        @default(now())
+  document          GeneratedDocument @relation(fields: [documentId], references: [id])
+  collegeApproval   CollegeApproval @relation(fields: [collegeApprovalId], references: [id])
+  tenant            Tenant          @relation(fields: [tenantId], references: [id])
 
-  @@index([collegeId, programName])
+  @@index([tenantId, status])
 }
 
-model SystemRule {
-  id          String   @id @default(cuid())
-  ruleKey     String   @unique
-  ruleValue   Json
-  description String?
-  updatedAt   DateTime @updatedAt
+model AttendanceBatch {
+  id                String                 @id @default(cuid())
+  tenantId          String
+  collegeId         String
+  industryId        String
+  internshipId      String
+  submittedByUserId String
+  period            AttendancePeriod
+  reviewStatus      AttendanceReviewStatus @default(DRAFT)
+  windowStartsOn    DateTime
+  windowEndsOn      DateTime
+  notes             String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id])
+  college           College                @relation(fields: [collegeId], references: [id])
+  industry          Industry               @relation(fields: [industryId], references: [id])
+  internship        Internship             @relation(fields: [internshipId], references: [id])
+  submittedBy       User                   @relation("AttendanceSubmitter", fields: [submittedByUserId], references: [id])
+  records           AttendanceRecord[]
+  documents         GeneratedDocument[]
+
+  @@index([tenantId, reviewStatus])
+  @@index([collegeId, internshipId])
 }
 
-model MoU {
-  id          String    @id @default(cuid())
-  collegeId   String
-  industryId  String
-  documentUrl String
-  signedAt    DateTime?
-  expiresAt   DateTime?
-  college     College   @relation(fields: [collegeId], references: [id])
-  industry    Industry  @relation(fields: [industryId], references: [id])
+model AttendanceRecord {
+  id             String           @id @default(cuid())
+  batchId         String
+  studentId       String
+  internshipId    String
+  attendanceDate  DateTime
+  status          AttendanceStatus
+  markedByUserId  String
+  remarks         String?
+  createdAt       DateTime         @default(now())
+  batch           AttendanceBatch  @relation(fields: [batchId], references: [id])
+  student         Student          @relation(fields: [studentId], references: [id])
+  internship      Internship       @relation(fields: [internshipId], references: [id])
+  markedBy        User             @relation("AttendanceMarker", fields: [markedByUserId], references: [id])
 
-  @@unique([collegeId, industryId])
-  @@index([collegeId, expiresAt])
+  @@unique([studentId, internshipId, attendanceDate])
+  @@index([batchId, attendanceDate])
+}
+
+model Evaluation {
+  id               String           @id @default(cuid())
+  tenantId         String
+  collegeId        String
+  internshipId     String
+  studentId        String
+  evaluatorUserId  String
+  rubricSnapshot   Json
+  internalMarks    Int
+  externalMarks    Int
+  totalMarks       Int
+  status           EvaluationStatus @default(DRAFT)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  college          College          @relation(fields: [collegeId], references: [id])
+  internship       Internship       @relation(fields: [internshipId], references: [id])
+  student          Student          @relation(fields: [studentId], references: [id])
+  evaluator        User             @relation("EvaluationAuthor", fields: [evaluatorUserId], references: [id])
+  marksheet        Marksheet?
+
+  @@unique([internshipId, studentId])
+  @@index([tenantId, status])
+}
+
+model Marksheet {
+  id             String           @id @default(cuid())
+  tenantId       String
+  collegeId      String
+  internshipId   String
+  studentId      String
+  evaluationId   String           @unique
+  documentId     String           @unique
+  totalMarks     Int
+  letterGrade    String
+  status         MarksheetStatus  @default(DRAFT)
+  publishedAt    DateTime?
+  tenant         Tenant           @relation(fields: [tenantId], references: [id])
+  college        College          @relation(fields: [collegeId], references: [id])
+  internship     Internship       @relation(fields: [internshipId], references: [id])
+  student        Student          @relation(fields: [studentId], references: [id])
+  evaluation     Evaluation       @relation(fields: [evaluationId], references: [id])
+  document       GeneratedDocument @relation(fields: [documentId], references: [id])
+
+  @@unique([internshipId, studentId])
+  @@index([tenantId, status])
+}
+
+model FileStorage {
+  id               String          @id @default(cuid())
+  tenantId         String
+  uploadedByUserId String?
+  bucket           String
+  objectKey        String          @unique
+  fileName         String
+  mimeType         String
+  sizeBytes        Int
+  checksumSha256   String?
+  publicUrl        String?
+  kind             FileKind
+  visibility       FileVisibility  @default(PRIVATE)
+  createdAt        DateTime        @default(now())
+  tenant           Tenant          @relation(fields: [tenantId], references: [id])
+  uploadedBy       User?           @relation("FileUploader", fields: [uploadedByUserId], references: [id])
+  collegeLogoFor   College[]       @relation("CollegeLogo")
+  industryLogoFor  Industry[]      @relation("IndustryLogo")
+  passportPhotoFor Student[]       @relation("StudentPassportPhoto")
+  resumeFor        Student[]       @relation("StudentResume")
+  documents        GeneratedDocument[]
+
+  @@index([tenantId, kind])
+  @@index([tenantId, visibility])
+}
+
+model GeneratedDocument {
+  id                String          @id @default(cuid())
+  tenantId          String
+  collegeId         String?
+  industryId        String?
+  studentId         String?
+  internshipId      String?
+  applicationId     String?
+  attendanceBatchId String?
+  fileId            String          @unique
+  type              DocumentType
+  status            DocumentStatus  @default(DRAFT)
+  title             String
+  templateVersion   String
+  metadata          Json
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  tenant            Tenant          @relation(fields: [tenantId], references: [id])
+  college           College?        @relation(fields: [collegeId], references: [id])
+  industry          Industry?       @relation(fields: [industryId], references: [id])
+  student           Student?        @relation(fields: [studentId], references: [id])
+  internship        Internship?     @relation(fields: [internshipId], references: [id])
+  application       Application?    @relation(fields: [applicationId], references: [id])
+  attendanceBatch   AttendanceBatch? @relation(fields: [attendanceBatchId], references: [id])
+  file              FileStorage     @relation(fields: [fileId], references: [id])
+  mou               Mou?
+  marksheet         Marksheet?
+
+  @@index([tenantId, type, status])
+  @@index([collegeId, type])
+  @@index([industryId, type])
+  @@index([studentId, type])
 }

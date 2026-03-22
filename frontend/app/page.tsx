@@ -1,20 +1,26 @@
-import { homepageJourney, homepageOverview, roleAccessCards } from "./content";
-import { PublicShell, SectionCard } from "./ui";
+import {
+  erpCapabilityCards,
+  homepageJourney,
+  homepageOverview,
+  lifecycleSteps,
+  roleAccessCards,
+} from './content';
+import { PublicShell, SectionCard } from './ui';
 
 export default function HomePage() {
   return (
     <PublicShell
       title="InternSuite for colleges, students, and industry partners"
-      lead="InternSuite for colleges, students, and industry partners."
+      lead="Verified identity, automated documents, tenant-safe storage, and full internship lifecycle control in one mobile-first ERP."
     >
       <section className="hero-layout">
         <div className="hero-main card-surface">
           <div className="hero-copy">
-            <h2>InternSuite for colleges, students, and industry partners.</h2>
+            <h2>Production-ready internship ERP for the full campus lifecycle.</h2>
             <p>
-              Pricing starts at ₹9,999 per year for up to 200 students, with ₹5
-              per student per month below 150 students and ₹4 per student per
-              month above 200 students.
+              InternSuite now connects identity verification, college approvals,
+              MoU generation, student applications, attendance review, and final
+              marksheet publishing in one deployment-stable platform.
             </p>
           </div>
 
@@ -61,10 +67,7 @@ export default function HomePage() {
       </section>
 
       <section className="section-grid two-col landing-detail-grid">
-        <SectionCard
-          title="Why this layout works"
-          kicker="Focused and practical"
-        >
+        <SectionCard title="Why this layout works" kicker="Focused and practical">
           <div className="card-list">
             {homepageJourney.map((item) => (
               <article key={item.title} className="mini-card info-card">
@@ -75,39 +78,28 @@ export default function HomePage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Operational view" kicker="College-first control">
-          <article className="overview-panel">
-            <p>
-              The platform keeps colleges in control of internship operations,
-              provides a streamlined student journey, and gives industry
-              partners a simple way to post opportunities and review applicants.
-            </p>
-            <div className="overview-grid">
-              <div className="mini-card stat-mini">
-                <strong>College workspace</strong>
-                <p>
-                  Student management, partner sharing, reporting, and compliance
-                  oversight.
-                </p>
-              </div>
-              <div className="mini-card stat-mini">
-                <strong>Student workspace</strong>
-                <p>
-                  Applications, resume tracking, internship status, and semester
-                  progress.
-                </p>
-              </div>
-              <div className="mini-card stat-mini">
-                <strong>Industry workspace</strong>
-                <p>
-                  Internship posting, applicant review, and shortlist
-                  coordination at no cost.
-                </p>
-              </div>
-            </div>
-          </article>
+        <SectionCard title="ERP capability stack" kicker="Production-ready modules">
+          <div className="card-list">
+            {erpCapabilityCards.map((item) => (
+              <article key={item.title} className="mini-card info-card">
+                <strong>{item.title}</strong>
+                <p>{item.detail}</p>
+              </article>
+            ))}
+          </div>
         </SectionCard>
       </section>
+
+      <SectionCard title="Automated lifecycle" kicker="Industry to marksheet">
+        <div className="card-list">
+          {lifecycleSteps.map((item) => (
+            <article key={item.title} className="mini-card info-card">
+              <strong>{item.title}</strong>
+              <p>{item.detail}</p>
+            </article>
+          ))}
+        </div>
+      </SectionCard>
     </PublicShell>
   );
 }

@@ -1,42 +1,39 @@
-export type InternshipType = "MAJOR" | "MINOR" | "INTERDISCIPLINARY" | "ALLIED";
-export type InternshipMode = "OFFLINE" | "ONLINE";
+export type InternshipType = 'MAJOR' | 'MINOR' | 'INTERDISCIPLINARY' | 'ALLIED';
+export type InternshipMode = 'OFFLINE' | 'ONLINE' | 'HYBRID';
 export type ProviderCategory =
-  | "EDUCATIONAL_INSTITUTION"
-  | "RESEARCH_LAB"
-  | "GOVERNMENT_INSTITUTION"
-  | "NGO"
-  | "MSME_OR_INDUSTRY"
-  | "BANK_OR_FINANCIAL"
-  | "IT_OR_DIGITAL"
-  | "HEALTHCARE_OR_WELLNESS"
-  | "MEDIA_OR_CULTURAL"
-  | "AGRICULTURE_OR_ENVIRONMENT";
+  | 'EDUCATIONAL_INSTITUTION'
+  | 'RESEARCH_LAB'
+  | 'GOVERNMENT_INSTITUTION'
+  | 'NGO'
+  | 'MSME_OR_INDUSTRY'
+  | 'BANK_OR_FINANCIAL'
+  | 'IT_OR_DIGITAL'
+  | 'HEALTHCARE_OR_WELLNESS'
+  | 'MEDIA_OR_CULTURAL'
+  | 'AGRICULTURE_OR_ENVIRONMENT';
 
-export type ProgramCode =
-  | "BA"
-  | "BSC"
-  | "BCOM"
-  | "BBA"
-  | "BCA"
-  | "BVOC"
-  | "OTHER";
+export type ProgramCode = 'BA' | 'BSC' | 'BCOM' | 'BBA' | 'BCA' | 'BVOC' | 'OTHER';
 export type WorkflowState =
-  | "DRAFT"
-  | "SUBMITTED"
-  | "DEPARTMENT_REVIEW"
-  | "DEPARTMENT_APPROVED"
-  | "COLLEGE_APPROVED"
-  | "REJECTED"
-  | "ACTIVE"
-  | "COMPLETED";
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'DEPARTMENT_REVIEW'
+  | 'DEPARTMENT_APPROVED'
+  | 'COLLEGE_APPROVED'
+  | 'REJECTED'
+  | 'ACTIVE'
+  | 'COMPLETED';
 
-export type StudentLifecycleStatus =
-  | "ACTIVE"
-  | "AT_RISK"
-  | "READY_TO_ARCHIVE"
-  | "ARCHIVED";
-export type PlanTier = "FOUNDATION" | "GROWTH" | "STATEWIDE";
-export type ListingVisibility = "PUBLIC" | "SELECTED_COLLEGES";
+export type StudentLifecycleStatus = 'ACTIVE' | 'AT_RISK' | 'READY_TO_ARCHIVE' | 'ARCHIVED';
+export type PlanTier = 'FOUNDATION' | 'GROWTH' | 'STATEWIDE';
+export type ListingVisibility = 'PUBLIC' | 'SELECTED_COLLEGES';
+export type AuthRole = 'college' | 'student' | 'industry' | 'super_admin';
+export type DocumentType = 'MOU' | 'APPROVAL_LETTER' | 'ATTENDANCE_REPORT' | 'MARKSHEET';
+export type UploadKind =
+  | 'college-logo'
+  | 'industry-logo'
+  | 'student-passport-photo'
+  | 'student-resume'
+  | 'generated-pdf';
 
 export interface InternshipCellStructure {
   principalUserId: string;
@@ -64,7 +61,7 @@ export interface InternshipDraft {
   endDate: string;
   totalHours: number;
   industrySupervisorUserId?: string | null;
-  externalPlatform?: "KSHEC" | "DIRECT" | null;
+  externalPlatform?: 'KSHEC' | 'DIRECT' | null;
   departmentCouncilApproved: boolean;
 }
 
@@ -107,7 +104,7 @@ export interface EvaluationMarks {
 }
 
 export interface PaymentRule {
-  internshipSource: "INTERNAL" | "EXTERNAL";
+  internshipSource: 'INTERNAL' | 'EXTERNAL';
   amountInInr: number;
   requiresFacultyVerification: true;
   requiresCoordinatorVerification: true;
@@ -177,7 +174,7 @@ export interface SemesterCycleSummary {
   archivedStudents: number;
   applications: number;
   placementRate: number;
-  lifecycleStatus: "PLANNING" | "ACTIVE" | "CLOSED" | "ARCHIVED";
+  lifecycleStatus: 'PLANNING' | 'ACTIVE' | 'CLOSED' | 'ARCHIVED';
 }
 
 export interface PlatformOverview {
@@ -207,7 +204,7 @@ export interface PlatformOverview {
 
 export interface AuthArchitecture {
   scopes: Array<{
-    role: "COLLEGE" | "STUDENT" | "INDUSTRY" | "SUPER_ADMIN";
+    role: 'COLLEGE' | 'STUDENT' | 'INDUSTRY' | 'SUPER_ADMIN';
     authSurface: string;
     tokenAudience: string;
     accessRules: string[];
@@ -233,4 +230,55 @@ export interface SaaSReadinessReport {
   dbUpgradeNotes: string[];
   apiUpgradeNotes: string[];
   workflowGuarantees: string[];
+}
+
+export interface IdentityBlueprint {
+  canonicalIdentifier: 'EMAIL';
+  studentRequirements: string[];
+  verification: {
+    provider: 'RESEND';
+    methods: Array<'OTP' | 'LINK'>;
+    passwordCreationPolicy: string;
+  };
+  sessions: {
+    tokenType: 'JWT';
+    rotation: string;
+    revocation: string;
+  };
+}
+
+export interface UploadPolicy {
+  kind: UploadKind;
+  storageProvider: 'cloudflare-r2';
+  maxBytes: number;
+  allowedMimeTypes: string[];
+  visibility: 'private' | 'tenant' | 'shared';
+  pathTemplate: string;
+}
+
+export interface GeneratedDocumentBlueprint {
+  type: DocumentType;
+  templateVersion: string;
+  visibility: AuthRole[];
+  requiredAssets: string[];
+  sections: string[];
+}
+
+export interface ApiEndpointBlueprint {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path: string;
+  owner: AuthRole | 'system';
+  purpose: string;
+}
+
+export interface WorkflowBlueprintStep {
+  id: string;
+  title: string;
+  owner: AuthRole | 'system';
+  outputs: string[];
+}
+
+export interface WorkflowBlueprint {
+  name: string;
+  steps: WorkflowBlueprintStep[];
 }

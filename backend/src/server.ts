@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 import { authRoutes } from './routes/auth.js';
 import { complianceRoutes } from './routes/compliance.js';
 import { dashboardRoutes } from './routes/dashboard.js';
+import { erpRoutes } from './routes/erp.js';
 import { systemRoutes } from './routes/system.js';
 
 export function buildServer() {
@@ -15,8 +16,9 @@ export function buildServer() {
     openapi: {
       info: {
         title: 'InternSuite API',
-        version: '3.0.0',
-        description: 'InternSuite API for public SaaS access, secure role-based sessions, dashboard delivery, and preserved FYUGP internship compliance rules.',
+        version: '4.0.0',
+        description:
+          'InternSuite API for production deployment, verified identity onboarding, file-storage orchestration, reusable document generation, and internship lifecycle automation.',
       },
     },
   });
@@ -26,6 +28,7 @@ export function buildServer() {
   app.register(authRoutes, { prefix: '/api' });
   app.register(dashboardRoutes, { prefix: '/api' });
   app.register(complianceRoutes, { prefix: '/api' });
+  app.register(erpRoutes, { prefix: '/api' });
 
   return app;
 }

@@ -1,15 +1,23 @@
 {
-  "name": "prism-platform",
+  "name": "internsuite-platform",
   "private": true,
   "version": "1.0.0",
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@10.13.1",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "prisma:generate": "pnpm --filter @prism/database prisma:generate",
+    "prisma:migrate:deploy": "pnpm --filter @prism/database prisma:migrate:deploy",
+    "railway:build": "pnpm install --frozen-lockfile && pnpm prisma:generate && pnpm build",
+    "railway:start": "pnpm prisma:migrate:deploy && pnpm --filter @prism/api start"
   },
   "devDependencies": {
     "prettier": "^3.3.3",
