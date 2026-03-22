@@ -1,57 +1,30 @@
-import { partnerColleges } from '../../../content';
-import { PortalShell } from '../../../ui';
+import { collegeNav, partnerColleges } from '../../../content';
+import { PortalShell, SectionCard, SimpleGrid } from '../../../ui';
 
 export default function PartnerCollegesPage() {
   return (
     <PortalShell
-      badge="Partner colleges"
-      title="Connected Institutions"
-      lead="Partner colleges can share internship opportunities and seat intelligence, but they never gain access to your student database or internal analytics."
+      role="College Panel"
+      title="Partner colleges"
+      lead="Add partner colleges, review shared opportunity rules, and maintain collaboration without exposing protected records."
+      nav={collegeNav}
+      actions={[{ label: 'Add Partner College', href: '/portal/college/partners' }]}
     >
-      <section className="grid-3 top-gap">
-        {partnerColleges.map((college) => (
-          <article className="card" key={college.name}>
-            <strong>{college.name}</strong>
-            <div className="label">{college.status}</div>
-            <p className="detail">{college.shareRule}</p>
+      <SimpleGrid>
+        {partnerColleges.map((item) => (
+          <article key={item.name} className="card-surface listing-card">
+            <h3>{item.name}</h3>
+            <p>{item.status}</p>
+            <p>{item.shareRule}</p>
           </article>
         ))}
-      </section>
-
-      <section className="grid-2 section-block">
-        <article className="panel nested-panel">
-          <div className="section-heading-row">
-            <h2 className="section-title">What can be shared</h2>
-            <span className="table-highlight">Controlled sharing</span>
-          </div>
-          <ul className="feature-list benefit-list top-gap">
-            <li>Public internship listings and selected partner-college opportunities.</li>
-            <li>Approved seat availability and deadline alerts.</li>
-            <li>MoU-backed collaboration signals between institutions.</li>
-          </ul>
-        </article>
-
-        <article className="panel nested-panel">
-          <div className="section-heading-row">
-            <h2 className="section-title">What is never shared</h2>
-            <span className="table-highlight">Hard boundary</span>
-          </div>
-          <ul className="feature-list benefit-list top-gap">
-            <li>Student databases and personal records.</li>
-            <li>Internal college analytics, billing, and archive intelligence.</li>
-            <li>Unapplied student data for industry or external colleges.</li>
-          </ul>
-        </article>
-      </section>
-
-      <div className="cta-row top-gap">
-        <a className="cta" href="/portal/college">
-          Return to college dashboard
-        </a>
-        <a className="ghost-cta" href="/portal/industry">
-          View industry panel
-        </a>
-      </div>
+      </SimpleGrid>
+      <SectionCard title="Shared internship visibility" kicker="Protected collaboration">
+        <p>
+          Colleges can see shared listings and seat alerts, but never another
+          college’s private analytics, student profiles, or subscription data.
+        </p>
+      </SectionCard>
     </PortalShell>
   );
 }

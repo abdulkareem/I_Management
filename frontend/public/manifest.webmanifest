@@ -1,10 +1,10 @@
 {
-  "name": "Internship Cloud ERP for Colleges",
-  "short_name": "Internship ERP",
-  "description": "Mobile-first internship SaaS for colleges with semester lifecycle billing, archive retention, and free industry participation.",
+  "name": "InternSuite",
+  "short_name": "InternSuite",
+  "description": "InternSuite is an installable internship cloud ERP for colleges, students, and industry partners.",
   "display": "standalone",
-  "background_color": "#F8FAFC",
-  "theme_color": "#1E3A8A",
+  "background_color": "#f8fafc",
+  "theme_color": "#1e40af",
   "start_url": "/",
   "icons": [
     {

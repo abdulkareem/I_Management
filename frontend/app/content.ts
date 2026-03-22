@@ -1,206 +1,269 @@
-export const navLinks = [
-  { label: "Pricing", href: "/pricing" },
-  { label: "College dashboard", href: "/portal/college" },
-  { label: "Student dashboard", href: "/portal/student" },
-  { label: "Industry panel", href: "/portal/industry" },
+export const publicNav = [
+  { label: 'Platform', href: '/' },
+  { label: 'Pricing', href: '/pricing' },
+  { label: 'Internships', href: '/internships' },
+  { label: 'College Login', href: '/login/college' },
 ];
 
-export const heroStats = [
-  {
-    label: "Active students per semester",
-    value: "500–2,000",
-    detail:
-      "Billing counts only active semester students, not historical archives.",
-  },
-  {
-    label: "Archive retention included",
-    value: "2,000+",
-    detail:
-      "Base plans include read-only historical storage for accreditation and audits.",
-  },
-  {
-    label: "Average annual fee",
-    value: "₹22k–₹75k",
-    detail:
-      "Simple college subscription with free student and industry participation.",
-  },
-  {
-    label: "Infra efficiency target",
-    value: "5×+",
-    detail:
-      "Growth and higher plans are priced to preserve healthy SaaS margins.",
-  },
+export const publicHighlights = [
+  'Built for internship cells, principals, coordinators, mentors, and students.',
+  'Keeps existing university rules, timelines, and evaluation workflows intact.',
+  'Supports multi-college collaboration without exposing protected student data.',
+  'Designed for mobile use, quick approvals, and progressive web app deployment.',
 ];
 
-export const platformPillars = [
-  "Only colleges pay; industry joins free to increase opportunity supply.",
-  "Each internship belongs to one semester cycle and closes into a bill-free archive.",
-  "Logical multi-tenancy keeps college data isolated while internship listings stay shareable.",
-  "Existing FYUGP and university validations remain enforced by the compliance engine.",
-];
-
-export const pricingPlans = [
+export const featureCards = [
   {
-    name: "Foundation",
-    price: "₹22,000 / year",
-    audience: "Single college launching internship digitization",
-    students: "Up to 500 active students / semester",
-    archive: "2,000 archived students included",
-    support: "Standard onboarding and support",
-    addOn: "₹15 per extra active student / semester",
-    archiveAddOn: "₹2,000 per extra 500 archived students / year",
-    highlight:
-      "Best for arts, science, and autonomous colleges starting SaaS adoption.",
+    title: 'College operations in one place',
+    detail:
+      'Manage students, listings, applications, reports, and subscriptions from a single mobile-ready workspace.',
   },
   {
-    name: "Growth",
-    price: "₹50,000 / year",
-    audience: "Colleges with scale, analytics, and multiple departments",
-    students: "Up to 2,000 active students / semester",
-    archive: "6,000 archived students included",
-    support: "Priority support and review calls",
-    addOn: "₹12 per extra active student / semester",
-    archiveAddOn: "₹1,800 per extra 500 archived students / year",
-    highlight:
-      "Designed to hold a 5× gross margin even near 2,000 active students.",
+    title: 'Student-friendly internship flow',
+    detail:
+      'Students browse approved listings, upload resumes, track applications, and complete report milestones without clutter.',
   },
   {
-    name: "Statewide",
-    price: "₹75,000+ / year",
-    audience: "College groups, consortia, or state-wide missions",
-    students: "Up to 5,000 active students / semester",
-    archive: "20,000 archived students included",
-    support: "Dedicated success manager and SLA",
-    addOn: "₹10 per extra active student / semester",
-    archiveAddOn: "₹1,500 per extra 500 archived students / year",
-    highlight:
-      "Built for district networks, university groups, and policy-backed expansion programs.",
+    title: 'Free industry participation',
+    detail:
+      'Employers can post internships, review applicants, and coordinate interviews without paying a platform subscription.',
+  },
+  {
+    title: 'Archive-aware lifecycle',
+    detail:
+      'Completed students move into read-only retention for accreditation and audits while active usage stays predictable.',
+  },
+  {
+    title: 'Controlled partner sharing',
+    detail:
+      'Partner colleges can share opportunities and seat intelligence while analytics and student records remain tenant-scoped.',
+  },
+  {
+    title: 'Compliance-first automation',
+    detail:
+      'Duration rules, semester restrictions, MoU checks, private-industry validation, and evaluation rules remain enforced.',
   },
 ];
 
-export const costModel = [
+export const howItWorks = [
   {
-    label: "Active student cost",
-    value: "≈ ₹8.4 / semester",
+    step: '01',
+    title: 'Register your college',
     detail:
-      "Covers Railway compute, PostgreSQL usage, routine backups, and workflow reserve.",
+      'Create a verified college account, activate your plan, and onboard departments, staff, and current semester students.',
   },
   {
-    label: "Archived student cost",
-    value: "≈ ₹0.72 / year",
+    step: '02',
+    title: 'Publish and share internships',
     detail:
-      "Assumes compressed documents, read-only access, and essential metadata storage.",
+      'Industry posts opportunities, colleges review visibility, and approved listings become available to the right students.',
   },
   {
-    label: "500 active student college",
-    value: "≈ ₹4.3k infra / year",
+    step: '03',
+    title: 'Track applications and compliance',
     detail:
-      "Foundation pricing is kept above the 5× profitability floor for small colleges.",
+      'Students apply, colleges assign, mentors approve logbooks, and reports stay aligned with university workflows.',
   },
   {
-    label: "2,000 active student college",
-    value: "≈ ₹9.8k infra / year",
+    step: '04',
+    title: 'Close the semester with confidence',
     detail:
-      "Growth-plus pricing keeps 5× profitability intact at higher utilization.",
+      'Archive completed records, retain evidence for audits, and keep dashboards focused on active academic cycles.',
   },
 ];
 
-export const lifecycleSteps = [
+export const publicPlans = [
   {
-    title: "1. Semester opens",
-    detail:
-      "College activates a semester cycle, imports active students, and publishes eligible opportunities by department and program.",
+    name: 'Foundation',
+    price: '₹22,000 / year',
+    audience: 'For colleges launching internship digitization.',
+    bullets: [
+      'Up to 500 active students per semester',
+      'Student and industry access included',
+      'Partner-college sharing and application workflows',
+      'Archive retention for 2,000 students',
+      'Standard onboarding and support',
+    ],
+    cta: 'Start Foundation',
   },
   {
-    title: "2. Internship runs",
-    detail:
-      "Students apply, mentors review, industry confirms, and compliance validations continue through attendance, logbook, and report stages.",
-  },
-  {
-    title: "3. Semester closes",
-    detail:
-      "Completed students become archive-ready, documents are compressed, and their records become read-only.",
-  },
-  {
-    title: "4. Archive retained",
-    detail:
-      "Archived data stays searchable for audits, NAAC/NBA evidence, and placement history while excluded from active billing.",
+    name: 'Growth',
+    price: '₹50,000 / year',
+    audience: 'For larger colleges running multiple departments and higher internship volume.',
+    bullets: [
+      'Up to 2,000 active students per semester',
+      'Advanced reporting and coordination views',
+      'Priority support and review calls',
+      'Archive retention for 6,000 students',
+      'Multi-department scale with partner routing',
+    ],
+    cta: 'Choose Growth',
   },
 ];
 
-export const partnerColleges = [
+export const landingStats = [
   {
-    name: "Calicut Arts & Science College",
-    status: "Active partner",
-    shareRule: "Can receive public and partner-routed listings only",
+    label: 'Active internships tracked',
+    value: '1,280+',
+    detail: 'Across college-managed, assigned, and industry-posted opportunities.',
   },
   {
-    name: "Malabar Tech Campus",
-    status: "Priority partner",
-    shareRule: "Can exchange verified internship demand and seat alerts",
+    label: 'Students supported',
+    value: '9,400+',
+    detail: 'With semester-aware dashboards, applications, and reporting workflows.',
   },
   {
-    name: "PSMO College",
-    status: "Anchor institution",
-    shareRule:
-      "Operates the shared industry network without exposing student records",
+    label: 'Industry partners',
+    value: '320+',
+    detail: 'Posting internships without subscription barriers.',
   },
+  {
+    label: 'Mobile completion rate',
+    value: '91%',
+    detail: 'Optimized for quick actions, approvals, and uploads on phones.',
+  },
+];
+
+export const publicInternships = [
+  {
+    title: 'Operations Analyst Intern',
+    organization: 'North Kerala FinServe',
+    category: 'Banking & Finance',
+    mode: 'Hybrid',
+    seats: '12 seats',
+    deadline: 'Applications close 12 April 2026',
+  },
+  {
+    title: 'Digital Support Intern',
+    organization: 'Malabar Smart Systems',
+    category: 'IT & Digital',
+    mode: 'On-site',
+    seats: '18 seats',
+    deadline: 'Applications close 18 April 2026',
+  },
+  {
+    title: 'Community Research Fellow',
+    organization: 'Coastal Development Forum',
+    category: 'Research & Social',
+    mode: 'Field + Remote',
+    seats: '8 seats',
+    deadline: 'Applications close 24 April 2026',
+  },
+  {
+    title: 'Production Planning Intern',
+    organization: 'Kerala Agro Works',
+    category: 'MSME & Industry',
+    mode: 'On-site',
+    seats: '10 seats',
+    deadline: 'Applications close 27 April 2026',
+  },
+];
+
+export const roleAccessCards = [
+  {
+    title: 'College',
+    detail: 'Subscription-backed workspace for student management, partner sharing, reporting, and compliance oversight.',
+    href: '/login/college',
+    cta: 'College Login',
+  },
+  {
+    title: 'Student',
+    detail: 'Personal dashboard for applications, resumes, internship status, and semester progress tracking.',
+    href: '/login/student',
+    cta: 'Student Login',
+  },
+  {
+    title: 'Industry',
+    detail: 'Free dashboard for posting internships, reviewing applicants, and coordinating shortlisted candidates.',
+    href: '/login/industry',
+    cta: 'Industry Login',
+  },
+];
+
+export const collegeNav = [
+  { label: 'Dashboard', href: '/portal/college' },
+  { label: 'Students', href: '/portal/college/students' },
+  { label: 'Internships', href: '/portal/college/internships' },
+  { label: 'Partners', href: '/portal/college/partners' },
+  { label: 'Applications', href: '/portal/college/applications' },
+  { label: 'Reports', href: '/portal/college/reports' },
+  { label: 'Settings', href: '/portal/college/settings' },
+];
+
+export const studentNav = [
+  { label: 'Dashboard', href: '/portal/student' },
+  { label: 'Profile', href: '/portal/student/profile' },
+  { label: 'Internships', href: '/portal/student/internships' },
+  { label: 'Applications', href: '/portal/student/applications' },
+];
+
+export const industryNav = [
+  { label: 'Dashboard', href: '/portal/industry' },
+  { label: 'Post Internship', href: '/portal/industry/postings' },
+  { label: 'Applications', href: '/portal/industry/applications' },
+];
+
+export const adminNav = [
+  { label: 'Dashboard', href: '/portal/super-admin' },
+  { label: 'Colleges', href: '/portal/super-admin/colleges' },
+  { label: 'Payments', href: '/portal/super-admin/payments' },
+  { label: 'Analytics', href: '/portal/super-admin/analytics' },
 ];
 
 export const applicationTrend = [42, 58, 66, 73, 89, 104];
 export const participationBars = [
-  { label: "Semester 3", value: 64 },
-  { label: "Semester 4", value: 78 },
-  { label: "Semester 5", value: 91 },
+  { label: 'Semester 3', value: 64 },
+  { label: 'Semester 4', value: 78 },
+  { label: 'Semester 5', value: 91 },
 ];
 export const categoryMix = [
-  { label: "IT & Digital", value: 38, color: "#1E3A8A" },
-  { label: "MSME & Industry", value: 29, color: "#10B981" },
-  { label: "Banking & Finance", value: 18, color: "#F59E0B" },
-  { label: "Research & Social", value: 15, color: "#7C3AED" },
+  { label: 'IT & Digital', value: 38, color: '#1e40af' },
+  { label: 'MSME & Industry', value: 27, color: '#10b981' },
+  { label: 'Banking & Finance', value: 19, color: '#f59e0b' },
+  { label: 'Research & Social', value: 16, color: '#7c3aed' },
+];
+
+export const partnerColleges = [
+  {
+    name: 'Calicut Arts & Science College',
+    status: 'Active sharing partner',
+    shareRule: 'Receives public and selected-college listings for applied departments.',
+  },
+  {
+    name: 'Malabar Tech Campus',
+    status: 'Priority routing enabled',
+    shareRule: 'Shares verified demand and urgent seat alerts for approved programs.',
+  },
+  {
+    name: 'PSMO College',
+    status: 'Network anchor',
+    shareRule: 'Maintains collaboration rules without cross-tenant student exposure.',
+  },
 ];
 
 export const studentApplications = [
   {
-    title: "Operations Analyst Intern",
-    company: "Kozhikode Agro Systems",
-    status: "Faculty review",
-    timeline: "Applied 12 Mar • Interview scheduled 25 Mar",
+    title: 'Operations Analyst Intern',
+    company: 'North Kerala FinServe',
+    status: 'Faculty review',
+    timeline: 'Applied 12 March • Interview scheduled 25 March',
   },
   {
-    title: "Community Research Fellow",
-    company: "Malabar Social Lab",
-    status: "Shortlisted",
-    timeline: "Applied 08 Mar • Awaiting industry confirmation",
+    title: 'Community Research Fellow',
+    company: 'Coastal Development Forum',
+    status: 'Shortlisted',
+    timeline: 'Applied 8 March • Awaiting final industry confirmation',
   },
   {
-    title: "Digital Support Intern",
-    company: "North Kerala FinServe",
-    status: "Submitted",
-    timeline: "Application complete • Documents verified",
+    title: 'Digital Support Intern',
+    company: 'Malabar Smart Systems',
+    status: 'Submitted',
+    timeline: 'Application complete • Compliance documents verified',
   },
-];
-
-export const industryPostingChecklist = [
-  "Choose public visibility or selected colleges only.",
-  "Define seats, stipend, mode, department preference, and semester preference.",
-  "Upload or renew MoU before assigning private-organization placements.",
-  "Access student profiles only after application or college recommendation.",
 ];
 
 export const archiveHighlights = [
-  "Past internship records remain searchable by semester, department, and accreditation year.",
-  "Archived students are excluded from active billing and student login actions.",
-  "Certificates, report summaries, and evaluation totals stay preserved in compressed form.",
-];
-
-export const readinessChecklist = [
-  "Separate JWT audiences for college, student, industry, and super admin",
-  "Tenant-scoped queries on every student and workflow table",
-  "Semester cycle automation for opening, closure, and archival",
-  "Archive compression policy and add-on monetization",
-  "PWA installability, mobile-first navigation, and low-bandwidth pages",
-  "Indexing for collegeId + semesterCycleId + workflowState hotspots",
-  "Audit logging for approvals, compliance exceptions, and archive actions",
-  "Production monitoring for API latency, failed jobs, and storage growth",
+  'Past internship records remain searchable by semester, department, and accreditation cycle.',
+  'Archived students are excluded from active billing and new application actions.',
+  'Certificates, reports, and evaluation summaries stay preserved for audits and placement evidence.',
 ];

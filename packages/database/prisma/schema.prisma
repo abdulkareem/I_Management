@@ -95,17 +95,61 @@ enum ListingVisibility {
 }
 
 model User {
-  id           String                  @id @default(cuid())
-  email        String                  @unique
-  name         String
-  phone        String?
-  role         UserRole
-  authScope    AuthScope               @default(COLLEGE)
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
-  memberships  UserCollegeMembership[]
-  student      Student?
-  logApprovals Logbook[]               @relation("LogbookApprover")
+  id                 String                  @id @default(cuid())
+  email              String                  @unique
+  name               String
+  phone              String?
+  role               UserRole
+  authScope          AuthScope               @default(COLLEGE)
+  emailVerifiedAt    DateTime?
+  passwordHash       String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  memberships        UserCollegeMembership[]
+  student            Student?
+  sessions           Session[]
+  passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  logApprovals       Logbook[]               @relation("LogbookApprover")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  audience     String
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt])
+  @@index([audience, revokedAt])
+}
+
+model EmailVerificationToken {
+  id         String   @id @default(cuid())
+  userId      String
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  userId      String
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt])
 }
 
 model College {

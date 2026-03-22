@@ -12,6 +12,7 @@ import type {
   StudentCostProfile,
 } from "@prism/types";
 import type { FastifyPluginAsync } from "fastify";
+import { requireAuth } from "../lib/security.js";
 import { z } from "zod";
 
 const exchangeRateInInr = 83;
@@ -319,16 +320,16 @@ const saasReadinessReport: SaaSReadinessReport = {
 };
 
 const platformOverview: PlatformOverview = {
-  platform: "Internship Cloud ERP",
+  platform: "InternSuite",
   positioning:
-    "College-paid internship ERP with free industry participation, semester-based student lifecycle management, and controlled partner-college collaboration.",
+    "Public internship cloud ERP for colleges with free industry participation, semester-based student lifecycle management, and controlled partner-college collaboration.",
   deployment: {
     frontendDirectory: "frontend",
     frontendTarget: "Cloudflare Pages",
     backendDirectory: "backend",
     backendTarget: "Railway",
   },
-  superAdminEmail: "abdulkareem@psmocollege.ac.in",
+  superAdminEmail: "private@internsuite.app",
   headlineMetrics: {
     collegesRegistered: storageSummary.collegesRegistered,
     activeStudents: storageSummary.activeStudents,
@@ -347,16 +348,17 @@ const platformOverview: PlatformOverview = {
 export const systemRoutes: FastifyPluginAsync = async (app) => {
   app.get("/health", async () => ({
     status: "ok",
-    service: "internship-cloud-erp-api",
+    service: "internsuite-api",
   }));
 
   app.get("/bootstrap", async () => ({
     platform: platformOverview.platform,
     positioning: platformOverview.positioning,
-    superAdminEmail: platformOverview.superAdminEmail,
-    annualInfraBudgetInInr,
     pricingAnchor: "₹22,000/year for up to 500 active students per semester",
-    archivePolicy,
+    archivePolicy: {
+      baseArchiveIncludedStudents: archivePolicy.baseArchiveIncludedStudents,
+      readOnlyAccess: archivePolicy.readOnlyAccess,
+    },
     evaluationScheme: { cca: 15, ese: 35, total: 50 },
     paymentRules: {
       internal: 500,
@@ -370,14 +372,17 @@ export const systemRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/saas-readiness", async () => saasReadinessReport);
 
-  app.get("/super-admin/storage-usage", async () => ({
+  app.get("/super-admin/storage-usage", { preHandler: requireAuth({ roles: ["super_admin"], audience: "platform-admin" }) }, async () => ({
     generatedAt: new Date().toISOString(),
     annualInfraBudgetInInr,
     storageSummary,
     colleges: storageUsage,
     studentCostProfile,
     collegeCostScenarios,
-    archivePolicy,
+    archivePolicy: {
+      baseArchiveIncludedStudents: archivePolicy.baseArchiveIncludedStudents,
+      readOnlyAccess: archivePolicy.readOnlyAccess,
+    },
     billingRule: {
       collegesAreOnlyPayingCustomers: true,
       activeStudentBilling:

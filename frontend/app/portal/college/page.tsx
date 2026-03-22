@@ -2,135 +2,65 @@ import {
   applicationTrend,
   archiveHighlights,
   categoryMix,
-  partnerColleges,
+  collegeNav,
   participationBars,
+  partnerColleges,
 } from '../../content';
-import { BarChart, LineChart, PieChart, PortalShell } from '../../ui';
+import { BarChart, BulletList, LineChart, PieChart, PortalShell, SectionCard, SimpleGrid, StatGrid } from '../../ui';
 
-const semesterCards = [
-  {
-    label: 'Active Semester Internships',
-    value: '128',
-    detail: 'Live opportunities mapped to Semester 4 and Semester 5 cycles.',
-  },
-  {
-    label: 'Students in current billing',
-    value: '486',
-    detail: 'Only active semester students count toward subscription usage.',
-  },
-  {
-    label: 'Industry partners this cycle',
-    value: '38',
-    detail: 'Industry remains free while colleges control access and approval.',
-  },
-  {
-    label: 'Archive-ready students',
-    value: '164',
-    detail: 'Will move to read-only storage after semester closure.',
-  },
+const stats = [
+  { label: 'Active internships', value: '128', detail: 'Live opportunities approved for the current semester cycle.' },
+  { label: 'Student applications', value: '342', detail: 'Applications awaiting review, assignment, or industry action.' },
+  { label: 'Students managed', value: '486', detail: 'Students currently active in this college subscription period.' },
+  { label: 'Partner colleges', value: '3', detail: 'Connected institutions sharing approved internship visibility.' },
 ];
 
-const operationalActions = [
-  'Review college-specific applications, mentor approvals, and duration validations.',
-  'Recommend students to industry partners without exposing unrelated student records.',
-  'Track archive usage before crossing the included retention allowance.',
-  'Invite partner colleges for listing collaboration without sharing internal analytics.',
-];
-
-export default function CollegePortalPage() {
+export default function CollegeDashboardPage() {
   return (
     <PortalShell
-      badge="College dashboard"
-      title="Run the active semester with billing clarity"
-      lead="Your college workspace isolates student data, manages semester internship operations, and keeps completed students out of active billing once the semester closes."
+      role="College Panel"
+      title="College dashboard"
+      lead="Manage students, assignments, applications, reports, and subscription health from a clear semester-focused workspace."
+      nav={collegeNav}
+      actions={[
+        { label: 'Add Student', href: '/portal/college/students' },
+        { label: 'Assign Internship', href: '/portal/college/internships', tone: 'secondary' },
+        { label: 'View Applications', href: '/portal/college/applications', tone: 'secondary' },
+        { label: 'Upgrade Plan', href: '/pricing', tone: 'secondary' },
+      ]}
     >
-      <section className="stats stats-4 top-gap">
-        {semesterCards.map((card) => (
-          <article className="card" key={card.label}>
-            <div className="metric">{card.value}</div>
-            <div className="label">{card.label}</div>
-            <p className="detail">{card.detail}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="grid-3 section-block">
+      <StatGrid items={stats} />
+      <section className="chart-grid">
         <LineChart values={applicationTrend} />
         <BarChart items={participationBars} />
         <PieChart items={categoryMix} />
       </section>
-
-      <section className="grid-2 section-block">
-        <article className="panel nested-panel">
-          <div className="section-heading-row">
-            <h2 className="section-title">Operational focus</h2>
-            <span className="table-highlight">This semester</span>
-          </div>
-          <div className="stack-list top-gap">
-            {operationalActions.map((item) => (
-              <article className="card" key={item}>
-                <p className="detail">{item}</p>
-              </article>
-            ))}
-          </div>
-        </article>
-
-        <article className="panel nested-panel">
-          <div className="section-heading-row">
-            <h2 className="section-title">Connected institutions</h2>
-            <a className="ghost-cta inline-link" href="/portal/college/partners">
-              Partner Colleges Page
-            </a>
-          </div>
-          <div className="stack-list top-gap">
+      <section className="section-grid two-col">
+        <SectionCard title="Quick operational focus" kicker="This week">
+          <BulletList
+            items={[
+              'Approve pending internship applications and mentor reviews.',
+              'Share verified listings with partner colleges.',
+              'Track semester completion and archive readiness.',
+              'Monitor subscription usage before the active student cap is reached.',
+            ]}
+          />
+        </SectionCard>
+        <SectionCard title="Partner colleges" kicker="Controlled sharing">
+          <div className="card-list compact-list">
             {partnerColleges.map((college) => (
-              <article className="card" key={college.name}>
+              <article key={college.name} className="mini-card">
                 <strong>{college.name}</strong>
-                <div className="label">{college.status}</div>
-                <p className="detail">{college.shareRule}</p>
+                <p>{college.status}</p>
+                <p>{college.shareRule}</p>
               </article>
             ))}
           </div>
-        </article>
+        </SectionCard>
       </section>
-
-      <section className="grid-2 section-block">
-        <article className="panel nested-panel">
-          <div className="section-heading-row">
-            <h2 className="section-title">Past Internship Records</h2>
-            <a className="ghost-cta inline-link" href="/portal/college/archive">
-              Archive Page
-            </a>
-          </div>
-          <ul className="feature-list benefit-list top-gap">
-            {archiveHighlights.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="panel nested-panel">
-          <div className="section-heading-row">
-            <h2 className="section-title">Next actions</h2>
-            <span className="table-highlight">Mobile-friendly queue</span>
-          </div>
-          <div className="action-pills top-gap">
-            <span className="action-chip">Approve 23 pending applications</span>
-            <span className="action-chip secondary">Archive 164 semester-complete students</span>
-            <span className="action-chip">Renew 4 expiring MoUs</span>
-            <span className="action-chip secondary">Invite 2 partner colleges</span>
-          </div>
-        </article>
-      </section>
-
-      <div className="cta-row top-gap">
-        <a className="cta" href="/portal/student">
-          Open student dashboard
-        </a>
-        <a className="ghost-cta" href="/pricing">
-          Review plans and billing
-        </a>
-      </div>
+      <SectionCard title="Archive readiness" kicker="Retention overview">
+        <BulletList items={archiveHighlights} />
+      </SectionCard>
     </PortalShell>
   );
 }
