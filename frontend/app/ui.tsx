@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { publicNav } from './content';
+import type { ReactNode } from "react";
+import { publicNav } from "./content";
 
 export function PublicShell({
   title,
@@ -27,7 +27,7 @@ export function PublicShell({
             </a>
           ))}
           <a className="button primary small" href="/signup/college">
-            Register Your College
+            Register College
           </a>
         </nav>
       </header>
@@ -40,15 +40,14 @@ export function PublicShell({
       <footer className="site-footer">
         <div>
           <strong>InternSuite</strong>
-          <p>
-            Internship operations, application tracking, partner collaboration,
-            and semester-ready reporting for colleges.
-          </p>
+          <p>Copyrighted by Adel Strategic Services.</p>
+          <p>ERP developed by Adel Strategic Services, Calicut.</p>
+          <p>Contact: adelstrategics@gmail.com</p>
         </div>
         <div className="footer-links">
-          <a href="/pricing">Pricing</a>
           <a href="/internships">Explore Internships</a>
           <a href="/login/college">College Login</a>
+          <a href="/login/student">Student Login</a>
         </div>
       </footer>
     </main>
@@ -67,7 +66,11 @@ export function PortalShell({
   title: string;
   lead: string;
   nav: Array<{ label: string; href: string }>;
-  actions?: Array<{ label: string; href: string; tone?: 'primary' | 'secondary' }>;
+  actions?: Array<{
+    label: string;
+    href: string;
+    tone?: "primary" | "secondary";
+  }>;
   children: ReactNode;
 }) {
   return (
@@ -98,7 +101,7 @@ export function PortalShell({
               {actions.map((action) => (
                 <a
                   key={action.href + action.label}
-                  className={`button ${action.tone === 'secondary' ? 'secondary' : 'primary'}`}
+                  className={`button ${action.tone === "secondary" ? "secondary" : "primary"}`}
                   href={action.href}
                 >
                   {action.label}
@@ -181,7 +184,7 @@ export function DataTable({
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={row.join('-') + index}>
+            <tr key={row.join("-") + index}>
               {row.map((cell, cellIndex) => (
                 <td key={`${cell}-${cellIndex}`}>{cell}</td>
               ))}
@@ -272,9 +275,9 @@ export function AuthCard({
           <h2>Secure account access</h2>
           <BulletList
             items={[
-              'Email verification is mandatory before dashboard access.',
-              'Forgot password flow issues a time-limited reset link by email.',
-              'Sessions are role-specific and protected with signed tokens.',
+              "Email verification is mandatory before dashboard access.",
+              "Forgot password flow issues a time-limited reset link by email.",
+              "Sessions are role-specific and protected with signed tokens.",
             ]}
           />
         </article>
@@ -290,7 +293,7 @@ export function LineChart({ values }: { values: number[] }) {
       (value, index) =>
         `${(index / (values.length - 1)) * 100},${100 - (value / max) * 100}`,
     )
-    .join(' ');
+    .join(" ");
 
   return (
     <article className="card-surface chart-card">
@@ -298,8 +301,17 @@ export function LineChart({ values }: { values: number[] }) {
         <h2>Applications per semester</h2>
         <span className="chip">Trending upward</span>
       </div>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="line-chart">
-        <polyline fill="none" stroke="#1e40af" strokeWidth="3" points={points} />
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        className="line-chart"
+      >
+        <polyline
+          fill="none"
+          stroke="#1e40af"
+          strokeWidth="3"
+          points={points}
+        />
         {values.map((value, index) => (
           <circle
             key={`${value}-${index}`}
@@ -314,7 +326,11 @@ export function LineChart({ values }: { values: number[] }) {
   );
 }
 
-export function BarChart({ items }: { items: Array<{ label: string; value: number }> }) {
+export function BarChart({
+  items,
+}: {
+  items: Array<{ label: string; value: number }>;
+}) {
   return (
     <article className="card-surface chart-card">
       <div className="section-head">
@@ -354,7 +370,10 @@ export function PieChart({
         <span className="chip">Current cycle</span>
       </div>
       <div className="pie-layout">
-        <div className="pie-chart" style={{ background: `conic-gradient(${stops.join(', ')})` }} />
+        <div
+          className="pie-chart"
+          style={{ background: `conic-gradient(${stops.join(", ")})` }}
+        />
         <div className="legend-list">
           {items.map((item) => (
             <div key={item.label} className="legend-item">
