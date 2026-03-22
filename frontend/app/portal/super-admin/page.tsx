@@ -1,73 +1,100 @@
+import { costModel, pricingPlans, readinessChecklist } from '../../content';
+import { PortalShell } from '../../ui';
+
 const usageCards = [
   {
-    title: "Colleges onboarded",
-    value: "48",
-    description: "Active institutions using the shared public entry website.",
+    title: 'Colleges onboarded',
+    value: '48',
+    description: 'Active paying institutions across the platform.',
   },
   {
-    title: "Students tracked",
-    value: "18,240",
-    description: "Student data included in storage-based billing.",
+    title: 'Active students',
+    value: '9,420',
+    description: 'Students currently counted inside semester billing windows.',
   },
   {
-    title: "Industries linked",
-    value: "326",
-    description:
-      "Industry partners contributing operational and document storage.",
+    title: 'Archived students',
+    value: '24,800',
+    description: 'Read-only historical records retained for reporting and audits.',
   },
   {
-    title: "Billable storage",
-    value: "412 GB",
-    description: "Combined student records, industry data, and uploaded files.",
+    title: 'Industry partners',
+    value: '326',
+    description: 'Free participation channel driving internship supply and market value.',
   },
-];
-
-const superAdminActions = [
-  "Review static deployment status for Cloudflare Pages",
-  "Track tenant memory usage and pricing metrics",
-  "Verify onboarding progress across all colleges and partners",
 ];
 
 export default function SuperAdminPortalPage() {
   return (
-    <main>
-      <section className="panel section-block">
-        <span className="badge">Super admin dashboard</span>
-        <h1>Platform billing and memory usage</h1>
-        <p className="lead">
-          Track per-college memory usage for students, industries, and uploaded
-          documents so you can price each tenant based on actual storage
-          consumption.
-        </p>
-        <div className="stats stats-4 top-gap">
-          {usageCards.map((card) => (
-            <article className="card" key={card.title}>
-              <div className="metric">{card.value}</div>
-              <div className="label">{card.title}</div>
-              <p className="detail">{card.description}</p>
-            </article>
-          ))}
-        </div>
-        <div className="grid-3 top-gap">
-          {superAdminActions.map((item) => (
-            <article className="card" key={item}>
-              <div className="label">Super admin action</div>
-              <p className="detail">{item}</p>
-            </article>
-          ))}
-        </div>
-        <div className="cta-row top-gap">
-          <a className="cta" href="/">
-            ← Back to common homepage
-          </a>
-          <a className="ghost-cta" href="/portal/student">
-            View student portal
-          </a>
-          <a className="ghost-cta" href="/portal/college">
-            View college portal
-          </a>
-        </div>
+    <PortalShell
+      badge="Super admin dashboard"
+      title="Monitor profitability, tenant isolation, and archive growth"
+      lead="The platform owner tracks plan fit, archive utilization, and operational readiness without turning the product into a complex enterprise maze."
+    >
+      <section className="stats stats-4 top-gap">
+        {usageCards.map((card) => (
+          <article className="card" key={card.title}>
+            <div className="metric">{card.value}</div>
+            <div className="label">{card.title}</div>
+            <p className="detail">{card.description}</p>
+          </article>
+        ))}
       </section>
-    </main>
+
+      <section className="grid-2 section-block">
+        <article className="panel nested-panel">
+          <div className="section-heading-row">
+            <h2 className="section-title">Profitability guardrail</h2>
+            <span className="table-highlight">5× target</span>
+          </div>
+          <div className="stack-list top-gap">
+            {costModel.map((item) => (
+              <article className="card" key={item.label}>
+                <div className="metric small">{item.value}</div>
+                <div className="label">{item.label}</div>
+                <p className="detail">{item.detail}</p>
+              </article>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel nested-panel">
+          <div className="section-heading-row">
+            <h2 className="section-title">Plan positioning</h2>
+            <span className="table-highlight">Revenue model</span>
+          </div>
+          <div className="stack-list top-gap">
+            {pricingPlans.map((plan) => (
+              <article className="card" key={plan.name}>
+                <strong>{plan.name}</strong>
+                <div className="label">{plan.price}</div>
+                <p className="detail">{plan.highlight}</p>
+              </article>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <section className="panel section-block nested-panel">
+        <div className="section-heading-row">
+          <h2 className="section-title">SaaS readiness checklist</h2>
+          <span className="table-highlight">Go-live review</span>
+        </div>
+        <ul className="feature-list benefit-list top-gap">
+          {readinessChecklist.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </section>
+
+      <div className="cta-row top-gap">
+        <a className="cta" href="/pricing">
+          Review pricing strategy
+        </a>
+        <a className="ghost-cta" href="/">
+          ← Back to landing page
+        </a>
+      </div>
+    </PortalShell>
   );
 }

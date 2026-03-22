@@ -18,6 +18,13 @@ enum UserRole {
   INDUSTRY_SUPERVISOR
 }
 
+enum AuthScope {
+  COLLEGE
+  STUDENT
+  INDUSTRY
+  SUPER_ADMIN
+}
+
 enum InternshipType {
   MAJOR
   MINOR
@@ -62,12 +69,38 @@ enum PaymentStatus {
   FAILED
 }
 
+enum StudentLifecycleStatus {
+  ACTIVE
+  AT_RISK
+  READY_TO_ARCHIVE
+  ARCHIVED
+}
+
+enum CollegePlanTier {
+  FOUNDATION
+  GROWTH
+  STATEWIDE
+}
+
+enum SemesterCycleStatus {
+  PLANNING
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum ListingVisibility {
+  PUBLIC
+  SELECTED_COLLEGES
+}
+
 model User {
   id           String                  @id @default(cuid())
   email        String                  @unique
   name         String
   phone        String?
   role         UserRole
+  authScope    AuthScope               @default(COLLEGE)
   createdAt    DateTime                @default(now())
   updatedAt    DateTime                @updatedAt
   memberships  UserCollegeMembership[]
@@ -76,22 +109,33 @@ model User {
 }
 
 model College {
-  id                String                       @id @default(cuid())
-  name              String
-  code              String                       @unique
-  emblemUrl         String?
-  domain            String?
-  subscriptionPlan  String                       @default("₹5/student/month")
-  departments       Department[]
-  students          Student[]
-  memberships       UserCollegeMembership[]
-  internships       Internship[]
-  subscriptions     Subscription[]
-  programRules      ProgramRule[]
-  applications      Application[]
-  payments          Payment[]
-  mous              MoU[]
-  reports           Report[]
+  id                           String                       @id @default(cuid())
+  name                         String
+  code                         String                       @unique
+  tenantKey                    String                       @unique
+  emblemUrl                    String?
+  domain                       String?
+  planTier                     CollegePlanTier              @default(FOUNDATION)
+  activeStudentCapPerSemester  Int                          @default(500)
+  archiveAllowanceStudents     Int                          @default(2000)
+  subscriptionPlan             String                       @default("Foundation")
+  departments                  Department[]
+  students                     Student[]
+  memberships                  UserCollegeMembership[]
+  internships                  Internship[]
+  subscriptions                Subscription[]
+  semesterCycles               SemesterCycle[]
+  programRules                 ProgramRule[]
+  applications                 Application[]
+  payments                     Payment[]
+  mous                         MoU[]
+  reports                      Report[]
+  sharedListings               InternshipListingCollege[]
+  partnerColleges              PartnerCollegeLink[]         @relation("PartnerCollegeSource")
+  partnerWithColleges          PartnerCollegeLink[]         @relation("PartnerCollegeTarget")
+  archivedStudentSnapshots     ArchivedStudentSnapshot[]
+
+  @@index([planTier])
 }
 
 model UserCollegeMembership {
@@ -103,6 +147,7 @@ model UserCollegeMembership {
   college   College  @relation(fields: [collegeId], references: [id])
 
   @@unique([userId, collegeId, role])
+  @@index([collegeId, role])
 }
 
 model Department {
@@ -114,42 +159,144 @@ model Department {
   students  Student[]
 
   @@unique([collegeId, code])
+  @@index([collegeId, name])
+}
+
+model SemesterCycle {
+  id             String              @id @default(cuid())
+  collegeId      String
+  label          String
+  academicYear   String
+  semesterNumber Int
+  startsOn       DateTime
+  endsOn         DateTime
+  archiveOn      DateTime
+  status         SemesterCycleStatus @default(PLANNING)
+  college        College             @relation(fields: [collegeId], references: [id])
+  students       Student[]
+  internships    Internship[]
+  applications   Application[]
+  archivedStudentSnapshots ArchivedStudentSnapshot[]
+
+  @@unique([collegeId, academicYear, semesterNumber])
+  @@index([collegeId, status, semesterNumber])
 }
 
 model Student {
-  id               String          @id @default(cuid())
-  userId           String          @unique
-  collegeId        String
-  departmentId     String
-  registerNumber   String          @unique
-  semester         Int
-  program          String
-  skillProfile     Json?
-  user             User            @relation(fields: [userId], references: [id])
-  college          College         @relation(fields: [collegeId], references: [id])
-  department       Department      @relation(fields: [departmentId], references: [id])
-  internships      Internship[]
-  applications     Application[]
-  reports          Report[]
-  certificates     Certificate[]
-  evaluations      Evaluation[]
-  payments         Payment[]
-  attendance       Attendance[]
-  logbooks         Logbook[]
+  id                  String                 @id @default(cuid())
+  userId              String                 @unique
+  collegeId           String
+  departmentId        String
+  semesterCycleId     String?
+  registerNumber      String                 @unique
+  semester            Int
+  program             String
+  lifecycleStatus     StudentLifecycleStatus @default(ACTIVE)
+  archivedAt          DateTime?
+  archiveCompressedAt DateTime?
+  skillProfile        Json?
+  user                User                   @relation(fields: [userId], references: [id])
+  college             College                @relation(fields: [collegeId], references: [id])
+  department          Department             @relation(fields: [departmentId], references: [id])
+  semesterCycle       SemesterCycle?         @relation(fields: [semesterCycleId], references: [id])
+  internships         Internship[]
+  applications        Application[]
+  reports             Report[]
+  certificates        Certificate[]
+  evaluations         Evaluation[]
+  payments            Payment[]
+  attendance          Attendance[]
+  logbooks            Logbook[]
+  archiveSnapshots    ArchivedStudentSnapshot[]
+
+  @@index([collegeId, lifecycleStatus, semester])
+  @@index([semesterCycleId, lifecycleStatus])
+}
+
+model ArchivedStudentSnapshot {
+  id                String    @id @default(cuid())
+  collegeId         String
+  studentId         String
+  semesterCycleId   String?
+  registerNumber    String
+  studentName       String
+  departmentName    String
+  program           String
+  archivedAt        DateTime
+  reportSummary     String?
+  outcomeSummary    String?
+  compressedDocRefs Json?
+  college           College   @relation(fields: [collegeId], references: [id])
+  student           Student   @relation(fields: [studentId], references: [id])
+  semesterCycle     SemesterCycle? @relation(fields: [semesterCycleId], references: [id])
+
+  @@index([collegeId, archivedAt])
+  @@index([studentId])
 }
 
 model Industry {
-  id                      String       @id @default(cuid())
+  id                      String                  @id @default(cuid())
   name                    String
-  isPrivate               Boolean      @default(false)
-  yearsOfExperience       Int          @default(0)
+  isPrivate               Boolean                 @default(false)
+  yearsOfExperience       Int                     @default(0)
   linkedPartnerExperience Int?
   providerCategory        ProviderCategory
   district                String?
   contactEmail            String?
   contactPhone            String?
   internships             Internship[]
+  listings                InternshipListing[]
   mous                    MoU[]
+
+  @@index([providerCategory])
+}
+
+model InternshipListing {
+  id                  String                     @id @default(cuid())
+  industryId          String
+  title               String
+  description         String
+  visibility          ListingVisibility         @default(PUBLIC)
+  seats               Int
+  mode                InternshipMode
+  internshipType      InternshipType
+  semesterPreference  Int?
+  applicationDeadline DateTime
+  isPublished         Boolean                   @default(false)
+  createdAt           DateTime                  @default(now())
+  industry            Industry                  @relation(fields: [industryId], references: [id])
+  colleges            InternshipListingCollege[]
+  applications        Application[]
+
+  @@index([industryId, isPublished])
+  @@index([visibility, applicationDeadline])
+}
+
+model InternshipListingCollege {
+  id          String            @id @default(cuid())
+  listingId   String
+  collegeId   String
+  isPreferred Boolean           @default(false)
+  listing     InternshipListing @relation(fields: [listingId], references: [id])
+  college     College           @relation(fields: [collegeId], references: [id])
+
+  @@unique([listingId, collegeId])
+  @@index([collegeId, isPreferred])
+}
+
+model PartnerCollegeLink {
+  id              String    @id @default(cuid())
+  sourceCollegeId String
+  targetCollegeId String
+  status          String    @default("ACTIVE")
+  notes           String?
+  createdAt       DateTime  @default(now())
+  sourceCollege   College   @relation("PartnerCollegeSource", fields: [sourceCollegeId], references: [id])
+  targetCollege   College   @relation("PartnerCollegeTarget", fields: [targetCollegeId], references: [id])
+
+  @@unique([sourceCollegeId, targetCollegeId])
+  @@index([sourceCollegeId, status])
+  @@index([targetCollegeId, status])
 }
 
 model Internship {
@@ -157,6 +304,8 @@ model Internship {
   collegeId                 String
   studentId                 String
   industryId                String
+  semesterCycleId           String?
+  listingId                 String?
   title                     String
   internshipType            InternshipType
   mode                      InternshipMode
@@ -173,6 +322,8 @@ model Internship {
   college                   College          @relation(fields: [collegeId], references: [id])
   student                   Student          @relation(fields: [studentId], references: [id])
   industry                  Industry         @relation(fields: [industryId], references: [id])
+  semesterCycle             SemesterCycle?   @relation(fields: [semesterCycleId], references: [id])
+  listing                   InternshipListing? @relation(fields: [listingId], references: [id])
   applications              Application[]
   attendance                Attendance[]
   logbooks                  Logbook[]
@@ -180,6 +331,10 @@ model Internship {
   certificate               Certificate?
   evaluation                Evaluation?
   payment                   Payment?
+
+  @@index([collegeId, semesterCycleId, status])
+  @@index([studentId, status])
+  @@index([industryId, status])
 }
 
 model Application {
@@ -187,6 +342,8 @@ model Application {
   collegeId     String
   studentId     String
   internshipId  String
+  semesterCycleId String?
+  listingId     String?
   preference    Int
   rankScore     Float
   workflowState InternshipStatus @default(SUBMITTED)
@@ -194,8 +351,12 @@ model Application {
   college       College          @relation(fields: [collegeId], references: [id])
   student       Student          @relation(fields: [studentId], references: [id])
   internship    Internship       @relation(fields: [internshipId], references: [id])
+  semesterCycle SemesterCycle?   @relation(fields: [semesterCycleId], references: [id])
+  listing       InternshipListing? @relation(fields: [listingId], references: [id])
 
   @@unique([studentId, internshipId])
+  @@index([collegeId, workflowState])
+  @@index([semesterCycleId, workflowState])
 }
 
 model Attendance {
@@ -210,6 +371,7 @@ model Attendance {
   internship    Internship @relation(fields: [internshipId], references: [id])
 
   @@unique([studentId, internshipId, date])
+  @@index([internshipId, date])
 }
 
 model Logbook {
@@ -225,6 +387,8 @@ model Logbook {
   student          Student    @relation(fields: [studentId], references: [id])
   internship       Internship @relation(fields: [internshipId], references: [id])
   approver         User?      @relation("LogbookApprover", fields: [approverUserId], references: [id])
+
+  @@index([internshipId, workDate])
 }
 
 model Report {
@@ -242,6 +406,8 @@ model Report {
   college           College    @relation(fields: [collegeId], references: [id])
   student           Student    @relation(fields: [studentId], references: [id])
   internship        Internship @relation(fields: [internshipId], references: [id])
+
+  @@index([collegeId, submittedAt])
 }
 
 model Certificate {
@@ -252,6 +418,8 @@ model Certificate {
   issuedAt       DateTime?
   student        Student    @relation(fields: [studentId], references: [id])
   internship     Internship @relation(fields: [internshipId], references: [id])
+
+  @@index([studentId, issuedAt])
 }
 
 model Evaluation {
@@ -264,6 +432,8 @@ model Evaluation {
   evaluatedAt   DateTime?
   student       Student    @relation(fields: [studentId], references: [id])
   internship    Internship @relation(fields: [internshipId], references: [id])
+
+  @@index([studentId, evaluatedAt])
 }
 
 model Payment {
@@ -280,24 +450,31 @@ model Payment {
   college               College       @relation(fields: [collegeId], references: [id])
   student               Student       @relation(fields: [studentId], references: [id])
   internship            Internship?   @relation(fields: [internshipId], references: [id])
+
+  @@index([collegeId, status])
 }
 
 model Subscription {
-  id             String   @id @default(cuid())
-  collegeId      String
-  pricePerStudent Int     @default(5)
-  activeFrom     DateTime
-  activeTo       DateTime?
-  college        College   @relation(fields: [collegeId], references: [id])
+  id              String          @id @default(cuid())
+  collegeId       String
+  tier            CollegePlanTier @default(FOUNDATION)
+  annualPriceInInr Int            @default(22000)
+  activeFrom      DateTime
+  activeTo        DateTime?
+  college         College         @relation(fields: [collegeId], references: [id])
+
+  @@index([collegeId, tier])
 }
 
 model ProgramRule {
-  id             String   @id @default(cuid())
-  collegeId      String?
-  programName    String
-  minimumHours   Int
-  submissionDue  String
-  college        College? @relation(fields: [collegeId], references: [id])
+  id            String   @id @default(cuid())
+  collegeId     String?
+  programName   String
+  minimumHours  Int
+  submissionDue String
+  college       College? @relation(fields: [collegeId], references: [id])
+
+  @@index([collegeId, programName])
 }
 
 model SystemRule {
@@ -309,14 +486,15 @@ model SystemRule {
 }
 
 model MoU {
-  id               String    @id @default(cuid())
-  collegeId        String
-  industryId       String
-  documentUrl      String
-  signedAt         DateTime?
-  expiresAt        DateTime?
-  college          College   @relation(fields: [collegeId], references: [id])
-  industry         Industry  @relation(fields: [industryId], references: [id])
+  id          String    @id @default(cuid())
+  collegeId   String
+  industryId  String
+  documentUrl String
+  signedAt    DateTime?
+  expiresAt   DateTime?
+  college     College   @relation(fields: [collegeId], references: [id])
+  industry    Industry  @relation(fields: [industryId], references: [id])
 
   @@unique([collegeId, industryId])
+  @@index([collegeId, expiresAt])
 }

@@ -1,28 +1,42 @@
-export type InternshipType = 'MAJOR' | 'MINOR' | 'INTERDISCIPLINARY' | 'ALLIED';
-export type InternshipMode = 'OFFLINE' | 'ONLINE';
+export type InternshipType = "MAJOR" | "MINOR" | "INTERDISCIPLINARY" | "ALLIED";
+export type InternshipMode = "OFFLINE" | "ONLINE";
 export type ProviderCategory =
-  | 'EDUCATIONAL_INSTITUTION'
-  | 'RESEARCH_LAB'
-  | 'GOVERNMENT_INSTITUTION'
-  | 'NGO'
-  | 'MSME_OR_INDUSTRY'
-  | 'BANK_OR_FINANCIAL'
-  | 'IT_OR_DIGITAL'
-  | 'HEALTHCARE_OR_WELLNESS'
-  | 'MEDIA_OR_CULTURAL'
-  | 'AGRICULTURE_OR_ENVIRONMENT';
+  | "EDUCATIONAL_INSTITUTION"
+  | "RESEARCH_LAB"
+  | "GOVERNMENT_INSTITUTION"
+  | "NGO"
+  | "MSME_OR_INDUSTRY"
+  | "BANK_OR_FINANCIAL"
+  | "IT_OR_DIGITAL"
+  | "HEALTHCARE_OR_WELLNESS"
+  | "MEDIA_OR_CULTURAL"
+  | "AGRICULTURE_OR_ENVIRONMENT";
 
-export type ProgramCode = 'BA' | 'BSC' | 'BCOM' | 'BBA' | 'BCA' | 'BVOC' | 'OTHER';
-
+export type ProgramCode =
+  | "BA"
+  | "BSC"
+  | "BCOM"
+  | "BBA"
+  | "BCA"
+  | "BVOC"
+  | "OTHER";
 export type WorkflowState =
-  | 'DRAFT'
-  | 'SUBMITTED'
-  | 'DEPARTMENT_REVIEW'
-  | 'DEPARTMENT_APPROVED'
-  | 'COLLEGE_APPROVED'
-  | 'REJECTED'
-  | 'ACTIVE'
-  | 'COMPLETED';
+  | "DRAFT"
+  | "SUBMITTED"
+  | "DEPARTMENT_REVIEW"
+  | "DEPARTMENT_APPROVED"
+  | "COLLEGE_APPROVED"
+  | "REJECTED"
+  | "ACTIVE"
+  | "COMPLETED";
+
+export type StudentLifecycleStatus =
+  | "ACTIVE"
+  | "AT_RISK"
+  | "READY_TO_ARCHIVE"
+  | "ARCHIVED";
+export type PlanTier = "FOUNDATION" | "GROWTH" | "STATEWIDE";
+export type ListingVisibility = "PUBLIC" | "SELECTED_COLLEGES";
 
 export interface InternshipCellStructure {
   principalUserId: string;
@@ -50,7 +64,7 @@ export interface InternshipDraft {
   endDate: string;
   totalHours: number;
   industrySupervisorUserId?: string | null;
-  externalPlatform?: 'KSHEC' | 'DIRECT' | null;
+  externalPlatform?: "KSHEC" | "DIRECT" | null;
   departmentCouncilApproved: boolean;
 }
 
@@ -93,47 +107,82 @@ export interface EvaluationMarks {
 }
 
 export interface PaymentRule {
-  internshipSource: 'INTERNAL' | 'EXTERNAL';
+  internshipSource: "INTERNAL" | "EXTERNAL";
   amountInInr: number;
   requiresFacultyVerification: true;
   requiresCoordinatorVerification: true;
 }
 
-
 export interface StorageBreakdownMb {
-  studentData: number;
+  activeStudentData: number;
+  archivedStudentData: number;
   industryData: number;
   documents: number;
+}
+
+export interface StudentCostProfile {
+  activePerSemesterInInr: number;
+  archivedPerYearInInr: number;
+  notes: string[];
+}
+
+export interface CollegeCostScenario {
+  activeStudents: number;
+  archivedStudents: number;
+  annualInfraCostInInr: number;
+  recommendedPlan: PlanTier;
+  recommendedFeeInInr: number;
+  projectedGrossMarginMultiple: number;
 }
 
 export interface CollegeStorageUsage {
   collegeId: string;
   collegeName: string;
-  studentsRegistered: number;
+  activeStudents: number;
+  archivedStudents: number;
   industriesRegistered: number;
   storageBreakdownMb: StorageBreakdownMb;
   totalStorageMb: number;
-  estimatedMonthlyChargeInInr: number;
+  estimatedAnnualInfraCostInInr: number;
+  recommendedPlan: PlanTier;
 }
 
 export interface StorageSummary {
   collegesRegistered: number;
-  studentsRegistered: number;
+  activeStudents: number;
+  archivedStudents: number;
   industriesRegistered: number;
   totalStorageMb: number;
-  estimatedMonthlyChargeInInr: number;
+  estimatedAnnualInfraCostInInr: number;
 }
 
 export interface PricingPlan {
   name: string;
-  audience: string;
-  basePricePerStudentInInr: number;
-  storagePricePerGbInInr: number;
+  tier: PlanTier;
+  annualPriceInInr: number;
+  activeStudentsIncludedPerSemester: number;
+  archiveStudentsIncluded: number;
+  additionalActiveStudentPriceInInr: number;
+  archiveAddOnPricePer500InInr: number;
+  supportModel: string;
   highlights: string[];
+}
+
+export interface SemesterCycleSummary {
+  id: string;
+  label: string;
+  semester: number;
+  academicYear: string;
+  activeStudents: number;
+  archivedStudents: number;
+  applications: number;
+  placementRate: number;
+  lifecycleStatus: "PLANNING" | "ACTIVE" | "CLOSED" | "ARCHIVED";
 }
 
 export interface PlatformOverview {
   platform: string;
+  positioning: string;
   deployment: {
     frontendDirectory: string;
     frontendTarget: string;
@@ -143,11 +192,45 @@ export interface PlatformOverview {
   superAdminEmail: string;
   headlineMetrics: {
     collegesRegistered: number;
-    studentsRegistered: number;
+    activeStudents: number;
+    archivedStudents: number;
     industriesRegistered: number;
     totalStorageMb: number;
   };
   pricingPlans: PricingPlan[];
+  studentCostProfile: StudentCostProfile;
   storageSummary: StorageSummary;
   storageUsage: CollegeStorageUsage[];
+  collegeCostScenarios: CollegeCostScenario[];
+  semesterCycles: SemesterCycleSummary[];
+}
+
+export interface AuthArchitecture {
+  scopes: Array<{
+    role: "COLLEGE" | "STUDENT" | "INDUSTRY" | "SUPER_ADMIN";
+    authSurface: string;
+    tokenAudience: string;
+    accessRules: string[];
+  }>;
+  multiTenantRules: string[];
+}
+
+export interface ArchivePolicy {
+  baseArchiveIncludedStudents: number;
+  readOnlyAccess: string[];
+  compressionPolicy: string[];
+  monetization: string[];
+}
+
+export interface SaaSReadinessReport {
+  architecture: AuthArchitecture;
+  archivePolicy: ArchivePolicy;
+  profitGuardrail: {
+    targetMultiple: number;
+    achievedOnPlans: PlanTier[];
+    explanation: string;
+  };
+  dbUpgradeNotes: string[];
+  apiUpgradeNotes: string[];
+  workflowGuarantees: string[];
 }
