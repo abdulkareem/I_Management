@@ -9,7 +9,9 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "node -e \"console.log('Database schema package check only')\"",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:validate": "prisma validate"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1"

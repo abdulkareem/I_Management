@@ -15,9 +15,9 @@ Internship Cloud ERP is a production-oriented multi-tenant SaaS PWA for colleges
 
 ## Monorepo Layout
 
-- `frontend/` – Next.js Cloudflare Pages frontend with the landing page, pricing page, and role portals.
-- `backend/` – Fastify backend for Railway with bootstrap, overview, allocation, and SaaS-readiness endpoints.
-- `packages/database` – Prisma schema for multi-tenant entities, semester cycles, archive snapshots, and partner-college sharing.
+- `frontend/` – Next.js PWA frontend with lifecycle-focused role dashboards and public onboarding pages.
+- `backend/` – Fastify backend for Railway with production deployment hooks, auth, file-storage, document-engine, and ERP blueprint endpoints.
+- `packages/database` – Prisma schema for multi-tenant identity, internship lifecycle automation, generated documents, and storage isolation.
 - `packages/compliance` – University rule engine that preserves existing workflow logic.
 - `packages/types` – Shared domain and reporting types.
 - `docs/saas-upgrade.md` – Cost model, pricing strategy, architecture decisions, and SaaS readiness blueprint.
@@ -47,7 +47,7 @@ The compliance package continues to enforce:
 
 ```bash
 pnpm install
-pnpm --filter @prism/database prisma generate
+pnpm --filter @prism/database prisma:generate
 pnpm dev
 ```
 
@@ -55,7 +55,7 @@ pnpm dev
 
 - **Frontend:** Cloudflare Pages
   - Root directory: `frontend`
-  - Build command: `npm run build`
+  - Build command: `pnpm --filter @prism/web build`
   - Output directory: `out`
 - **Backend:** Railway
 - **Database:** PostgreSQL

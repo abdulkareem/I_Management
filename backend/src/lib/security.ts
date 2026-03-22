@@ -1,4 +1,5 @@
-import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { hashSync, compareSync } from 'bcryptjs';
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
 
 export type AuthRole = 'college' | 'student' | 'industry' | 'super_admin';
@@ -8,6 +9,7 @@ export interface SessionPrincipal {
   email: string;
   role: AuthRole;
   audience: string;
+  tenantId: string;
   collegeId?: string;
   industryId?: string;
   sessionId: string;
@@ -25,20 +27,33 @@ function base64UrlDecode(value: string) {
   return Buffer.from(value, 'base64url').toString('utf8');
 }
 
+export function validatePasswordPolicy(password: string) {
+  return password.length >= 8;
+}
+
 export function hashPassword(password: string) {
-  const salt = randomBytes(16).toString('hex');
-  const digest = scryptSync(password, salt, 64).toString('hex');
-  return `${salt}:${digest}`;
+  return hashSync(password, 12);
 }
 
 export function verifyPassword(password: string, storedHash: string) {
-  const [salt, digest] = storedHash.split(':');
-  const candidate = scryptSync(password, salt, 64);
-  const existing = Buffer.from(digest, 'hex');
-  return timingSafeEqual(candidate, existing);
+  return compareSync(password, storedHash);
 }
 
-export function createSignedSessionToken(payload: Omit<SessionPrincipal, 'exp' | 'sessionId'> & { sessionId?: string; expiresInSeconds?: number }) {
+export function createOpaqueToken(size = 32) {
+  return randomBytes(size).toString('base64url');
+}
+
+export function hashOpaqueToken(token: string) {
+  return createHmac('sha256', SECRET).update(token).digest('hex');
+}
+
+export function createNumericOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+export function createSignedSessionToken(
+  payload: Omit<SessionPrincipal, 'exp' | 'sessionId'> & { sessionId?: string; expiresInSeconds?: number },
+) {
   const header = { alg: 'HS256', typ: 'JWT' };
   const principal: SessionPrincipal = {
     ...payload,
@@ -67,7 +82,10 @@ export function verifySignedSessionToken(token: string): SessionPrincipal {
     .update(`${encodedHeader}.${encodedPayload}`)
     .digest('base64url');
 
-  if (signature.length !== expectedSignature.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+  if (
+    signature.length !== expectedSignature.length ||
+    !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
+  ) {
     throw new Error('Invalid token signature.');
   }
 

@@ -5,15 +5,15 @@ export default function StudentSignupPage() {
     <AuthCard
       role="Student Registration"
       title="Create your student account"
-      lead="Register using your college email to access internships, upload documents, and track application progress."
-      submitLabel="Create Student Account"
+      lead="Register with your verified email, college ID, and university registration number to access InternSuite securely."
+      submitLabel="Start Verification"
       fields={[
         { label: 'Full name', type: 'text', placeholder: 'Your full name' },
         { label: 'College email', type: 'email', placeholder: 'student@college.edu' },
-        { label: 'Register number', type: 'text', placeholder: 'University or college register number' },
-        { label: 'Password', type: 'password', placeholder: 'Create a secure password' },
+        { label: 'College ID', type: 'text', placeholder: 'College-issued student ID' },
+        { label: 'University registration number', type: 'text', placeholder: 'University registration number' },
       ]}
-      secondaryLink={{ href: '/login/student', label: 'Already have an account?' }}
+      secondaryLink={{ href: '/verify-email', label: 'Already verified your email?' }}
     />
   );
 }
