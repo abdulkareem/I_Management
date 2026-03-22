@@ -31,30 +31,42 @@ export const homepageJourney = [
 
 export const publicPlans = [
   {
-    name: "Foundation",
-    price: "₹22,000 / year",
+    name: "Annual plan",
+    price: "₹9,999 / year",
     audience:
-      "For colleges starting a structured internship management workflow.",
+      "For colleges using InternSuite with up to 200 students for one year.",
     bullets: [
-      "Up to 500 active students per semester",
-      "Student and industry access included",
-      "Reporting, partner sharing, and compliance workflows",
-      "Standard onboarding support",
+      "One-year access for up to 200 students",
+      "College, student, and industry dashboards included",
+      "Internship workflows, reporting, and compliance tools",
+      "Recommended starting package for campus deployment",
     ],
-    cta: "Start Foundation",
+    cta: "Start Annual Plan",
   },
   {
-    name: "Growth",
-    price: "₹50,000 / year",
+    name: "Below 150 students",
+    price: "₹5 / student / month",
     audience:
-      "For colleges managing more departments and a higher internship volume.",
+      "Usage-based pricing for colleges managing fewer than 150 students.",
     bullets: [
-      "Up to 2,000 active students per semester",
-      "Priority support and advanced reporting",
-      "Expanded archive retention and coordination tools",
-      "Multi-department operational scale",
+      "Monthly billing for smaller student cohorts",
+      "College, student, and industry access included",
+      "Internship tracking, approvals, and reporting",
+      "Flexible option for low-volume campuses",
     ],
-    cta: "Choose Growth",
+    cta: "Choose Monthly Plan",
+  },
+  {
+    name: "Above 200 students",
+    price: "₹4 / student / month",
+    audience: "Usage-based pricing for colleges with more than 200 students.",
+    bullets: [
+      "Lower per-student pricing for larger cohorts",
+      "Scales with active student usage each month",
+      "College administration with student and industry access",
+      "Supports larger internship operations efficiently",
+    ],
+    cta: "Contact for Scale",
   },
 ];
 
