@@ -7,90 +7,48 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum TenantStatus {
-  ACTIVE
-  SUSPENDED
-  ARCHIVED
-}
-
 enum UserRole {
-  SUPER_ADMIN
-  COLLEGE_ADMIN
-  COLLEGE_STAFF
+  COLLEGE
   STUDENT
-  INDUSTRY_ADMIN
-  INDUSTRY_SUPERVISOR
+  INDUSTRY
+  ADMIN
 }
 
-enum IdentityStatus {
-  PENDING_VERIFICATION
-  VERIFIED
-  PASSWORD_SET
-  SUSPENDED
+enum SubscriptionPlan {
+  FOUNDATION
+  GROWTH
 }
 
-enum ChallengePurpose {
-  EMAIL_VERIFICATION
-  PASSWORD_RESET
-  PASSWORD_SET
+enum IndustryField {
+  IT
+  MANUFACTURING
+  HEALTHCARE
+  FINANCE
+  EDUCATION
+  RETAIL
+  LOGISTICS
+  AGRICULTURE
+  MEDIA
+  GOVERNMENT
+  OTHER
 }
 
-enum ChallengeChannel {
-  EMAIL_LINK
-  EMAIL_OTP
+enum InternshipVisibility {
+  PUBLIC
+  SELECTED
+  INTERNAL
 }
 
-enum FileKind {
-  COLLEGE_LOGO
-  INDUSTRY_LOGO
-  STUDENT_PASSPORT_PHOTO
-  STUDENT_RESUME
-  GENERATED_PDF
-  SUPPORTING_ATTACHMENT
-}
-
-enum FileVisibility {
-  PRIVATE
-  TENANT
-  SHARED
-}
-
-enum InternshipType {
-  MAJOR
-  MINOR
-  INTERDISCIPLINARY
-  ALLIED
-}
-
-enum InternshipMode {
-  OFFLINE
-  ONLINE
-  HYBRID
-}
-
-enum ProviderCategory {
-  EDUCATIONAL_INSTITUTION
-  RESEARCH_LAB
-  GOVERNMENT_INSTITUTION
-  NGO
-  MSME_OR_INDUSTRY
-  BANK_OR_FINANCIAL
-  IT_OR_DIGITAL
-  HEALTHCARE_OR_WELLNESS
-  MEDIA_OR_CULTURAL
-  AGRICULTURE_OR_ENVIRONMENT
-}
-
-enum InternshipStatus {
-  DRAFT
-  PENDING_COLLEGE_APPROVAL
+enum ApplicationStatus {
+  APPLIED
   APPROVED
   REJECTED
-  OPEN_FOR_APPLICATIONS
-  PLACEMENT_IN_PROGRESS
-  ACTIVE
-  COMPLETED
-  CLOSED
+}
+
+enum ApprovalStage {
+  INTERNSHIP
+  STUDENT_APPLICATION
+  ATTENDANCE
 }
 
 enum ApprovalStatus {
@@ -99,32 +57,9 @@ enum ApprovalStatus {
   REJECTED
 }
 
-enum ApplicationStatus {
-  SUBMITTED
-  COLLEGE_REVIEW
-  APPROVED
-  REJECTED
-  WITHDRAWN
-  SELECTED
-}
-
-enum AttendancePeriod {
-  DAILY
-  WEEKLY
-}
-
-enum AttendanceReviewStatus {
-  DRAFT
-  SUBMITTED_TO_COLLEGE
-  APPROVED_BY_COLLEGE
-  REJECTED_BY_COLLEGE
-}
-
 enum AttendanceStatus {
   PRESENT
   ABSENT
-  HALF_DAY
-  ON_LEAVE
 }
 
 enum DocumentType {
@@ -134,450 +69,324 @@ enum DocumentType {
   MARKSHEET
 }
 
-enum DocumentStatus {
-  DRAFT
-  GENERATED
-  SHARED
-  SIGNED
-  ARCHIVED
+enum FileStorageType {
+  LOGO
+  PHOTO
+  PDF
+  RESUME
 }
 
-enum EvaluationStatus {
-  DRAFT
-  SUBMITTED
-  APPROVED
-}
-
-enum MarksheetStatus {
-  DRAFT
-  PUBLISHED
+enum OtpPurpose {
+  REGISTRATION
+  PASSWORD_RESET
+  LOGIN_CHALLENGE
 }
 
 model Tenant {
-  id          String          @id @default(cuid())
+  id          String        @id @default(cuid())
+  code        String        @unique
   name        String
-  slug        String          @unique
-  status      TenantStatus    @default(ACTIVE)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   users       User[]
   colleges    College[]
   industries  Industry[]
   students    Student[]
   internships Internship[]
   applications Application[]
-  files       FileStorage[]
-  documents   GeneratedDocument[]
-  mous        Mou[]
-  attendanceBatches AttendanceBatch[]
+  mous        MOU[]
+  attendance  Attendance[]
   evaluations Evaluation[]
   marksheets  Marksheet[]
+  approvalLetters ApprovalLetter[]
+  files       FileStorage[]
+  otpChallenges OtpChallenge[]
+  approvals   WorkflowApproval[]
 
-  @@index([status])
+  @@index([isActive])
 }
 
 model User {
-  id                 String              @id @default(cuid())
-  tenantId           String
-  email              String              @unique
-  name               String
-  phone              String?
-  role               UserRole
-  identityStatus     IdentityStatus      @default(PENDING_VERIFICATION)
-  passwordHash       String?
-  emailVerifiedAt    DateTime?
-  lastLoginAt        DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  tenant             Tenant              @relation(fields: [tenantId], references: [id])
-  college            College?
-  industry           Industry?
-  student            Student?
-  sessions           Session[]
-  challenges         IdentityChallenge[]
-  uploadedFiles      FileStorage[]       @relation("FileUploader")
-  approvedInternships CollegeApproval[]  @relation("ApprovalActor")
-  reviewedApplications Application[]     @relation("ApplicationReviewer")
-  attendanceBatches  AttendanceBatch[]   @relation("AttendanceSubmitter")
-  attendanceRecords  AttendanceRecord[]  @relation("AttendanceMarker")
-  evaluations        Evaluation[]        @relation("EvaluationAuthor")
+  id            String      @id @default(cuid())
+  tenantId      String
+  email         String      @unique
+  password      String?
+  role          UserRole
+  isVerified    Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  college       College?
+  industry      Industry?
+  student       Student?
+  otpChallenges OtpChallenge[]
 
   @@index([tenantId, role])
-  @@index([tenantId, identityStatus])
-}
-
-model Session {
-  id          String   @id @default(cuid())
-  userId       String
-  jwtId        String   @unique
-  audience     String
-  ipAddress    String?
-  userAgent    String?
-  expiresAt    DateTime
-  revokedAt    DateTime?
-  createdAt    DateTime @default(now())
-  user         User     @relation(fields: [userId], references: [id])
-
-  @@index([userId, expiresAt])
-  @@index([audience, revokedAt])
-}
-
-model IdentityChallenge {
-  id          String            @id @default(cuid())
-  userId       String
-  purpose      ChallengePurpose
-  channel      ChallengeChannel
-  tokenHash    String            @unique
-  otpHash      String?
-  expiresAt    DateTime
-  consumedAt   DateTime?
-  createdAt    DateTime          @default(now())
-  metadata     Json?
-  user         User              @relation(fields: [userId], references: [id])
-
-  @@index([userId, purpose, expiresAt])
+  @@index([tenantId, isVerified])
 }
 
 model College {
-  id              String             @id @default(cuid())
-  tenantId        String
-  primaryUserId   String             @unique
-  code            String             @unique
-  name            String
-  logoFileId      String?
-  domain          String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  tenant          Tenant             @relation(fields: [tenantId], references: [id])
-  primaryUser     User               @relation(fields: [primaryUserId], references: [id])
-  logoFile        FileStorage?       @relation("CollegeLogo", fields: [logoFileId], references: [id])
-  students        Student[]
-  internships     Internship[]
-  applications    Application[]
-  targetListings  InternshipTargetCollege[]
-  approvals       CollegeApproval[]
-  attendanceBatches AttendanceBatch[]
-  evaluations     Evaluation[]
-  marksheets      Marksheet[]
-  documents       GeneratedDocument[]
+  id               String           @id @default(cuid())
+  tenantId         String
+  userId           String           @unique
+  name             String
+  logoUrl          String?
+  address          String
+  university       String
+  isAutonomous     Boolean          @default(false)
+  subscriptionPlan SubscriptionPlan @default(FOUNDATION)
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  students         Student[]
+  approvals        WorkflowApproval[]
+  internships      Internship[]     @relation("ApprovedByCollege")
+  applications     Application[]
+  mous             MOU[]
+  attendance       Attendance[]
+  evaluations      Evaluation[]
+  marksheets       Marksheet[]
 
-  @@index([tenantId, name])
+  @@index([tenantId, isActive])
+  @@index([tenantId, subscriptionPlan])
 }
 
 model Industry {
-  id                String             @id @default(cuid())
+  id                String         @id @default(cuid())
   tenantId          String
-  primaryUserId     String             @unique
+  userId            String         @unique
   name              String
-  companyName       String
-  logoFileId        String?
-  providerCategory  ProviderCategory
-  contactEmail      String             @unique
-  contactPhone      String?
-  yearsOfExperience Int                @default(0)
-  isPrivate         Boolean            @default(false)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-  primaryUser       User               @relation(fields: [primaryUserId], references: [id])
-  logoFile          FileStorage?       @relation("IndustryLogo", fields: [logoFileId], references: [id])
+  logoUrl           String?
+  industryField     IndustryField
+  description       String?
+  internshipRoles   String[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  tenant            Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   internships       Internship[]
-  approvals         CollegeApproval[]
-  attendanceBatches AttendanceBatch[]
-  documents         GeneratedDocument[]
+  applications      Application[]
+  mous              MOU[]
+  attendance        Attendance[]
+  approvals         WorkflowApproval[] @relation("IndustryApprovals")
 
-  @@index([tenantId, providerCategory])
+  @@index([tenantId, industryField])
 }
 
 model Student {
-  id                           String              @id @default(cuid())
-  tenantId                     String
-  userId                       String              @unique
-  collegeId                    String
-  email                        String
-  fullName                     String
-  collegeStudentId             String
-  universityRegistrationNumber String
-  departmentName               String
-  program                      String
-  semester                     Int
-  passportPhotoFileId          String?
-  resumeFileId                 String?
-  createdAt                    DateTime            @default(now())
-  updatedAt                    DateTime            @updatedAt
-  tenant                       Tenant              @relation(fields: [tenantId], references: [id])
-  user                         User                @relation(fields: [userId], references: [id])
-  college                      College             @relation(fields: [collegeId], references: [id])
-  passportPhotoFile            FileStorage?        @relation("StudentPassportPhoto", fields: [passportPhotoFileId], references: [id])
-  resumeFile                   FileStorage?        @relation("StudentResume", fields: [resumeFileId], references: [id])
-  applications                 Application[]
-  attendanceRecords            AttendanceRecord[]
-  evaluations                  Evaluation[]
-  marksheets                   Marksheet[]
-  documents                    GeneratedDocument[]
+  id                String      @id @default(cuid())
+  tenantId          String
+  userId            String      @unique
+  collegeId         String
+  email             String
+  fullName          String
+  universityRegNo   String
+  dob               DateTime
+  whatsappNumber    String
+  address           String
+  programme         String
+  year              Int
+  semester          Int
+  photoUrl          String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  tenant            Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  college           College     @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  applications      Application[]
+  attendance        Attendance[]
+  evaluations       Evaluation[]
+  marksheets        Marksheet[]
 
-  @@unique([email, universityRegistrationNumber])
-  @@unique([collegeId, collegeStudentId])
-  @@index([tenantId, collegeId, semester])
+  @@unique([email, universityRegNo])
+  @@unique([collegeId, universityRegNo])
+  @@index([tenantId, collegeId])
+  @@index([tenantId, semester])
 }
 
 model Internship {
-  id                  String             @id @default(cuid())
+  id                  String               @id @default(cuid())
   tenantId            String
-  collegeId           String
-  industryId          String
+  collegeId           String?
   title               String
   description         String
-  terms               Json
-  seats               Int
-  internshipType      InternshipType
-  mode                InternshipMode
-  providerCategory    ProviderCategory
-  status              InternshipStatus   @default(DRAFT)
-  applicationDeadline DateTime
-  startsOn            DateTime
-  endsOn              DateTime
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  tenant              Tenant             @relation(fields: [tenantId], references: [id])
-  college             College            @relation(fields: [collegeId], references: [id])
-  industry            Industry           @relation(fields: [industryId], references: [id])
-  targetColleges      InternshipTargetCollege[]
-  approvals           CollegeApproval[]
+  field               IndustryField
+  duration            String
+  stipend             Decimal?             @db.Decimal(10, 2)
+  createdByIndustryId String
+  visibility          InternshipVisibility @default(PUBLIC)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  college             College?             @relation("ApprovedByCollege", fields: [collegeId], references: [id], onDelete: SetNull)
+  industry            Industry             @relation(fields: [createdByIndustryId], references: [id], onDelete: Cascade)
   applications        Application[]
-  attendanceBatches   AttendanceBatch[]
-  attendanceRecords   AttendanceRecord[]
-  evaluations         Evaluation[]
-  marksheets          Marksheet[]
-  documents           GeneratedDocument[]
+  approvals           WorkflowApproval[]
 
-  @@index([tenantId, status, applicationDeadline])
-  @@index([collegeId, status])
-  @@index([industryId, status])
-}
-
-model InternshipTargetCollege {
-  id           String      @id @default(cuid())
-  internshipId String
-  collegeId    String
-  createdAt    DateTime    @default(now())
-  ruleset      Json?
-  internship   Internship  @relation(fields: [internshipId], references: [id])
-  college      College     @relation(fields: [collegeId], references: [id])
-
-  @@unique([internshipId, collegeId])
-  @@index([collegeId])
-}
-
-model CollegeApproval {
-  id               String         @id @default(cuid())
-  internshipId     String
-  collegeId        String
-  industryId       String
-  approvedByUserId String?
-  status           ApprovalStatus @default(PENDING)
-  reviewedAt       DateTime?
-  notes            String?
-  internship       Internship     @relation(fields: [internshipId], references: [id])
-  college          College        @relation(fields: [collegeId], references: [id])
-  industry         Industry       @relation(fields: [industryId], references: [id])
-  approvedBy       User?          @relation("ApprovalActor", fields: [approvedByUserId], references: [id])
-  mou              Mou?
-
-  @@unique([internshipId, collegeId])
-  @@index([collegeId, status])
+  @@index([tenantId, visibility])
+  @@index([tenantId, createdByIndustryId])
+  @@index([tenantId, collegeId])
 }
 
 model Application {
-  id                 String            @id @default(cuid())
-  tenantId           String
-  collegeId          String
-  internshipId       String
-  studentId          String
-  reviewedByUserId   String?
-  status             ApplicationStatus @default(SUBMITTED)
-  coverLetter        String?
-  approvedAt         DateTime?
-  rejectedAt         DateTime?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  tenant             Tenant            @relation(fields: [tenantId], references: [id])
-  college            College           @relation(fields: [collegeId], references: [id])
-  internship         Internship        @relation(fields: [internshipId], references: [id])
-  student            Student           @relation(fields: [studentId], references: [id])
-  reviewedBy         User?             @relation("ApplicationReviewer", fields: [reviewedByUserId], references: [id])
-  documents          GeneratedDocument[]
+  id             String            @id @default(cuid())
+  tenantId       String
+  collegeId      String
+  studentId      String
+  internshipId   String
+  industryId     String
+  status         ApplicationStatus @default(APPLIED)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  college        College           @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  student        Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  internship     Internship        @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  industry       Industry          @relation(fields: [industryId], references: [id], onDelete: Cascade)
+  approvalLetter ApprovalLetter?
+  approvals      WorkflowApproval[]
 
-  @@unique([internshipId, studentId])
-  @@index([tenantId, status])
-  @@index([collegeId, status])
+  @@unique([studentId, internshipId])
+  @@index([tenantId, collegeId, status])
+  @@index([tenantId, industryId, status])
 }
 
-model Mou {
-  id                String          @id @default(cuid())
-  tenantId          String
-  collegeApprovalId String          @unique
-  documentId        String          @unique
-  status            DocumentStatus  @default(GENERATED)
-  signedAt          DateTime?
-  expiresAt         DateTime?
-  createdAt         DateTime        @default(now())
-  document          GeneratedDocument @relation(fields: [documentId], references: [id])
-  collegeApproval   CollegeApproval @relation(fields: [collegeApprovalId], references: [id])
-  tenant            Tenant          @relation(fields: [tenantId], references: [id])
+model MOU {
+  id             String      @id @default(cuid())
+  tenantId       String
+  collegeId      String
+  industryId     String
+  fileUrl        String
+  createdAt      DateTime    @default(now())
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  college        College     @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  industry       Industry    @relation(fields: [industryId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, status])
+  @@unique([collegeId, industryId])
+  @@index([tenantId, createdAt])
 }
 
-model AttendanceBatch {
-  id                String                 @id @default(cuid())
+model ApprovalLetter {
+  id             String      @id @default(cuid())
+  tenantId       String
+  applicationId  String      @unique
+  fileUrl        String
+  createdAt      DateTime    @default(now())
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+}
+
+model Attendance {
+  id                String           @id @default(cuid())
   tenantId          String
   collegeId         String
+  studentId         String
   industryId        String
-  internshipId      String
-  submittedByUserId String
-  period            AttendancePeriod
-  reviewStatus      AttendanceReviewStatus @default(DRAFT)
-  windowStartsOn    DateTime
-  windowEndsOn      DateTime
-  notes             String?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  tenant            Tenant                 @relation(fields: [tenantId], references: [id])
-  college           College                @relation(fields: [collegeId], references: [id])
-  industry          Industry               @relation(fields: [industryId], references: [id])
-  internship        Internship             @relation(fields: [internshipId], references: [id])
-  submittedBy       User                   @relation("AttendanceSubmitter", fields: [submittedByUserId], references: [id])
-  records           AttendanceRecord[]
-  documents         GeneratedDocument[]
+  applicationId     String?
+  date              DateTime
+  status            AttendanceStatus
+  approvedByCollege Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  college           College          @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  student           Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  industry          Industry         @relation(fields: [industryId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, reviewStatus])
-  @@index([collegeId, internshipId])
-}
-
-model AttendanceRecord {
-  id             String           @id @default(cuid())
-  batchId         String
-  studentId       String
-  internshipId    String
-  attendanceDate  DateTime
-  status          AttendanceStatus
-  markedByUserId  String
-  remarks         String?
-  createdAt       DateTime         @default(now())
-  batch           AttendanceBatch  @relation(fields: [batchId], references: [id])
-  student         Student          @relation(fields: [studentId], references: [id])
-  internship      Internship       @relation(fields: [internshipId], references: [id])
-  markedBy        User             @relation("AttendanceMarker", fields: [markedByUserId], references: [id])
-
-  @@unique([studentId, internshipId, attendanceDate])
-  @@index([batchId, attendanceDate])
+  @@unique([studentId, date])
+  @@index([tenantId, collegeId, date])
+  @@index([tenantId, industryId, date])
 }
 
 model Evaluation {
-  id               String           @id @default(cuid())
-  tenantId         String
-  collegeId        String
-  internshipId     String
-  studentId        String
-  evaluatorUserId  String
-  rubricSnapshot   Json
-  internalMarks    Int
-  externalMarks    Int
-  totalMarks       Int
-  status           EvaluationStatus @default(DRAFT)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  tenant           Tenant           @relation(fields: [tenantId], references: [id])
-  college          College          @relation(fields: [collegeId], references: [id])
-  internship       Internship       @relation(fields: [internshipId], references: [id])
-  student          Student          @relation(fields: [studentId], references: [id])
-  evaluator        User             @relation("EvaluationAuthor", fields: [evaluatorUserId], references: [id])
-  marksheet        Marksheet?
+  id             String      @id @default(cuid())
+  tenantId       String
+  collegeId      String
+  studentId      String
+  applicationId  String?
+  marks          Decimal     @db.Decimal(5, 2)
+  grade          String
+  remarks        String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  college        College     @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  student        Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  @@unique([internshipId, studentId])
-  @@index([tenantId, status])
+  @@index([tenantId, collegeId, createdAt])
+  @@index([tenantId, studentId])
 }
 
 model Marksheet {
-  id             String           @id @default(cuid())
+  id             String      @id @default(cuid())
   tenantId       String
   collegeId      String
-  internshipId   String
   studentId      String
-  evaluationId   String           @unique
-  documentId     String           @unique
-  totalMarks     Int
-  letterGrade    String
-  status         MarksheetStatus  @default(DRAFT)
-  publishedAt    DateTime?
-  tenant         Tenant           @relation(fields: [tenantId], references: [id])
-  college        College          @relation(fields: [collegeId], references: [id])
-  internship     Internship       @relation(fields: [internshipId], references: [id])
-  student        Student          @relation(fields: [studentId], references: [id])
-  evaluation     Evaluation       @relation(fields: [evaluationId], references: [id])
-  document       GeneratedDocument @relation(fields: [documentId], references: [id])
+  evaluationId   String?
+  fileUrl        String
+  createdAt      DateTime    @default(now())
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  college        College     @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  student        Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  @@unique([internshipId, studentId])
-  @@index([tenantId, status])
+  @@index([tenantId, collegeId, createdAt])
+  @@index([tenantId, studentId])
 }
 
 model FileStorage {
-  id               String          @id @default(cuid())
-  tenantId         String
-  uploadedByUserId String?
-  bucket           String
-  objectKey        String          @unique
-  fileName         String
-  mimeType         String
-  sizeBytes        Int
-  checksumSha256   String?
-  publicUrl        String?
-  kind             FileKind
-  visibility       FileVisibility  @default(PRIVATE)
-  createdAt        DateTime        @default(now())
-  tenant           Tenant          @relation(fields: [tenantId], references: [id])
-  uploadedBy       User?           @relation("FileUploader", fields: [uploadedByUserId], references: [id])
-  collegeLogoFor   College[]       @relation("CollegeLogo")
-  industryLogoFor  Industry[]      @relation("IndustryLogo")
-  passportPhotoFor Student[]       @relation("StudentPassportPhoto")
-  resumeFor        Student[]       @relation("StudentResume")
-  documents        GeneratedDocument[]
+  id          String          @id @default(cuid())
+  tenantId    String
+  url         String
+  type        FileStorageType
+  size        Int
+  ownerUserId String?
+  createdAt   DateTime        @default(now())
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, kind])
-  @@index([tenantId, visibility])
+  @@index([tenantId, type])
+  @@index([tenantId, createdAt])
 }
 
-model GeneratedDocument {
-  id                String          @id @default(cuid())
-  tenantId          String
-  collegeId         String?
-  industryId        String?
-  studentId         String?
-  internshipId      String?
-  applicationId     String?
-  attendanceBatchId String?
-  fileId            String          @unique
-  type              DocumentType
-  status            DocumentStatus  @default(DRAFT)
-  title             String
-  templateVersion   String
-  metadata          Json
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  tenant            Tenant          @relation(fields: [tenantId], references: [id])
-  college           College?        @relation(fields: [collegeId], references: [id])
-  industry          Industry?       @relation(fields: [industryId], references: [id])
-  student           Student?        @relation(fields: [studentId], references: [id])
-  internship        Internship?     @relation(fields: [internshipId], references: [id])
-  application       Application?    @relation(fields: [applicationId], references: [id])
-  attendanceBatch   AttendanceBatch? @relation(fields: [attendanceBatchId], references: [id])
-  file              FileStorage     @relation(fields: [fileId], references: [id])
-  mou               Mou?
-  marksheet         Marksheet?
+model OtpChallenge {
+  id          String     @id @default(cuid())
+  tenantId    String
+  userId      String
+  email       String
+  purpose     OtpPurpose
+  otpHash     String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime   @default(now())
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, type, status])
-  @@index([collegeId, type])
-  @@index([industryId, type])
-  @@index([studentId, type])
+  @@index([tenantId, email, purpose])
+  @@index([userId, expiresAt])
+}
+
+model WorkflowApproval {
+  id            String         @id @default(cuid())
+  tenantId      String
+  collegeId     String
+  industryId    String?
+  internshipId  String?
+  applicationId String?
+  stage         ApprovalStage
+  status        ApprovalStatus @default(PENDING)
+  remarks       String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  college       College        @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  industry      Industry?      @relation("IndustryApprovals", fields: [industryId], references: [id], onDelete: SetNull)
+  internship    Internship?    @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  application   Application?   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, collegeId, stage, status])
+  @@index([tenantId, industryId, stage])
 }

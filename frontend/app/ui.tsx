@@ -26,7 +26,7 @@ export function PublicShell({
               {link.label}
             </a>
           ))}
-          <a className="button primary small" href="/signup/college">
+          <a className="button primary small" href="/auth">
             Register College
           </a>
         </nav>
@@ -46,8 +46,8 @@ export function PublicShell({
         </div>
         <div className="footer-links">
           <a href="/internships">Explore Internships</a>
-          <a href="/login/college">College Login</a>
-          <a href="/login/student">Student Login</a>
+          <a href="/auth">Register / Login</a>
+          <a href="/pricing">Pricing</a>
         </div>
       </footer>
     </main>
@@ -225,7 +225,7 @@ export function PricingGrid({
           <h3>{plan.price}</h3>
           <p>{plan.audience}</p>
           <BulletList items={plan.bullets} />
-          <a className="button primary" href="/signup/college">
+          <a className="button primary" href="/auth">
             {plan.cta}
           </a>
         </article>

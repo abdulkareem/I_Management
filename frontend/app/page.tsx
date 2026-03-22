@@ -1,26 +1,27 @@
 import {
+  authFlowCards,
   erpCapabilityCards,
   homepageJourney,
   homepageOverview,
   lifecycleSteps,
+  publicPlans,
   roleAccessCards,
 } from './content';
-import { PublicShell, SectionCard } from './ui';
+import { PricingGrid, PublicShell, SectionCard } from './ui';
 
 export default function HomePage() {
   return (
     <PublicShell
-      title="InternSuite for colleges, students, and industry partners"
-      lead="Verified identity, automated documents, tenant-safe storage, and full internship lifecycle control in one mobile-first ERP."
+      title="InternSuite: production-ready internship ERP for colleges"
+      lead="Multi-tenant onboarding, OTP + password authentication, workflow automation, PDF generation, and mobile-first SaaS delivery in one system."
     >
       <section className="hero-layout">
         <div className="hero-main card-surface">
           <div className="hero-copy">
-            <h2>Production-ready internship ERP for the full campus lifecycle.</h2>
+            <h2>Paperless internship lifecycle automation from posting to marksheet.</h2>
             <p>
-              InternSuite now connects identity verification, college approvals,
-              MoU generation, student applications, attendance review, and final
-              marksheet publishing in one deployment-stable platform.
+              InternSuite unifies college, student, industry, and admin operations with a scalable data model,
+              verified onboarding, compliance-safe approvals, and auto-generated documents.
             </p>
           </div>
 
@@ -34,11 +35,11 @@ export default function HomePage() {
               </ul>
             </div>
             <div className="hero-actions">
-              <a className="button primary" href="/signup/college">
-                Register Your College
+              <a className="button primary" href="/auth">
+                Register / Login
               </a>
-              <a className="button secondary" href="/internships">
-                View Internships
+              <a className="button secondary" href="/pricing">
+                View Pricing
               </a>
             </div>
           </div>
@@ -46,7 +47,7 @@ export default function HomePage() {
 
         <aside className="access-panel">
           <div className="access-head">
-            <span className="eyebrow">Access points</span>
+            <span className="eyebrow">Role access</span>
             <h2>Choose your workspace</h2>
           </div>
           <div className="access-stack">
@@ -54,7 +55,7 @@ export default function HomePage() {
               <article key={card.title} className="card-surface access-card">
                 <div>
                   <span className="eyebrow">{card.title}</span>
-                  <h3>{card.title} Login</h3>
+                  <h3>{card.title}</h3>
                   <p>{card.detail}</p>
                 </div>
                 <a className="button secondary" href={card.href}>
@@ -67,7 +68,7 @@ export default function HomePage() {
       </section>
 
       <section className="section-grid two-col landing-detail-grid">
-        <SectionCard title="Why this layout works" kicker="Focused and practical">
+        <SectionCard title="Why this architecture works" kicker="SaaS readiness">
           <div className="card-list">
             {homepageJourney.map((item) => (
               <article key={item.title} className="mini-card info-card">
@@ -78,7 +79,7 @@ export default function HomePage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="ERP capability stack" kicker="Production-ready modules">
+        <SectionCard title="Capability stack" kicker="Backend + frontend">
           <div className="card-list">
             {erpCapabilityCards.map((item) => (
               <article key={item.title} className="mini-card info-card">
@@ -90,7 +91,18 @@ export default function HomePage() {
         </SectionCard>
       </section>
 
-      <SectionCard title="Automated lifecycle" kicker="Industry to marksheet">
+      <SectionCard title="Authentication flow" kicker="Email-first onboarding">
+        <div className="card-list">
+          {authFlowCards.map((item) => (
+            <article key={item.title} className="mini-card info-card">
+              <strong>{item.title}</strong>
+              <p>{item.detail}</p>
+            </article>
+          ))}
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Automated internship lifecycle" kicker="Industry to marksheet">
         <div className="card-list">
           {lifecycleSteps.map((item) => (
             <article key={item.title} className="mini-card info-card">
@@ -99,6 +111,10 @@ export default function HomePage() {
             </article>
           ))}
         </div>
+      </SectionCard>
+
+      <SectionCard title="College pricing" kicker="Simple annual plans">
+        <PricingGrid plans={publicPlans} />
       </SectionCard>
     </PublicShell>
   );

@@ -1,371 +1,308 @@
-import { randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { sendTransactionalEmail } from '../lib/mailer.js';
 import {
+  authUsers,
+  colleges,
+  demoCollegeId,
+  demoIndustryId,
+  dynamicRolesForField,
+  generateId,
+  industries,
+  loginSchema,
+  otpSendSchema,
+  passwordResetChallenges,
+  passwordSchema,
+  students,
+  studentRegistrationSchema,
+  collegeRegistrationSchema,
+  industryRegistrationSchema,
+  verifyOtpSchema,
+  verificationChallenges,
+} from '../lib/internsuite.js';
+import {
   createNumericOtp,
-  createOpaqueToken,
   createSignedSessionToken,
   hashOpaqueToken,
   hashPassword,
   requireAuth,
-  type AuthRole,
-  validatePasswordPolicy,
   verifyPassword,
 } from '../lib/security.js';
 
-interface AuthUser {
-  id: string;
-  tenantId: string;
-  email: string;
-  name: string;
-  role: AuthRole;
-  audience: string;
-  identityStatus: 'pending_verification' | 'verified' | 'active';
-  passwordHash?: string;
-  verifiedAt?: string;
-  collegeId?: string;
-  industryId?: string;
-  collegeStudentId?: string;
-  universityRegistrationNumber?: string;
-}
-
-interface VerificationChallenge {
-  email: string;
-  role: AuthRole;
-  tokenHash: string;
-  otpHash: string;
-  expiresAt: string;
-}
-
-const roleAudience: Record<AuthRole, string> = {
+const loginAudience = {
   college: 'college-app',
   student: 'student-app',
   industry: 'industry-app',
   super_admin: 'platform-admin',
-};
+} as const;
 
-const users = new Map<string, AuthUser>();
-const verificationChallenges = new Map<string, VerificationChallenge>();
-const passwordResetChallenges = new Map<string, VerificationChallenge>();
-const activeSessions = new Map<string, { userId: string; createdAt: string }>();
-
-users.set('super-admin@internsuite.app', {
-  id: 'user-super-admin',
-  tenantId: 'tenant-platform',
-  email: 'super-admin@internsuite.app',
-  name: 'InternSuite Super Admin',
-  role: 'super_admin',
-  audience: roleAudience.super_admin,
-  identityStatus: 'active',
-  passwordHash: hashPassword('InternSuiteAdmin!2026'),
-  verifiedAt: new Date().toISOString(),
-});
-
-const registrationSchema = z
-  .object({
-    name: z.string().min(2),
-    email: z.string().email(),
-    collegeId: z.string().optional(),
-    industryId: z.string().optional(),
-    collegeStudentId: z.string().optional(),
-    universityRegistrationNumber: z.string().optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.collegeStudentId && !value.universityRegistrationNumber) {
-      ctx.addIssue({ code: 'custom', path: ['universityRegistrationNumber'], message: 'University registration number is required for student identities.' });
-    }
-  });
-
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-});
-
-const verifySchema = z.object({
-  email: z.string().email(),
-  token: z.string().optional(),
-  otp: z.string().length(6).optional(),
-});
-
-function upsertChallenge(store: Map<string, VerificationChallenge>, user: AuthUser) {
-  const token = createOpaqueToken();
+function nextOtp(email: string, purpose: 'registration' | 'password_reset') {
   const otp = createNumericOtp();
-  const challenge: VerificationChallenge = {
-    email: user.email,
-    role: user.role,
-    tokenHash: hashOpaqueToken(token),
+  const record = {
+    email,
+    purpose,
     otpHash: hashOpaqueToken(otp),
-    expiresAt: new Date(Date.now() + 1000 * 60 * 15).toISOString(),
+    expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
   };
-  store.set(user.email, challenge);
-  return { token, otp, challenge };
+  (purpose === 'registration' ? verificationChallenges : passwordResetChallenges).set(email, record);
+  return otp;
+}
+
+function resolveRoleSpecificProfile(email: string, role: 'college' | 'student' | 'industry', registration: Record<string, unknown>) {
+  const user = authUsers.get(email)!;
+
+  if (role === 'college') {
+    const payload = collegeRegistrationSchema.parse(registration);
+    const collegeId = generateId('college');
+    colleges.set(collegeId, {
+      id: collegeId,
+      tenantId: collegeId,
+      userId: user.id,
+      name: payload.collegeName,
+      logoUrl: payload.logoUrl,
+      address: payload.address,
+      university: payload.university,
+      isAutonomous: payload.isAutonomous,
+      subscriptionPlan: payload.subscriptionPlan,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    });
+    user.tenantId = collegeId;
+    user.collegeId = collegeId;
+    user.profile = payload;
+    return;
+  }
+
+  if (role === 'industry') {
+    const payload = industryRegistrationSchema.parse(registration);
+    const industryId = generateId('industry');
+    industries.set(industryId, {
+      id: industryId,
+      tenantId: industryId,
+      userId: user.id,
+      name: payload.industryName,
+      logoUrl: payload.logoUrl,
+      industryField: payload.industryField,
+      description: payload.description,
+      internshipRoles: payload.internshipRoles.length > 0 ? payload.internshipRoles : dynamicRolesForField(payload.industryField),
+      createdAt: new Date().toISOString(),
+    });
+    user.tenantId = industryId;
+    user.industryId = industryId;
+    user.profile = payload;
+    return;
+  }
+
+  const payload = studentRegistrationSchema.parse(registration);
+  const studentExists = Array.from(students.values()).find(
+    (entry) => entry.email === email && entry.universityRegNo === payload.universityRegNo,
+  );
+  if (studentExists) {
+    throw new Error('A student with this email and university registration number already exists.');
+  }
+  const studentId = generateId('student');
+  students.set(studentId, {
+    id: studentId,
+    tenantId: payload.collegeId,
+    userId: user.id,
+    collegeId: payload.collegeId,
+    email,
+    fullName: payload.fullName,
+    universityRegNo: payload.universityRegNo,
+    dob: payload.dob,
+    whatsappNumber: payload.whatsappNumber,
+    address: payload.address,
+    programme: payload.programme,
+    year: payload.year,
+    semester: payload.semester,
+    photoUrl: payload.photoUrl,
+    createdAt: new Date().toISOString(),
+  });
+  user.tenantId = payload.collegeId;
+  user.collegeId = payload.collegeId;
+  user.studentId = studentId;
+  user.fullName = payload.fullName;
+  user.profile = payload;
 }
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
-  app.post('/auth/register/:role', async (request, reply) => {
-    const params = z.object({ role: z.enum(['college', 'student', 'industry']) }).parse(request.params);
-    const payload = registrationSchema.parse(request.body);
+  app.post('/auth/send-otp', async (request, reply) => {
+    const payload = otpSendSchema.parse(request.body);
+    const existingUser = authUsers.get(payload.email);
 
-    if (users.has(payload.email)) {
-      reply.code(409);
-      return { message: 'An account with this email already exists.' };
-    }
-
-    if (params.role === 'student' && (!payload.collegeStudentId || !payload.universityRegistrationNumber || !payload.collegeId)) {
-      reply.code(400);
+    if (existingUser) {
       return {
-        message: 'Students must register with college ID and university registration number.',
+        email: payload.email,
+        exists: true,
+        nextStep: 'LOGIN_PASSWORD',
+        role: existingUser.role,
+        message: 'Email already exists. Continue to password login.',
       };
     }
 
-    const duplicateStudent = Array.from(users.values()).find(
-      (user) =>
-        user.role === 'student' &&
-        user.email === payload.email &&
-        user.universityRegistrationNumber === payload.universityRegistrationNumber,
-    );
+    const role = payload.role!;
+    const userId = generateId('user');
+    authUsers.set(payload.email, {
+      id: userId,
+      tenantId: role === 'college' ? demoCollegeId : role === 'industry' ? demoIndustryId : payload.registration && 'collegeId' in payload.registration ? String(payload.registration.collegeId) : demoCollegeId,
+      email: payload.email,
+      role,
+      isVerified: false,
+      status: 'pending_verification',
+      createdAt: new Date().toISOString(),
+      fullName: role === 'student' && payload.registration && 'fullName' in payload.registration ? String(payload.registration.fullName) : role === 'college' ? 'College Admin' : 'Industry Admin',
+    });
 
-    if (duplicateStudent) {
-      reply.code(409);
-      return { message: 'A student with this email and university registration number already exists.' };
+    try {
+      resolveRoleSpecificProfile(payload.email, role, payload.registration as Record<string, unknown>);
+    } catch (error) {
+      authUsers.delete(payload.email);
+      throw error;
     }
 
-    const user: AuthUser = {
-      id: randomUUID(),
-      tenantId: payload.collegeId ?? payload.industryId ?? 'tenant-platform',
-      email: payload.email,
-      name: payload.name,
-      role: params.role,
-      audience: roleAudience[params.role],
-      identityStatus: 'pending_verification',
-      collegeId: params.role === 'college' || params.role === 'student' ? payload.collegeId ?? 'college-demo' : undefined,
-      industryId: params.role === 'industry' ? payload.industryId ?? 'industry-demo' : undefined,
-      collegeStudentId: payload.collegeStudentId,
-      universityRegistrationNumber: payload.universityRegistrationNumber,
-    };
-
-    users.set(payload.email, user);
-    const { token, otp } = upsertChallenge(verificationChallenges, user);
+    const otp = nextOtp(payload.email, 'registration');
     const delivery = await sendTransactionalEmail({
       to: payload.email,
-      subject: 'Verify your InternSuite email',
-      html: `<p>Hello ${payload.name},</p><p>Your verification code is <strong>${otp}</strong>.</p><p>Or open <a href="${process.env.APP_BASE_URL ?? 'http://localhost:4000'}/api/auth/verify-email?email=${encodeURIComponent(payload.email)}&token=${token}">this verification link</a>.</p>`,
+      subject: 'InternSuite OTP verification',
+      html: `<p>Your InternSuite OTP is <strong>${otp}</strong>. It expires in 15 minutes.</p>`,
     });
 
     reply.code(201);
     return {
-      message: 'Registration accepted. Verify the email address before creating a password.',
-      account: {
-        email: user.email,
-        role: user.role,
-        identityStatus: user.identityStatus,
-      },
+      email: payload.email,
+      exists: false,
+      nextStep: 'VERIFY_OTP',
+      role,
       delivery,
-      verificationPreview: {
-        otp,
-        token,
-      },
+      otpPreview: otp,
+      message: 'Registration profile captured. Verify the OTP to continue.',
     };
   });
 
-  app.post('/auth/verify-email', async (request, reply) => {
-    const payload = verifySchema.parse(request.body);
-    const challenge = verificationChallenges.get(payload.email);
-
-    if (!challenge || new Date(challenge.expiresAt).getTime() < Date.now()) {
+  app.post('/auth/verify-otp', async (request, reply) => {
+    const payload = verifyOtpSchema.parse(request.body);
+    const record = verificationChallenges.get(payload.email);
+    if (!record || new Date(record.expiresAt).getTime() < Date.now()) {
       reply.code(400);
-      return { message: 'Verification challenge is invalid or expired.' };
+      return { message: 'OTP is invalid or expired.' };
     }
 
-    const tokenMatch = payload.token ? hashOpaqueToken(payload.token) === challenge.tokenHash : false;
-    const otpMatch = payload.otp ? hashOpaqueToken(payload.otp) === challenge.otpHash : false;
-
-    if (!tokenMatch && !otpMatch) {
+    if (record.otpHash !== hashOpaqueToken(payload.otp)) {
       reply.code(400);
-      return { message: 'Verification token or OTP is invalid.' };
+      return { message: 'OTP is invalid or expired.' };
     }
 
-    const user = users.get(payload.email);
+    const user = authUsers.get(payload.email);
     if (!user) {
       reply.code(404);
       return { message: 'User account not found.' };
     }
 
-    user.identityStatus = 'verified';
-    user.verifiedAt = new Date().toISOString();
-    users.set(payload.email, user);
+    user.isVerified = true;
+    user.status = 'verified';
     verificationChallenges.delete(payload.email);
-
     return {
-      message: 'Email verified successfully. Password creation is now enabled.',
-      account: {
-        email: user.email,
-        role: user.role,
-        verifiedAt: user.verifiedAt,
-        passwordReady: true,
-      },
+      email: user.email,
+      verified: true,
+      nextStep: 'SET_PASSWORD',
+      message: 'OTP verified successfully. You can now create your password.',
     };
-  });
-
-  app.get('/auth/verify-email', async (request, reply) => {
-    const payload = z.object({ email: z.string().email(), token: z.string() }).parse(request.query);
-    return app.inject({
-      method: 'POST',
-      url: '/api/auth/verify-email',
-      payload,
-    }).then((response) => {
-      reply.code(response.statusCode);
-      return response.json();
-    });
   });
 
   app.post('/auth/set-password', async (request, reply) => {
-    const payload = z.object({ email: z.string().email(), password: z.string().min(8) }).parse(request.body);
-    const user = users.get(payload.email);
-
+    const payload = passwordSchema.parse(request.body);
+    const user = authUsers.get(payload.email);
     if (!user) {
       reply.code(404);
       return { message: 'User account not found.' };
     }
-
-    if (user.identityStatus === 'pending_verification') {
+    if (!user.isVerified || user.status === 'pending_verification') {
       reply.code(403);
-      return { message: 'Email verification is required before creating a password.' };
-    }
-
-    if (!validatePasswordPolicy(payload.password)) {
-      reply.code(400);
-      return { message: 'Password must contain at least 8 characters.' };
+      return { message: 'Verify OTP before setting a password.' };
     }
 
     user.passwordHash = hashPassword(payload.password);
-    user.identityStatus = 'active';
-    users.set(payload.email, user);
-
-    return { message: 'Password created successfully.' };
+    user.status = 'active';
+    return {
+      email: user.email,
+      passwordCreated: true,
+      nextStep: 'LOGIN',
+      message: 'Password created successfully.',
+    };
   });
 
-  app.post('/auth/login/:role', async (request, reply) => {
-    const params = z.object({ role: z.enum(['college', 'student', 'industry', 'super_admin']) }).parse(request.params);
+  app.post('/auth/login', async (request, reply) => {
     const payload = loginSchema.parse(request.body);
-    const user = users.get(payload.email);
+    const user = authUsers.get(payload.email);
 
-    if (!user || user.role !== params.role || !user.passwordHash || !verifyPassword(payload.password, user.passwordHash)) {
+    if (!user || !user.passwordHash || !verifyPassword(payload.password, user.passwordHash)) {
       reply.code(401);
       return { message: 'Invalid credentials.' };
     }
 
-    if (user.identityStatus !== 'active') {
+    if (user.status !== 'active' || !user.isVerified) {
       reply.code(403);
-      return { message: 'Complete email verification and password creation before login.' };
+      return { message: 'Complete OTP verification and password setup before login.' };
     }
 
     const { token, principal } = createSignedSessionToken({
       sub: user.id,
       email: user.email,
       role: user.role,
-      audience: user.audience,
+      audience: loginAudience[user.role],
       tenantId: user.tenantId,
       collegeId: user.collegeId,
       industryId: user.industryId,
+      studentId: user.studentId,
     });
-
-    activeSessions.set(principal.sessionId, { userId: user.id, createdAt: new Date().toISOString() });
-    user.verifiedAt ??= new Date().toISOString();
 
     return {
       message: 'Login successful.',
       accessToken: token,
-      expiresAt: new Date(principal.exp * 1000).toISOString(),
       principal,
+      redirectTo:
+        user.role === 'college'
+          ? '/portal/college'
+          : user.role === 'student'
+            ? '/portal/student'
+            : user.role === 'industry'
+              ? '/portal/industry'
+              : '/portal/admin',
     };
   });
 
   app.post('/auth/forgot-password', async (request) => {
     const payload = z.object({ email: z.string().email() }).parse(request.body);
-    const user = users.get(payload.email);
-
+    const user = authUsers.get(payload.email);
     if (!user) {
-      return { message: 'If an account exists, a reset email has been prepared.' };
+      return { message: 'If an account exists, a reset OTP has been sent.' };
     }
-
-    const { token, otp } = upsertChallenge(passwordResetChallenges, user);
+    const otp = nextOtp(payload.email, 'password_reset');
     const delivery = await sendTransactionalEmail({
       to: payload.email,
-      subject: 'Reset your InternSuite password',
-      html: `<p>Hello ${user.name},</p><p>Your password reset code is <strong>${otp}</strong>.</p><p>Or use <a href="${process.env.APP_BASE_URL ?? 'http://localhost:3000'}/reset-password?token=${token}&email=${encodeURIComponent(payload.email)}">this reset link</a>.</p>`,
+      subject: 'InternSuite password reset OTP',
+      html: `<p>Your password reset OTP is <strong>${otp}</strong>. It expires in 15 minutes.</p>`,
     });
-
-    return {
-      message: 'If an account exists, a reset email has been prepared.',
-      delivery,
-      resetPreview: { token, otp },
-    };
+    return { message: 'If an account exists, a reset OTP has been sent.', delivery, otpPreview: otp };
   });
 
   app.post('/auth/reset-password', async (request, reply) => {
-    const payload = z
-      .object({ email: z.string().email(), token: z.string().optional(), otp: z.string().length(6).optional(), password: z.string().min(8) })
-      .parse(request.body);
-
+    const payload = z.object({ email: z.string().email(), otp: z.string().regex(/^\d{6}$/), password: passwordSchema.shape.password }).parse(request.body);
     const challenge = passwordResetChallenges.get(payload.email);
-    if (!challenge || new Date(challenge.expiresAt).getTime() < Date.now()) {
+    if (!challenge || challenge.otpHash !== hashOpaqueToken(payload.otp) || new Date(challenge.expiresAt).getTime() < Date.now()) {
       reply.code(400);
-      return { message: 'Reset challenge is invalid or expired.' };
+      return { message: 'Reset OTP is invalid or expired.' };
     }
-
-    const tokenMatch = payload.token ? hashOpaqueToken(payload.token) === challenge.tokenHash : false;
-    const otpMatch = payload.otp ? hashOpaqueToken(payload.otp) === challenge.otpHash : false;
-
-    if (!tokenMatch && !otpMatch) {
-      reply.code(400);
-      return { message: 'Reset token or OTP is invalid.' };
-    }
-
-    const user = users.get(payload.email);
+    const user = authUsers.get(payload.email);
     if (!user) {
       reply.code(404);
       return { message: 'User account not found.' };
     }
-
-    if (!validatePasswordPolicy(payload.password)) {
-      reply.code(400);
-      return { message: 'Password must contain at least 8 characters.' };
-    }
-
     user.passwordHash = hashPassword(payload.password);
-    user.identityStatus = 'active';
-    users.set(payload.email, user);
+    user.status = 'active';
     passwordResetChallenges.delete(payload.email);
-
     return { message: 'Password updated successfully.' };
   });
 
-  app.get(
-    '/auth/session',
-    {
-      preHandler: requireAuth({ audience: undefined }),
-    },
-    async (request) => {
-      const principal = request.user!;
-      const session = activeSessions.get(principal.sessionId);
-      return {
-        principal,
-        session,
-      };
-    },
-  );
-
-  app.post(
-    '/auth/logout',
-    {
-      preHandler: requireAuth({ audience: undefined }),
-    },
-    async (request) => {
-      const principal = request.user!;
-      activeSessions.delete(principal.sessionId);
-      return { message: 'Session closed successfully.' };
-    },
-  );
+  app.get('/auth/session', { preHandler: requireAuth({ audience: undefined }) }, async (request) => ({ principal: request.user }));
 };
