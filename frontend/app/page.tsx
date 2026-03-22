@@ -5,20 +5,16 @@ export default function HomePage() {
   return (
     <PublicShell
       title="InternSuite for colleges, students, and industry partners"
-      lead="One internship ERP that keeps college operations organised, gives students a clean progress view, and lets industry partners coordinate hiring without friction."
+      lead="InternSuite for colleges, students, and industry partners."
     >
       <section className="hero-layout">
         <div className="hero-main card-surface">
           <div className="hero-copy">
-            <span className="eyebrow">Internship ERP</span>
-            <h2>
-              Built for campus internship management with a cleaner public
-              experience.
-            </h2>
+            <h2>InternSuite for colleges, students, and industry partners.</h2>
             <p>
-              Colleges can manage access, approvals, reporting, and compliance
-              from a single workspace while students and industry partners get
-              focused dashboards made for their role.
+              Pricing starts at ₹9,999 per year for up to 200 students, with ₹5
+              per student per month below 150 students and ₹4 per student per
+              month above 200 students.
             </p>
           </div>
 
