@@ -2,7 +2,9 @@ import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
+import { authRoutes } from './routes/auth.js';
 import { complianceRoutes } from './routes/compliance.js';
+import { dashboardRoutes } from './routes/dashboard.js';
 import { systemRoutes } from './routes/system.js';
 
 export function buildServer() {
@@ -12,15 +14,17 @@ export function buildServer() {
   app.register(swagger, {
     openapi: {
       info: {
-        title: 'Internship Cloud ERP API',
-        version: '2.0.0',
-        description: 'College-paid internship ERP API with semester lifecycle governance, archive economics, and preserved FYUGP compliance rules.',
+        title: 'InternSuite API',
+        version: '3.0.0',
+        description: 'InternSuite API for public SaaS access, secure role-based sessions, dashboard delivery, and preserved FYUGP internship compliance rules.',
       },
     },
   });
   app.register(swaggerUi, { routePrefix: '/docs' });
 
   app.register(systemRoutes, { prefix: '/api' });
+  app.register(authRoutes, { prefix: '/api' });
+  app.register(dashboardRoutes, { prefix: '/api' });
   app.register(complianceRoutes, { prefix: '/api' });
 
   return app;

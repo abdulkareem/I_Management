@@ -1,28 +1,26 @@
-import type { Metadata, Viewport } from "next";
-import type { ReactNode } from "react";
-import "./globals.css";
+import type { Metadata, Viewport } from 'next';
+import type { ReactNode } from 'react';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "Internship Cloud ERP for Colleges",
+  title: 'InternSuite',
   description:
-    "Production-ready multi-tenant internship SaaS for colleges with free industry participation, semester lifecycle billing, archive retention, and mobile-first PWA delivery.",
-  manifest: "/manifest.webmanifest",
+    'InternSuite is a public-facing internship cloud ERP for colleges with separate role access for colleges, students, industry partners, and private super admin operations.',
+  manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    title: "Internship Cloud ERP",
-    statusBarStyle: "default",
+    title: 'InternSuite',
+    statusBarStyle: 'default',
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1E3A8A",
-  width: "device-width",
+  width: 'device-width',
   initialScale: 1,
+  themeColor: '#1e40af',
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
       <body>{children}</body>

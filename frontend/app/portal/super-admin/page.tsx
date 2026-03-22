@@ -1,100 +1,31 @@
-import { costModel, pricingPlans, readinessChecklist } from '../../content';
-import { PortalShell } from '../../ui';
+import { adminNav, applicationTrend, categoryMix, participationBars } from '../../content';
+import { BarChart, LineChart, PieChart, PortalShell, StatGrid } from '../../ui';
 
-const usageCards = [
-  {
-    title: 'Colleges onboarded',
-    value: '48',
-    description: 'Active paying institutions across the platform.',
-  },
-  {
-    title: 'Active students',
-    value: '9,420',
-    description: 'Students currently counted inside semester billing windows.',
-  },
-  {
-    title: 'Archived students',
-    value: '24,800',
-    description: 'Read-only historical records retained for reporting and audits.',
-  },
-  {
-    title: 'Industry partners',
-    value: '326',
-    description: 'Free participation channel driving internship supply and market value.',
-  },
+const stats = [
+  { label: 'Total colleges', value: '48', detail: 'Registered colleges across all active subscription tiers.' },
+  { label: 'Active students', value: '9,420', detail: 'Students currently within live semester cycles.' },
+  { label: 'Revenue', value: '₹18.6L', detail: 'Platform subscription revenue visible only in the private admin area.' },
+  { label: 'Payments pending', value: '6', detail: 'College renewals or invoices needing follow-up.' },
 ];
 
-export default function SuperAdminPortalPage() {
+export default function SuperAdminDashboardPage() {
   return (
     <PortalShell
-      badge="Super admin dashboard"
-      title="Monitor profitability, tenant isolation, and archive growth"
-      lead="The platform owner tracks plan fit, archive utilization, and operational readiness without turning the product into a complex enterprise maze."
+      role="Super Admin"
+      title="Private platform dashboard"
+      lead="Monitor colleges, revenue, payment health, and cross-platform analytics from a private control area that is never exposed in the public experience."
+      nav={adminNav}
+      actions={[
+        { label: 'Activate College', href: '/portal/super-admin/colleges' },
+        { label: 'View Payment Status', href: '/portal/super-admin/payments', tone: 'secondary' },
+      ]}
     >
-      <section className="stats stats-4 top-gap">
-        {usageCards.map((card) => (
-          <article className="card" key={card.title}>
-            <div className="metric">{card.value}</div>
-            <div className="label">{card.title}</div>
-            <p className="detail">{card.description}</p>
-          </article>
-        ))}
+      <StatGrid items={stats} />
+      <section className="chart-grid">
+        <LineChart values={applicationTrend} />
+        <PieChart items={categoryMix} />
+        <BarChart items={participationBars} />
       </section>
-
-      <section className="grid-2 section-block">
-        <article className="panel nested-panel">
-          <div className="section-heading-row">
-            <h2 className="section-title">Profitability guardrail</h2>
-            <span className="table-highlight">5× target</span>
-          </div>
-          <div className="stack-list top-gap">
-            {costModel.map((item) => (
-              <article className="card" key={item.label}>
-                <div className="metric small">{item.value}</div>
-                <div className="label">{item.label}</div>
-                <p className="detail">{item.detail}</p>
-              </article>
-            ))}
-          </div>
-        </article>
-
-        <article className="panel nested-panel">
-          <div className="section-heading-row">
-            <h2 className="section-title">Plan positioning</h2>
-            <span className="table-highlight">Revenue model</span>
-          </div>
-          <div className="stack-list top-gap">
-            {pricingPlans.map((plan) => (
-              <article className="card" key={plan.name}>
-                <strong>{plan.name}</strong>
-                <div className="label">{plan.price}</div>
-                <p className="detail">{plan.highlight}</p>
-              </article>
-            ))}
-          </div>
-        </article>
-      </section>
-
-      <section className="panel section-block nested-panel">
-        <div className="section-heading-row">
-          <h2 className="section-title">SaaS readiness checklist</h2>
-          <span className="table-highlight">Go-live review</span>
-        </div>
-        <ul className="feature-list benefit-list top-gap">
-          {readinessChecklist.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </section>
-
-      <div className="cta-row top-gap">
-        <a className="cta" href="/pricing">
-          Review pricing strategy
-        </a>
-        <a className="ghost-cta" href="/">
-          ← Back to landing page
-        </a>
-      </div>
     </PortalShell>
   );
 }
