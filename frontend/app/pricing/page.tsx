@@ -1,36 +1,30 @@
-import { publicPlans } from "../content";
-import { BulletList, PricingGrid, PublicShell, SectionCard } from "../ui";
+import { publicPlans } from '../content';
+import { BulletList, PricingGrid, PublicShell, SectionCard } from '../ui';
 
 export default function PricingPage() {
   return (
     <PublicShell
       title="InternSuite pricing for colleges"
-      lead="Pricing includes ₹9,999 per year for up to 200 students, ₹5 per student per month below 150 students, and ₹4 per student per month above 200 students."
+      lead="Choose Foundation at ₹12,000/year for up to 500 students or Growth at ₹25,000/year for up to 2000 students with advanced analytics."
     >
       <PricingGrid plans={publicPlans} />
       <section className="section-grid two-col">
-        <SectionCard
-          title="What every college plan includes"
-          kicker="Operational essentials"
-        >
+        <SectionCard title="What every plan includes" kicker="Core SaaS delivery">
           <BulletList
             items={[
-              "Separate login and signup for college, student, and industry users.",
-              "Pricing options for annual and per-student monthly usage.",
-              "Partner-college sharing controls and protected role-based access.",
-              "Mobile-ready dashboards with quick actions and installable PWA support.",
+              'College, student, and industry dashboards.',
+              'OTP + password authentication with role-based access control.',
+              'Internship approvals, attendance tracking, evaluation, and generated PDFs.',
+              'Mobile-first PWA-ready user experience.',
             ]}
           />
         </SectionCard>
-        <SectionCard
-          title="What is intentionally not shown here"
-          kicker="Public pricing guardrail"
-        >
+        <SectionCard title="Best-fit guidance" kicker="Plan selection">
           <BulletList
             items={[
-              "No internal cost breakdowns",
-              "No profit or margin metrics",
-              "No internal financial detail in the public experience",
+              'Foundation is ideal for colleges with up to 500 students and essential workflow automation.',
+              'Growth supports up to 2000 students with advanced analytics and larger internship operations.',
+              'Both plans include the Register Your College onboarding CTA and industry participation at no extra charge.',
             ]}
           />
         </SectionCard>

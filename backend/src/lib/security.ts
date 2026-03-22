@@ -12,6 +12,7 @@ export interface SessionPrincipal {
   tenantId: string;
   collegeId?: string;
   industryId?: string;
+  studentId?: string;
   sessionId: string;
   exp: number;
 }
@@ -28,7 +29,7 @@ function base64UrlDecode(value: string) {
 }
 
 export function validatePasswordPolicy(password: string) {
-  return password.length >= 8;
+  return /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d\W_]{12,}$/.test(password);
 }
 
 export function hashPassword(password: string) {

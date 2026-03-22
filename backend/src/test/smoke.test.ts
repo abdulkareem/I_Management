@@ -2,19 +2,31 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildServer } from '../server.js';
 
-test('student registration requires verification before password creation', async () => {
+const studentRegistration = {
+  email: 'asha@example.edu',
+  role: 'student',
+  registration: {
+    fullName: 'Asha Student',
+    universityRegNo: 'REG-2026-001',
+    photoUrl: 'https://cdn.internsuite.app/photo/asha.jpg',
+    photoSizeBytes: 180000,
+    dob: '2005-05-01',
+    whatsappNumber: '919999999999',
+    address: 'Calicut, Kerala, India',
+    programme: 'BCA',
+    year: 3,
+    semester: 6,
+    collegeId: 'college-demo',
+  },
+};
+
+test('student registration requires OTP verification before password creation', async () => {
   const app = buildServer();
 
   const registration = await app.inject({
     method: 'POST',
-    url: '/api/auth/register/student',
-    payload: {
-      name: 'Asha Student',
-      email: 'asha@example.edu',
-      collegeId: 'college-1',
-      collegeStudentId: 'C123',
-      universityRegistrationNumber: 'REG-2026-001',
-    },
+    url: '/api/auth/send-otp',
+    payload: studentRegistration,
   });
 
   assert.equal(registration.statusCode, 201);
@@ -23,7 +35,7 @@ test('student registration requires verification before password creation', asyn
     method: 'POST',
     url: '/api/auth/set-password',
     payload: {
-      email: 'asha@example.edu',
+      email: studentRegistration.email,
       password: 'SecurePass123',
     },
   });
@@ -37,22 +49,29 @@ test('verified users can create passwords and authenticate', async () => {
 
   const registration = await app.inject({
     method: 'POST',
-    url: '/api/auth/register/industry',
+    url: '/api/auth/send-otp',
     payload: {
-      name: 'Rahul HR',
       email: 'rahul@company.com',
-      industryId: 'industry-1',
+      role: 'industry',
+      registration: {
+        industryName: 'Rahul Industries',
+        logoUrl: 'https://cdn.internsuite.app/logo/rahul.png',
+        logoSizeBytes: 120000,
+        industryField: 'IT',
+        description: 'Production software engineering internship partner for InternSuite.',
+        internshipRoles: ['Backend Intern'],
+      },
     },
   });
 
-  const preview = registration.json() as { verificationPreview: { token: string } };
+  const preview = registration.json() as { otpPreview: string };
 
   const verification = await app.inject({
     method: 'POST',
-    url: '/api/auth/verify-email',
+    url: '/api/auth/verify-otp',
     payload: {
       email: 'rahul@company.com',
-      token: preview.verificationPreview.token,
+      otp: preview.otpPreview,
     },
   });
   assert.equal(verification.statusCode, 200);
@@ -69,7 +88,7 @@ test('verified users can create passwords and authenticate', async () => {
 
   const login = await app.inject({
     method: 'POST',
-    url: '/api/auth/login/industry',
+    url: '/api/auth/login',
     payload: {
       email: 'rahul@company.com',
       password: 'SecurePass123',
@@ -80,50 +99,88 @@ test('verified users can create passwords and authenticate', async () => {
   await app.close();
 });
 
-test('upload endpoint returns the 200 KB passport photo policy', async () => {
+test('industry posting, student apply, college approve, and marksheet workflow returns expected artifacts', async () => {
   const app = buildServer();
 
-  const registration = await app.inject({
+  const collegeLogin = await app.inject({
     method: 'POST',
-    url: '/api/auth/register/college',
+    url: '/api/auth/login',
+    payload: { email: 'college@internsuite.app', password: 'SecurePass123' },
+  });
+
+  const industryLogin = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'industry@internsuite.app', password: 'SecurePass123' },
+  });
+
+  const studentLogin = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'student@internsuite.app', password: 'SecurePass123' },
+  });
+
+  const collegeToken = (collegeLogin.json() as { accessToken: string }).accessToken;
+  const industryToken = (industryLogin.json() as { accessToken: string }).accessToken;
+  const studentToken = (studentLogin.json() as { accessToken: string }).accessToken;
+
+  const internship = await app.inject({
+    method: 'POST',
+    url: '/api/industry/internship',
+    headers: { authorization: `Bearer ${industryToken}` },
     payload: {
-      name: 'College Admin',
-      email: 'college-admin@example.edu',
-      collegeId: 'college-1',
+      title: 'Node API Intern',
+      description: 'Work on Fastify services, Prisma schema design, and SaaS automation flows.',
+      field: 'IT',
+      duration: '12 weeks',
+      stipend: 10000,
+      visibility: 'PUBLIC',
+      collegeId: 'college-demo',
     },
   });
-  const preview = registration.json() as { verificationPreview: { token: string } };
+  assert.equal(internship.statusCode, 201);
+  const internshipId = (internship.json() as { internshipId: string }).internshipId;
 
-  await app.inject({
+  const approveInternship = await app.inject({
     method: 'POST',
-    url: '/api/auth/verify-email',
-    payload: { email: 'college-admin@example.edu', token: preview.verificationPreview.token },
+    url: '/api/college/approve',
+    headers: { authorization: `Bearer ${collegeToken}` },
+    payload: { entity: 'internship', targetId: internshipId, status: 'APPROVED' },
   });
-  await app.inject({
-    method: 'POST',
-    url: '/api/auth/set-password',
-    payload: { email: 'college-admin@example.edu', password: 'SecurePass123' },
-  });
-  const login = await app.inject({
-    method: 'POST',
-    url: '/api/auth/login/college',
-    payload: { email: 'college-admin@example.edu', password: 'SecurePass123' },
-  });
-  const token = (login.json() as { accessToken: string }).accessToken;
+  assert.equal(approveInternship.statusCode, 200);
 
-  const upload = await app.inject({
+  const application = await app.inject({
     method: 'POST',
-    url: '/api/files/presign',
-    headers: { authorization: `Bearer ${token}` },
-    payload: {
-      kind: 'student-passport-photo',
-      fileName: 'photo.jpg',
-      entityId: 'student-1',
-      contentType: 'image/jpeg',
-    },
+    url: '/api/student/apply',
+    headers: { authorization: `Bearer ${studentToken}` },
+    payload: { internshipId },
   });
+  assert.equal(application.statusCode, 201);
+  const applicationId = (application.json() as { applicationId: string }).applicationId;
 
-  assert.equal(upload.statusCode, 200);
-  assert.equal(upload.json().policy.maxBytes, 200000);
+  const approveApplication = await app.inject({
+    method: 'POST',
+    url: '/api/college/approve',
+    headers: { authorization: `Bearer ${collegeToken}` },
+    payload: { entity: 'application', targetId: applicationId, status: 'APPROVED' },
+  });
+  assert.equal(approveApplication.statusCode, 200);
+
+  const evaluation = await app.inject({
+    method: 'POST',
+    url: '/api/college/evaluation',
+    headers: { authorization: `Bearer ${collegeToken}` },
+    payload: { studentId: 'student-demo', marks: 93, grade: 'A+', remarks: 'Excellent performance' },
+  });
+  assert.equal(evaluation.statusCode, 201);
+  const marksheetId = (evaluation.json() as { marksheetId: string }).marksheetId;
+
+  const marksheet = await app.inject({
+    method: 'GET',
+    url: `/api/pdf/marksheet/${marksheetId}`,
+    headers: { authorization: `Bearer ${studentToken}` },
+  });
+  assert.equal(marksheet.statusCode, 200);
+  assert.match((marksheet.json() as { fileUrl: string }).fileUrl, /marksheet/);
   await app.close();
 });

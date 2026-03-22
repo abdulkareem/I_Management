@@ -1,78 +1,79 @@
 import type { FastifyPluginAsync } from 'fastify';
+import {
+  applications,
+  colleges,
+  internships,
+  marksheets,
+  mous,
+  students,
+} from '../lib/internsuite.js';
 import { requireAuth } from '../lib/security.js';
 
 export const dashboardRoutes: FastifyPluginAsync = async (app) => {
-  app.get(
-    '/public/platform-content',
-    async () => ({
-      brand: 'InternSuite',
-      headline: 'InternSuite – Internship Cloud ERP for Colleges',
-      pricingPlans: [
-        {
-          name: 'Foundation',
-          annualPriceInInr: 22000,
-          audience: 'For colleges launching internship digitization.',
-        },
-        {
-          name: 'Growth',
-          annualPriceInInr: 50000,
-          audience: 'For larger colleges managing multi-department internship operations.',
-        },
-      ],
-    }),
-  );
-
-  app.get(
-    '/college/dashboard',
-    { preHandler: requireAuth({ roles: ['college'], audience: 'college-app' }) },
-    async (request) => ({
-      collegeId: request.user?.collegeId,
-      stats: {
-        activeInternships: 128,
-        studentApplications: 342,
-        activeStudents: 486,
+  app.get('/public/platform-content', async () => ({
+    brand: 'InternSuite',
+    headline: 'InternSuite – fully automated internship ERP for colleges',
+    pricingPlans: [
+      {
+        name: 'Foundation',
+        annualPriceInInr: 12000,
+        limit: 'Up to 500 students',
       },
-      quickActions: ['Add Student', 'Assign Internship', 'View Applications', 'Upgrade Plan'],
-    }),
-  );
-
-  app.get(
-    '/student/dashboard',
-    { preHandler: requireAuth({ roles: ['student'], audience: 'student-app' }) },
-    async (request) => ({
-      studentId: request.user?.sub,
-      stats: {
-        availableInternships: 24,
-        applications: 3,
-        profileCompletion: 82,
+      {
+        name: 'Growth',
+        annualPriceInInr: 25000,
+        limit: 'Up to 2000 students',
       },
-      quickActions: ['Apply Now', 'Update Profile', 'Upload Resume'],
-    }),
-  );
+    ],
+  }));
 
-  app.get(
-    '/industry/dashboard',
-    { preHandler: requireAuth({ roles: ['industry'], audience: 'industry-app' }) },
-    async (request) => ({
-      industryId: request.user?.industryId,
-      stats: {
-        postedInternships: 14,
-        applicants: 26,
-      },
-      quickActions: ['Post Internship', 'Shortlist Candidate', 'Reject Application'],
-    }),
-  );
+  app.get('/college/dashboard', { preHandler: requireAuth({ roles: ['college'], audience: 'college-app' }) }, async (request) => {
+    const collegeId = request.user?.collegeId!;
+    const college = colleges.get(collegeId);
+    const collegeStudents = Array.from(students.values()).filter((student) => student.collegeId === collegeId);
+    const collegeApplications = Array.from(applications.values()).filter((application) => application.collegeId === collegeId);
 
-  app.get(
-    '/super-admin/dashboard',
-    { preHandler: requireAuth({ roles: ['super_admin'], audience: 'platform-admin' }) },
-    async () => ({
+    return {
+      college,
       stats: {
-        totalColleges: 48,
-        activeStudents: 9420,
-        revenueInInr: 1860000,
+        students: collegeStudents.length,
+        approvedApplications: collegeApplications.filter((item) => item.status === 'APPROVED').length,
+        activeInternships: Array.from(internships.values()).filter((item) => item.collegeId === collegeId).length,
+        mous: Array.from(mous.values()).filter((item) => item.collegeId === collegeId).length,
       },
-      controls: ['Activate College', 'Deactivate College', 'Delete College', 'View Payment Status'],
-    }),
-  );
+      quickActions: ['Add student', 'Review applications', 'Approve attendance', 'Publish marksheets'],
+    };
+  });
+
+  app.get('/student/dashboard', { preHandler: requireAuth({ roles: ['student'], audience: 'student-app' }) }, async (request) => {
+    const studentId = request.user?.sub!;
+    const student = Array.from(students.values()).find((entry) => entry.userId === studentId || entry.id === request.user?.studentId);
+    const studentApplications = Array.from(applications.values()).filter((application) => application.studentId === student?.id);
+    const studentMarksheet = Array.from(marksheets.values()).find((item) => item.studentId === student?.id);
+
+    return {
+      student,
+      stats: {
+        applications: studentApplications.length,
+        approvedApplications: studentApplications.filter((item) => item.status === 'APPROVED').length,
+        downloadableMarksheet: Boolean(studentMarksheet),
+      },
+      quickActions: ['Apply for internship', 'Track application', 'Download marksheet'],
+    };
+  });
+
+  app.get('/industry/dashboard', { preHandler: requireAuth({ roles: ['industry'], audience: 'industry-app' }) }, async (request) => {
+    const industryId = request.user?.industryId!;
+    const industryInternships = Array.from(internships.values()).filter((item) => item.createdByIndustryId === industryId);
+    const industryApplications = Array.from(applications.values()).filter((item) => item.industryId === industryId);
+
+    return {
+      stats: {
+        internships: industryInternships.length,
+        applications: industryApplications.length,
+        approvedApplications: industryApplications.filter((item) => item.status === 'APPROVED').length,
+      },
+      quickActions: ['Post internship', 'Review applicants', 'Mark attendance'],
+    };
+  });
 };
