@@ -1,14 +1,10 @@
+import type { CollegeDashboard, IndustryDashboard, Role, SessionProfile, StudentDashboard } from '@prism/types';
 import { apiRequest } from './api';
 
-export type Role = 'ADMIN' | 'STAFF' | 'USER';
+export type DashboardPayload = StudentDashboard | CollegeDashboard | IndustryDashboard;
+export type SessionState = SessionProfile;
 
-export interface SessionState {
-  accessToken: string;
-  user: { id: string; name: string; email: string; role: Role };
-  tenant: { id: string; name: string; slug: string; plan: 'FREE' | 'PRO'; status: 'ACTIVE' | 'SUSPENDED' };
-}
-
-const SESSION_KEY = 'prism.session';
+const SESSION_KEY = 'internsuite.session';
 
 export function saveSession(session: SessionState) {
   if (typeof window === 'undefined') return;
@@ -26,22 +22,8 @@ export function clearSession() {
   window.localStorage.removeItem(SESSION_KEY);
 }
 
-export function register(payload: Record<string, unknown>) {
-  return apiRequest<{ user: SessionState['user']; tenant: SessionState['tenant']; delivery: unknown }>('/auth/register', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export function discover(payload: { tenantSlug: string; email: string }) {
-  return apiRequest<{ exists: boolean; tenantFound: boolean; nextStep: 'LOGIN' | 'REGISTER'; redirectTo: string; role: Role | null }>('/auth/discover', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function login(payload: { tenantSlug: string; email: string; password: string }) {
-  const response = await apiRequest<{ accessToken: string; user: SessionState['user']; tenant: SessionState['tenant'] }>('/auth/login', {
+export async function login(payload: { email: string; password: string }) {
+  const response = await apiRequest<SessionState>('/auth/login', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -49,22 +31,18 @@ export async function login(payload: { tenantSlug: string; email: string; passwo
   return response;
 }
 
-export function verifyEmail(token: string) {
-  return apiRequest<{ verified: boolean }>(`/auth/verify-email?token=${encodeURIComponent(token)}`);
-}
-
-export function forgotPassword(payload: { tenantSlug: string; email: string }) {
-  return apiRequest<{ delivery: unknown }>('/auth/forgot-password', {
+export async function register(role: Role, payload: Record<string, unknown>) {
+  const routeMap: Record<Role, string> = {
+    STUDENT: '/auth/register/student',
+    COLLEGE_COORDINATOR: '/auth/register/college',
+    INDUSTRY: '/auth/register/industry',
+  };
+  const response = await apiRequest<SessionState>(routeMap[role], {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-}
-
-export function resetPassword(payload: { token: string; password: string }) {
-  return apiRequest<{ reset: boolean }>('/auth/reset-password', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
+  saveSession(response.data);
+  return response;
 }
 
 export function fetchWithSession<T>(path: string, init?: RequestInit) {
@@ -76,4 +54,10 @@ export function fetchWithSession<T>(path: string, init?: RequestInit) {
       ...(init?.headers ?? {}),
     },
   });
+}
+
+export function dashboardPathFor(role: Role) {
+  if (role === 'STUDENT') return '/dashboard/student';
+  if (role === 'INDUSTRY') return '/dashboard/industry';
+  return '/dashboard/college';
 }

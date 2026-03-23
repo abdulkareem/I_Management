@@ -8,7 +8,7 @@
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "node -e \"console.log('Web smoke tests require browser-level coverage in deployment')\""
+    "test": "node -e \"console.log('Frontend verification is covered by typecheck/build for this static-export PWA')\""
   },
   "dependencies": {
     "@prism/types": "workspace:*",

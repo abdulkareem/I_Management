@@ -10,6 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
+      "@prism/database": ["packages/database/src/index.ts"],
       "@prism/types": ["packages/types/src/index.ts"],
       "@prism/compliance": ["packages/compliance/src/index.ts"]
     }
