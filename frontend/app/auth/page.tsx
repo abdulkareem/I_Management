@@ -1,45 +1,39 @@
-import { authFlowCards } from '../content';
+import AuthExperience from './AuthExperience';
 import { PublicShell, SectionCard } from '../ui';
 
-export default function AuthPage() {
+export default async function AuthPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ role?: string }>;
+}) {
+  const params = (await searchParams) ?? {};
+  const initialRole = params.role === 'student' || params.role === 'industry' ? params.role : 'college';
+
   return (
     <PublicShell
-      title="Register / Login"
-      lead="InternSuite uses an email-first flow: enter email, auto-detect whether you should login or register, verify OTP, then continue to password creation."
+      title="One click to the right internship workspace"
+      lead="Every login and register button now checks whether the email already exists, routes new users to the correct onboarding form, sends a 6-digit OTP for verification, and unlocks dashboard access only after password creation."
     >
-      <section className="section-grid two-col">
-        <SectionCard title="Email-first entry" kicker="Screen 1">
-          <div className="form-grid single-column">
-            <label className="field">
-              <span>Email address</span>
-              <input type="email" placeholder="Enter your email address" />
-            </label>
-            <button type="button" className="button primary">
-              Continue
-            </button>
-          </div>
-          <p>
-            Existing account → password login. New account → role selection and registration form for student,
-            college, or industry.
-          </p>
-        </SectionCard>
-        <SectionCard title="Registration data capture" kicker="Screen 2 onward">
-          <ul className="bullet-list">
-            <li>Student: full name, university registration number, photo, DOB, WhatsApp, address, programme, year, semester.</li>
-            <li>College: college name, emblem/logo, address, university, and autonomous status.</li>
-            <li>Industry: industry name, logo, field, and dynamically suggested internship roles.</li>
-          </ul>
-        </SectionCard>
-      </section>
+      <AuthExperience
+        initialRole={initialRole}
+        heading="A polished email-first journey that behaves like a real SaaS product"
+        lead="Choose your role, enter your email once, and InternSuite decides whether to move you into registration or toward the right dashboard login path."
+      />
 
-      <SectionCard title="Flow logic" kicker="Frontend orchestration">
-        <div className="card-list">
-          {authFlowCards.map((item) => (
-            <article key={item.title} className="mini-card info-card">
-              <strong>{item.title}</strong>
-              <p>{item.detail}</p>
-            </article>
-          ))}
+      <SectionCard title="What changed" kicker="Auth orchestration">
+        <div className="card-list auth-logic-grid">
+          <article className="mini-card info-card">
+            <strong>Existing account detection</strong>
+            <p>Role-aware discovery prevents duplicate signups and routes existing users straight into the right login experience.</p>
+          </article>
+          <article className="mini-card info-card">
+            <strong>OTP-first registration</strong>
+            <p>New users complete their profile, receive a 6-digit OTP by email, verify it, and only then can create a password.</p>
+          </article>
+          <article className="mini-card info-card">
+            <strong>Dashboard-safe access</strong>
+            <p>Login returns a signed session token and sends users to the correct student, college, or industry dashboard.</p>
+          </article>
         </div>
       </SectionCard>
     </PublicShell>

@@ -27,7 +27,7 @@ export function PublicShell({
             </a>
           ))}
           <a className="button primary small" href="/auth">
-            Register College
+            Get Started
           </a>
         </nav>
       </header>
@@ -46,7 +46,7 @@ export function PublicShell({
         </div>
         <div className="footer-links">
           <a href="/internships">Explore Internships</a>
-          <a href="/auth">Register / Login</a>
+          <a href="/auth">Role Access</a>
           <a href="/pricing">Pricing</a>
         </div>
       </footer>

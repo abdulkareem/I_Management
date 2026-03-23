@@ -20,6 +20,31 @@ const studentRegistration = {
   },
 };
 
+
+test('email discovery routes existing and new users correctly', async () => {
+  const app = buildServer();
+
+  const existing = await app.inject({
+    method: 'POST',
+    url: '/api/auth/discover',
+    payload: { email: 'student@internsuite.app', role: 'student' },
+  });
+  assert.equal(existing.statusCode, 200);
+  assert.equal((existing.json() as { exists: boolean; redirectTo: string }).exists, true);
+  assert.equal((existing.json() as { redirectTo: string }).redirectTo, '/login/student');
+
+  const fresh = await app.inject({
+    method: 'POST',
+    url: '/api/auth/discover',
+    payload: { email: 'new-college@example.edu', role: 'college' },
+  });
+  assert.equal(fresh.statusCode, 200);
+  assert.equal((fresh.json() as { exists: boolean; redirectTo: string }).exists, false);
+  assert.equal((fresh.json() as { redirectTo: string }).redirectTo, '/signup/college');
+
+  await app.close();
+});
+
 test('student registration requires OTP verification before password creation', async () => {
   const app = buildServer();
 
@@ -36,7 +61,7 @@ test('student registration requires OTP verification before password creation', 
     url: '/api/auth/set-password',
     payload: {
       email: studentRegistration.email,
-      password: 'SecurePass123',
+      password: 'Demo1234',
     },
   });
 
@@ -81,7 +106,7 @@ test('verified users can create passwords and authenticate', async () => {
     url: '/api/auth/set-password',
     payload: {
       email: 'rahul@company.com',
-      password: 'SecurePass123',
+      password: 'Demo1234',
     },
   });
   assert.equal(passwordSet.statusCode, 200);
@@ -91,7 +116,7 @@ test('verified users can create passwords and authenticate', async () => {
     url: '/api/auth/login',
     payload: {
       email: 'rahul@company.com',
-      password: 'SecurePass123',
+      password: 'Demo1234',
     },
   });
   assert.equal(login.statusCode, 200);
@@ -105,19 +130,19 @@ test('industry posting, student apply, college approve, and marksheet workflow r
   const collegeLogin = await app.inject({
     method: 'POST',
     url: '/api/auth/login',
-    payload: { email: 'college@internsuite.app', password: 'SecurePass123' },
+    payload: { email: 'college@internsuite.app', password: 'Demo1234' },
   });
 
   const industryLogin = await app.inject({
     method: 'POST',
     url: '/api/auth/login',
-    payload: { email: 'industry@internsuite.app', password: 'SecurePass123' },
+    payload: { email: 'industry@internsuite.app', password: 'Demo1234' },
   });
 
   const studentLogin = await app.inject({
     method: 'POST',
     url: '/api/auth/login',
-    payload: { email: 'student@internsuite.app', password: 'SecurePass123' },
+    payload: { email: 'student@internsuite.app', password: 'Demo1234' },
   });
 
   const collegeToken = (collegeLogin.json() as { accessToken: string }).accessToken;
