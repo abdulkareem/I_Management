@@ -1,352 +1,409 @@
 import type { FastifyPluginAsync } from 'fastify';
+import { TenantPlan, UserRole, VerificationTokenType, prisma } from '@prism/database';
 import { z } from 'zod';
+import { createAuditLog } from '../lib/audit.js';
+import { fail, ok } from '../lib/http.js';
 import { sendTransactionalEmail } from '../lib/mailer.js';
 import {
-  authUsers,
-  colleges,
-  demoCollegeId,
-  demoIndustryId,
-  dynamicRolesForField,
-  generateId,
-  industries,
-  loginSchema,
-  otpSendSchema,
-  passwordResetChallenges,
-  passwordSchema,
-  students,
-  emailDiscoverySchema,
-  studentRegistrationSchema,
-  collegeRegistrationSchema,
-  industryRegistrationSchema,
-  verifyOtpSchema,
-  verificationChallenges,
-} from '../lib/internsuite.js';
-import {
-  createNumericOtp,
   createSignedSessionToken,
   hashOpaqueToken,
   hashPassword,
+  randomToken,
   requireAuth,
+  validatePasswordPolicy,
   verifyPassword,
 } from '../lib/security.js';
 
-const loginAudience = {
-  college: 'college-app',
-  student: 'student-app',
-  industry: 'industry-app',
-  super_admin: 'platform-admin',
-} as const;
+const tenantPlanSchema = z.nativeEnum(TenantPlan);
+const roleSchema = z.nativeEnum(UserRole);
 
-function nextOtp(email: string, purpose: 'registration' | 'password_reset') {
-  const otp = createNumericOtp();
-  const record = {
-    email,
-    purpose,
-    otpHash: hashOpaqueToken(otp),
-    expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-  };
-  (purpose === 'registration' ? verificationChallenges : passwordResetChallenges).set(email, record);
-  return otp;
+const registerSchema = z.object({
+  tenantName: z.string().min(2),
+  tenantSlug: z.string().min(3).max(48).regex(/^[a-z0-9-]+$/),
+  plan: tenantPlanSchema.default(TenantPlan.FREE),
+  name: z.string().min(2),
+  email: z.string().email(),
+  password: z.string().min(8).max(64),
+  role: roleSchema.optional(),
+  registrationNumber: z.string().min(2),
+  dob: z.string().optional(),
+  whatsappNumber: z.string().min(8),
+  address: z.string().min(6),
+  programme: z.string().min(2),
+  year: z.coerce.number().int().min(1).max(8),
+  semester: z.coerce.number().int().min(1).max(16),
+  photoUrl: z.string().url().optional(),
+});
+
+const loginSchema = z.object({
+  tenantSlug: z.string().min(3),
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+
+const discoverSchema = z.object({
+  tenantSlug: z.string().min(3),
+  email: z.string().email(),
+});
+
+const forgotPasswordSchema = z.object({
+  tenantSlug: z.string().min(3),
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(20),
+  password: z.string().min(8).max(64),
+});
+
+function appUrl() {
+  return process.env.APP_URL ?? 'http://localhost:3000';
 }
 
-function resolveRoleSpecificProfile(email: string, role: 'college' | 'student' | 'industry', registration: Record<string, unknown>) {
-  const user = authUsers.get(email)!;
-
-  if (role === 'college') {
-    const payload = collegeRegistrationSchema.parse(registration);
-    const collegeId = generateId('college');
-    colleges.set(collegeId, {
-      id: collegeId,
-      tenantId: collegeId,
-      userId: user.id,
-      name: payload.collegeName,
-      logoUrl: payload.logoUrl,
-      address: payload.address,
-      university: payload.university,
-      isAutonomous: payload.isAutonomous,
-      subscriptionPlan: payload.subscriptionPlan,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    });
-    user.tenantId = collegeId;
-    user.collegeId = collegeId;
-    user.profile = payload;
-    return;
-  }
-
-  if (role === 'industry') {
-    const payload = industryRegistrationSchema.parse(registration);
-    const industryId = generateId('industry');
-    industries.set(industryId, {
-      id: industryId,
-      tenantId: industryId,
-      userId: user.id,
-      name: payload.industryName,
-      logoUrl: payload.logoUrl,
-      industryField: payload.industryField,
-      description: payload.description,
-      internshipRoles: payload.internshipRoles.length > 0 ? payload.internshipRoles : dynamicRolesForField(payload.industryField),
-      createdAt: new Date().toISOString(),
-    });
-    user.tenantId = industryId;
-    user.industryId = industryId;
-    user.profile = payload;
-    return;
-  }
-
-  const payload = studentRegistrationSchema.parse(registration);
-  const studentExists = Array.from(students.values()).find(
-    (entry) => entry.email === email && entry.universityRegNo === payload.universityRegNo,
-  );
-  if (studentExists) {
-    throw new Error('A student with this email and university registration number already exists.');
-  }
-  const studentId = generateId('student');
-  students.set(studentId, {
-    id: studentId,
-    tenantId: payload.collegeId,
-    userId: user.id,
-    collegeId: payload.collegeId,
-    email,
-    fullName: payload.fullName,
-    universityRegNo: payload.universityRegNo,
-    dob: payload.dob,
-    whatsappNumber: payload.whatsappNumber,
-    address: payload.address,
-    programme: payload.programme,
-    year: payload.year,
-    semester: payload.semester,
-    photoUrl: payload.photoUrl,
-    createdAt: new Date().toISOString(),
+async function issueVerificationEmail(input: { tenantId: string; userId: string; email: string }) {
+  const token = randomToken(32);
+  await prisma.verificationToken.create({
+    data: {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      email: input.email,
+      tokenHash: hashOpaqueToken(token),
+      type: VerificationTokenType.EMAIL_VERIFICATION,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+    },
   });
-  user.tenantId = payload.collegeId;
-  user.collegeId = payload.collegeId;
-  user.studentId = studentId;
-  user.fullName = payload.fullName;
-  user.profile = payload;
+
+  const verificationUrl = `${appUrl()}/verify-email?token=${encodeURIComponent(token)}`;
+  return sendTransactionalEmail({
+    to: input.email,
+    subject: 'Verify your Prism workspace email',
+    html: `<div style="font-family:Inter,Arial,sans-serif;padding:24px"><h1>Verify your email</h1><p>Thanks for creating your account. Confirm your email address to activate your tenant workspace.</p><p><a href="${verificationUrl}" style="display:inline-block;padding:12px 18px;border-radius:9999px;background:#4f46e5;color:#fff;text-decoration:none">Verify email</a></p><p>If the button does not work, copy this URL: ${verificationUrl}</p></div>`,
+  });
+}
+
+async function issuePasswordResetEmail(input: { tenantId: string; userId: string; email: string }) {
+  const token = randomToken(32);
+  await prisma.verificationToken.create({
+    data: {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      email: input.email,
+      tokenHash: hashOpaqueToken(token),
+      type: VerificationTokenType.PASSWORD_RESET,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 30),
+    },
+  });
+
+  const resetUrl = `${appUrl()}/reset-password?token=${encodeURIComponent(token)}`;
+  return sendTransactionalEmail({
+    to: input.email,
+    subject: 'Reset your Prism workspace password',
+    html: `<div style="font-family:Inter,Arial,sans-serif;padding:24px"><h1>Reset password</h1><p>We received a password reset request for your workspace account.</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 18px;border-radius:9999px;background:#0f172a;color:#fff;text-decoration:none">Reset password</a></p><p>If the button does not work, copy this URL: ${resetUrl}</p></div>`,
+  });
 }
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
-
-  app.post('/auth/discover', async (request) => {
-    const payload = emailDiscoverySchema.parse(request.body);
-    const existingUser = authUsers.get(payload.email);
-
-    if (existingUser) {
-      return {
-        email: payload.email,
-        exists: true,
-        role: existingUser.role,
-        nextStep: 'LOGIN_PASSWORD',
-        redirectTo:
-          existingUser.role === 'college'
-            ? '/login/college'
-            : existingUser.role === 'student'
-              ? '/login/student'
-              : '/login/industry',
-        dashboard:
-          existingUser.role === 'college'
-            ? '/portal/college'
-            : existingUser.role === 'student'
-              ? '/portal/student'
-              : '/portal/industry',
-        message: 'Existing account found. Continue to login.',
-      };
+  app.post('/auth/discover', async (request, reply) => {
+    const payload = discoverSchema.parse(request.body);
+    const tenant = await prisma.tenant.findUnique({ where: { slug: payload.tenantSlug } });
+    if (!tenant) {
+      reply.code(404);
+      return fail('Workspace not found.', { exists: false, tenantFound: false, nextStep: 'REGISTER', redirectTo: '/register' });
     }
 
-    const role = payload.role ?? 'student';
-    return {
-      email: payload.email,
-      exists: false,
-      role,
-      nextStep: 'REGISTER',
-      redirectTo:
-        role === 'college'
-          ? '/signup/college'
-          : role === 'student'
-            ? '/signup/student'
-            : '/signup/industry',
-      message: 'No account found. Continue with registration.',
-    };
-  });
-
-  app.post('/auth/send-otp', async (request, reply) => {
-    const payload = otpSendSchema.parse(request.body);
-    const existingUser = authUsers.get(payload.email);
-
-    if (existingUser) {
-      return {
-        email: payload.email,
-        exists: true,
-        nextStep: 'LOGIN_PASSWORD',
-        role: existingUser.role,
-        message: 'Email already exists. Continue to password login.',
-      };
-    }
-
-    const role = payload.role!;
-    const userId = generateId('user');
-    authUsers.set(payload.email, {
-      id: userId,
-      tenantId: role === 'college' ? demoCollegeId : role === 'industry' ? demoIndustryId : payload.registration && 'collegeId' in payload.registration ? String(payload.registration.collegeId) : demoCollegeId,
-      email: payload.email,
-      role,
-      isVerified: false,
-      status: 'pending_verification',
-      createdAt: new Date().toISOString(),
-      fullName: role === 'student' && payload.registration && 'fullName' in payload.registration ? String(payload.registration.fullName) : role === 'college' ? 'College Admin' : 'Industry Admin',
+    const user = await prisma.user.findUnique({
+      where: { tenantId_email: { tenantId: tenant.id, email: payload.email.toLowerCase() } },
     });
 
-    try {
-      resolveRoleSpecificProfile(payload.email, role, payload.registration as Record<string, unknown>);
-    } catch (error) {
-      authUsers.delete(payload.email);
-      throw error;
+    return ok(user ? 'Existing account found. Continue to login.' : 'No account found. Continue to registration.', {
+      exists: Boolean(user),
+      tenantFound: true,
+      nextStep: user ? 'LOGIN' : 'REGISTER',
+      redirectTo: user ? '/login' : '/register',
+      role: user?.role ?? null,
+    });
+  });
+
+  app.post('/auth/register', async (request, reply) => {
+    const payload = registerSchema.parse(request.body);
+    if (!validatePasswordPolicy(payload.password)) {
+      reply.code(400);
+      return fail('Password must include at least one letter and one number and be 8-64 characters long.', { field: 'password' });
     }
 
-    const otp = nextOtp(payload.email, 'registration');
-    const delivery = await sendTransactionalEmail({
-      to: payload.email,
-      subject: 'InternSuite OTP verification',
-      html: `<p>Your InternSuite OTP is <strong>${otp}</strong>. It expires in 15 minutes.</p>`,
+    const result = await prisma.$transaction(async (tx) => {
+      let tenant = await tx.tenant.findUnique({ where: { slug: payload.tenantSlug } });
+      const isNewTenant = !tenant;
+      if (!tenant) {
+        tenant = await tx.tenant.create({
+          data: {
+            name: payload.tenantName,
+            slug: payload.tenantSlug,
+            plan: payload.plan,
+          },
+        });
+      }
+
+      const existingUser = await tx.user.findUnique({
+        where: { tenantId_email: { tenantId: tenant.id, email: payload.email.toLowerCase() } },
+      });
+      if (existingUser) {
+        throw new Error('An account with this email already exists in the selected workspace.');
+      }
+
+      const user = await tx.user.create({
+        data: {
+          tenantId: tenant.id,
+          name: payload.name,
+          email: payload.email.toLowerCase(),
+          passwordHash: hashPassword(payload.password),
+          role: isNewTenant ? UserRole.ADMIN : payload.role ?? UserRole.USER,
+          registrationNumber: payload.registrationNumber,
+          dob: payload.dob ? new Date(payload.dob) : undefined,
+          whatsappNumber: payload.whatsappNumber,
+          address: payload.address,
+          programme: payload.programme,
+          year: payload.year,
+          semester: payload.semester,
+          photoUrl: payload.photoUrl,
+        },
+      });
+
+      return { tenant, user, isNewTenant };
+    });
+
+    const delivery = await issueVerificationEmail({
+      tenantId: result.tenant.id,
+      userId: result.user.id,
+      email: result.user.email,
+    });
+
+    await createAuditLog({
+      tenantId: result.tenant.id,
+      actorUserId: result.user.id,
+      action: 'auth.register',
+      entityType: 'User',
+      entityId: result.user.id,
+      description: 'Registered a user and initiated email verification.',
+      metadata: { tenantSlug: result.tenant.slug, createdTenant: result.isNewTenant },
     });
 
     reply.code(201);
-    return {
-      email: payload.email,
-      exists: false,
-      nextStep: 'VERIFY_OTP',
-      role,
+    return ok('Registration successful. Please verify your email before logging in.', {
+      tenant: {
+        id: result.tenant.id,
+        name: result.tenant.name,
+        slug: result.tenant.slug,
+        plan: result.tenant.plan,
+      },
+      user: {
+        id: result.user.id,
+        name: result.user.name,
+        email: result.user.email,
+        role: result.user.role,
+      },
       delivery,
-      otpPreview: otp,
-      message: 'Registration profile captured. Verify the OTP to continue.',
-    };
+    });
   });
 
-  app.post('/auth/verify-otp', async (request, reply) => {
-    const payload = verifyOtpSchema.parse(request.body);
-    const record = verificationChallenges.get(payload.email);
-    if (!record || new Date(record.expiresAt).getTime() < Date.now()) {
+  app.get('/auth/verify-email', async (request, reply) => {
+    const payload = z.object({ token: z.string().min(20) }).parse(request.query);
+    const tokenHash = hashOpaqueToken(payload.token);
+    const verification = await prisma.verificationToken.findFirst({
+      where: {
+        tokenHash,
+        type: VerificationTokenType.EMAIL_VERIFICATION,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      include: { user: true },
+    });
+
+    if (!verification?.user) {
       reply.code(400);
-      return { message: 'OTP is invalid or expired.' };
+      return fail('Verification link is invalid or expired.', { verified: false });
     }
 
-    if (record.otpHash !== hashOpaqueToken(payload.otp)) {
-      reply.code(400);
-      return { message: 'OTP is invalid or expired.' };
-    }
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: verification.user.id },
+        data: { emailVerifiedAt: new Date() },
+      }),
+      prisma.verificationToken.update({
+        where: { id: verification.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
 
-    const user = authUsers.get(payload.email);
-    if (!user) {
-      reply.code(404);
-      return { message: 'User account not found.' };
-    }
+    await createAuditLog({
+      tenantId: verification.user.tenantId,
+      actorUserId: verification.user.id,
+      action: 'auth.verify_email',
+      entityType: 'User',
+      entityId: verification.user.id,
+      description: 'Verified a user email address.',
+    });
 
-    user.isVerified = true;
-    user.status = 'verified';
-    verificationChallenges.delete(payload.email);
-    return {
-      email: user.email,
-      verified: true,
-      nextStep: 'SET_PASSWORD',
-      message: 'OTP verified successfully. You can now create your password.',
-    };
-  });
-
-  app.post('/auth/set-password', async (request, reply) => {
-    const payload = passwordSchema.parse(request.body);
-    const user = authUsers.get(payload.email);
-    if (!user) {
-      reply.code(404);
-      return { message: 'User account not found.' };
-    }
-    if (!user.isVerified || user.status === 'pending_verification') {
-      reply.code(403);
-      return { message: 'Verify OTP before setting a password.' };
-    }
-
-    user.passwordHash = hashPassword(payload.password);
-    user.status = 'active';
-    return {
-      email: user.email,
-      passwordCreated: true,
-      nextStep: 'LOGIN',
-      message: 'Password created successfully.',
-    };
+    return ok('Email verified successfully.', { verified: true });
   });
 
   app.post('/auth/login', async (request, reply) => {
     const payload = loginSchema.parse(request.body);
-    const user = authUsers.get(payload.email);
-
-    if (!user || !user.passwordHash || !verifyPassword(payload.password, user.passwordHash)) {
-      reply.code(401);
-      return { message: 'Invalid credentials.' };
+    const tenant = await prisma.tenant.findUnique({ where: { slug: payload.tenantSlug } });
+    if (!tenant || tenant.status !== 'ACTIVE') {
+      reply.code(403);
+      return fail('The selected workspace is not available.', { field: 'tenantSlug' });
     }
 
-    if (user.status !== 'active' || !user.isVerified) {
+    const user = await prisma.user.findUnique({
+      where: { tenantId_email: { tenantId: tenant.id, email: payload.email.toLowerCase() } },
+    });
+
+    if (!user || !verifyPassword(payload.password, user.passwordHash)) {
+      reply.code(401);
+      return fail('Invalid tenant-aware credentials.', { field: 'password' });
+    }
+
+    if (!user.emailVerifiedAt) {
       reply.code(403);
-      return { message: 'Complete OTP verification and password setup before login.' };
+      return fail('Verify your email before logging in.', { field: 'email' });
     }
 
     const { token, principal } = createSignedSessionToken({
       sub: user.id,
+      tenantId: tenant.id,
       email: user.email,
       role: user.role,
-      audience: loginAudience[user.role],
-      tenantId: user.tenantId,
-      collegeId: user.collegeId,
-      industryId: user.industryId,
-      studentId: user.studentId,
     });
 
-    return {
-      message: 'Login successful.',
+    await prisma.session.create({
+      data: {
+        id: principal.sessionId,
+        tenantId: tenant.id,
+        userId: user.id,
+        tokenHash: hashOpaqueToken(token),
+        expiresAt: new Date(principal.exp * 1000),
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'],
+      },
+    });
+
+    await createAuditLog({
+      tenantId: tenant.id,
+      actorUserId: user.id,
+      action: 'auth.login',
+      entityType: 'Session',
+      entityId: principal.sessionId,
+      description: 'Created a new authenticated session.',
+    });
+
+    return ok('Login successful.', {
       accessToken: token,
-      principal,
-      redirectTo:
-        user.role === 'college'
-          ? '/portal/college'
-          : user.role === 'student'
-            ? '/portal/student'
-            : user.role === 'industry'
-              ? '/portal/industry'
-              : '/portal/admin',
-    };
+      session: principal,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        plan: tenant.plan,
+        status: tenant.status,
+      },
+    });
   });
 
   app.post('/auth/forgot-password', async (request) => {
-    const payload = z.object({ email: z.string().email() }).parse(request.body);
-    const user = authUsers.get(payload.email);
-    if (!user) {
-      return { message: 'If an account exists, a reset OTP has been sent.' };
+    const payload = forgotPasswordSchema.parse(request.body);
+    const tenant = await prisma.tenant.findUnique({ where: { slug: payload.tenantSlug } });
+    if (!tenant) {
+      return ok('If an account exists, a reset email has been sent.', { delivery: null });
     }
-    const otp = nextOtp(payload.email, 'password_reset');
-    const delivery = await sendTransactionalEmail({
-      to: payload.email,
-      subject: 'InternSuite password reset OTP',
-      html: `<p>Your password reset OTP is <strong>${otp}</strong>. It expires in 15 minutes.</p>`,
+
+    const user = await prisma.user.findUnique({
+      where: { tenantId_email: { tenantId: tenant.id, email: payload.email.toLowerCase() } },
     });
-    return { message: 'If an account exists, a reset OTP has been sent.', delivery, otpPreview: otp };
+
+    if (!user) {
+      return ok('If an account exists, a reset email has been sent.', { delivery: null });
+    }
+
+    const delivery = await issuePasswordResetEmail({
+      tenantId: tenant.id,
+      userId: user.id,
+      email: user.email,
+    });
+
+    await createAuditLog({
+      tenantId: tenant.id,
+      actorUserId: user.id,
+      action: 'auth.request_password_reset',
+      entityType: 'User',
+      entityId: user.id,
+      description: 'Requested a password reset email.',
+    });
+
+    return ok('If an account exists, a reset email has been sent.', { delivery });
   });
 
   app.post('/auth/reset-password', async (request, reply) => {
-    const payload = z.object({ email: z.string().email(), otp: z.string().regex(/^\d{6}$/), password: passwordSchema.shape.password }).parse(request.body);
-    const challenge = passwordResetChallenges.get(payload.email);
-    if (!challenge || challenge.otpHash !== hashOpaqueToken(payload.otp) || new Date(challenge.expiresAt).getTime() < Date.now()) {
+    const payload = resetPasswordSchema.parse(request.body);
+    if (!validatePasswordPolicy(payload.password)) {
       reply.code(400);
-      return { message: 'Reset OTP is invalid or expired.' };
+      return fail('Password must include at least one letter and one number and be 8-64 characters long.', { field: 'password' });
     }
-    const user = authUsers.get(payload.email);
-    if (!user) {
-      reply.code(404);
-      return { message: 'User account not found.' };
+
+    const tokenHash = hashOpaqueToken(payload.token);
+    const resetToken = await prisma.verificationToken.findFirst({
+      where: {
+        tokenHash,
+        type: VerificationTokenType.PASSWORD_RESET,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      include: { user: true },
+    });
+
+    if (!resetToken?.user) {
+      reply.code(400);
+      return fail('Reset token is invalid or expired.', { reset: false });
     }
-    user.passwordHash = hashPassword(payload.password);
-    user.status = 'active';
-    passwordResetChallenges.delete(payload.email);
-    return { message: 'Password updated successfully.' };
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: resetToken.user.id },
+        data: { passwordHash: hashPassword(payload.password) },
+      }),
+      prisma.verificationToken.update({
+        where: { id: resetToken.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    await createAuditLog({
+      tenantId: resetToken.user.tenantId,
+      actorUserId: resetToken.user.id,
+      action: 'auth.reset_password',
+      entityType: 'User',
+      entityId: resetToken.user.id,
+      description: 'Reset the account password using a signed token.',
+    });
+
+    return ok('Password reset successful.', { reset: true });
   });
 
-  app.get('/auth/session', { preHandler: requireAuth({ audience: undefined }) }, async (request) => ({ principal: request.user }));
+  app.get('/auth/session', { preHandler: requireAuth() }, async (request) => {
+    const user = await prisma.user.findUnique({
+      where: { id: request.user!.sub },
+      include: { tenant: true },
+    });
+
+    return ok('Active session loaded.', {
+      session: request.user,
+      user,
+    });
+  });
 };

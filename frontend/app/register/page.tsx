@@ -1,10 +1,10 @@
 import { MarketingShell } from '@/components/marketing-shell';
 import { AuthForm } from '@/components/auth-form';
 
-export default function ForgotPasswordPage() {
+export default function RegisterPage() {
   return (
     <MarketingShell>
-      <AuthForm mode="forgot-password" />
+      <AuthForm mode="register" />
     </MarketingShell>
   );
 }

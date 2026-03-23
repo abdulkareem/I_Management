@@ -12,7 +12,7 @@ export async function sendTransactionalEmail(input: {
   html: string;
 }) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL ?? 'InternSuite <no-reply@internsuite.app>';
+  const from = process.env.RESEND_FROM_EMAIL ?? 'Prism SaaS <no-reply@prismsaas.app>';
 
   if (!apiKey) {
     return {
@@ -42,8 +42,7 @@ export async function sendTransactionalEmail(input: {
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Resend delivery failed: ${errorText}`);
+    throw new Error(`Resend delivery failed: ${await response.text()}`);
   }
 
   const body = (await response.json()) as { id: string };

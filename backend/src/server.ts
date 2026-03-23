@@ -2,11 +2,12 @@ import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
+import { bootstrapDemoData } from './lib/bootstrap.js';
 import { authRoutes } from './routes/auth.js';
-import { complianceRoutes } from './routes/compliance.js';
 import { dashboardRoutes } from './routes/dashboard.js';
-import { erpRoutes } from './routes/erp.js';
-import { systemRoutes } from './routes/system.js';
+import { notificationRoutes } from './routes/notifications.js';
+import { tenantRoutes } from './routes/tenants.js';
+import { userRoutes } from './routes/users.js';
 
 export function buildServer() {
   const app = Fastify({ logger: true });
@@ -15,20 +16,26 @@ export function buildServer() {
   app.register(swagger, {
     openapi: {
       info: {
-        title: 'InternSuite API',
-        version: '4.0.0',
+        title: 'Prism Multi-Tenant SaaS API',
+        version: '1.0.0',
         description:
-          'InternSuite API for production deployment, verified identity onboarding, file-storage orchestration, reusable document generation, and internship lifecycle automation.',
+          'Production-style multi-tenant SaaS API with Prisma persistence, tenant isolation, role-aware auth, Resend verification, notifications, and audit logs.',
       },
     },
   });
   app.register(swaggerUi, { routePrefix: '/docs' });
 
-  app.register(systemRoutes, { prefix: '/api' });
+  app.get('/health', async () => ({ success: true }));
+
   app.register(authRoutes, { prefix: '/api' });
+  app.register(tenantRoutes, { prefix: '/api' });
+  app.register(userRoutes, { prefix: '/api' });
+  app.register(notificationRoutes, { prefix: '/api' });
   app.register(dashboardRoutes, { prefix: '/api' });
-  app.register(complianceRoutes, { prefix: '/api' });
-  app.register(erpRoutes, { prefix: '/api' });
+
+  app.addHook('onReady', async () => {
+    await bootstrapDemoData();
+  });
 
   return app;
 }
