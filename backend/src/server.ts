@@ -12,6 +12,21 @@ import { collegeRoutes } from './routes/college.js';
 import { industryRoutes } from './routes/industry.js';
 import { studentRoutes } from './routes/student.js';
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.length > 0) {
+      return message;
+    }
+  }
+
+  return 'Unexpected error';
+}
+
 export function buildServer() {
   const app = Fastify({ logger: true });
 
@@ -43,7 +58,7 @@ export function buildServer() {
 
   app.setErrorHandler((error, _request, reply) => {
     const statusCode = reply.statusCode >= 400 ? reply.statusCode : 500;
-    const message = error instanceof Error ? error.message : 'Unexpected error';
+    const message = getErrorMessage(error);
     reply.code(statusCode).send(fail(message, { statusCode }));
   });
 
