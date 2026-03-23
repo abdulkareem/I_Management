@@ -43,7 +43,8 @@ export function buildServer() {
 
   app.setErrorHandler((error, _request, reply) => {
     const statusCode = reply.statusCode >= 400 ? reply.statusCode : 500;
-    reply.code(statusCode).send(fail(error.message || 'Unexpected error', { statusCode }));
+    const message = error instanceof Error ? error.message : 'Unexpected error';
+    reply.code(statusCode).send(fail(message, { statusCode }));
   });
 
   app.addHook('onReady', async () => {
