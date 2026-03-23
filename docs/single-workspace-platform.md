@@ -96,11 +96,11 @@ docs/
 ### Cloudflare Pages frontend
 
 1. Set `NEXT_PUBLIC_API_BASE_URL` to the Railway API base URL plus `/api`.
-2. Build command: `npm install && npm run build`.
-3. Root directory: `frontend`.
-4. Build output directory: `out`.
+2. Use the repository `wrangler.toml` so Pages runs `npm run pages:build` from the repo root.
+3. Root directory: repository root.
+4. Build output directory: `frontend/out`.
 5. Ensure HTTPS is enabled so the manifest and service worker remain installable on Android.
-6. Upload the `_headers` file to keep the service worker fresh.
+6. The exported build already includes the `_headers` file from `frontend/public/_headers`.
 
 ### Cloudflare R2 storage
 

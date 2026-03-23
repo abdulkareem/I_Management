@@ -15,6 +15,7 @@
     "frontend:build": "npm run build --prefix frontend",
     "backend:build": "npm run build --prefix backend",
     "prisma:generate": "npm run prisma:generate --prefix backend",
-    "prisma:migrate:deploy": "npm run prisma:migrate:deploy --prefix backend"
+    "prisma:migrate:deploy": "npm run prisma:migrate:deploy --prefix backend",
+    "pages:build": "npm install --prefix frontend --progress=false && npm run build --prefix frontend"
   }
 }
