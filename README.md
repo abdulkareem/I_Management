@@ -62,6 +62,7 @@ Suggested Cloudflare settings:
 - Framework preset: `Next.js`
 - Root directory: `frontend`
 - Build command: `npm run build`
+- Build output directory: `out`
 - Node version: `18+`
 
 ## Product Experience
