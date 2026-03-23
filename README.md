@@ -60,9 +60,9 @@ npm run build --prefix frontend
 Suggested Cloudflare settings:
 
 - Framework preset: `Next.js`
-- Root directory: `frontend`
-- Build command: `npm run build`
-- Build output directory: `out`
+- Root directory: repository root
+- Build command: `npm run pages:build` (the checked-in `wrangler.toml` uses this automatically)
+- Build output directory: `frontend/out`
 - Node version: `18+`
 
 ## Product Experience
