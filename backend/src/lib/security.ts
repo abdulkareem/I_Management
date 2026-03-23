@@ -1,46 +1,37 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { hashSync, compareSync } from 'bcryptjs';
+import { compareSync, hashSync } from 'bcryptjs';
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
-
-export type AuthRole = 'college' | 'student' | 'industry' | 'super_admin';
+import { prisma, type Session, type UserRole } from '@prism/database';
 
 export interface SessionPrincipal {
   sub: string;
-  email: string;
-  role: AuthRole;
-  audience: string;
   tenantId: string;
-  collegeId?: string;
-  industryId?: string;
-  studentId?: string;
+  email: string;
+  role: UserRole;
   sessionId: string;
   exp: number;
 }
 
-const SECRET = process.env.JWT_SECRET ?? 'internsuite-dev-secret';
-const TOKEN_TTL_SECONDS = 60 * 60 * 8;
+const SECRET = process.env.JWT_SECRET ?? 'prism-dev-secret';
+const TOKEN_TTL_SECONDS = Number(process.env.ACCESS_TOKEN_TTL_SECONDS ?? 60 * 60 * 8);
 
-function base64UrlEncode(value: string) {
+function encode(value: string) {
   return Buffer.from(value).toString('base64url');
 }
 
-function base64UrlDecode(value: string) {
+function decode(value: string) {
   return Buffer.from(value, 'base64url').toString('utf8');
-}
-
-export function validatePasswordPolicy(password: string) {
-  return /^[A-Za-z0-9]{4,12}$/.test(password) && /[A-Za-z]/.test(password) && /\d/.test(password);
 }
 
 export function hashPassword(password: string) {
   return hashSync(password, 12);
 }
 
-export function verifyPassword(password: string, storedHash: string) {
-  return compareSync(password, storedHash);
+export function verifyPassword(password: string, hash: string) {
+  return compareSync(password, hash);
 }
 
-export function createOpaqueToken(size = 32) {
+export function randomToken(size = 32) {
   return randomBytes(size).toString('base64url');
 }
 
@@ -48,54 +39,38 @@ export function hashOpaqueToken(token: string) {
   return createHmac('sha256', SECRET).update(token).digest('hex');
 }
 
-export function createNumericOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
 export function createSignedSessionToken(
   payload: Omit<SessionPrincipal, 'exp' | 'sessionId'> & { sessionId?: string; expiresInSeconds?: number },
 ) {
-  const header = { alg: 'HS256', typ: 'JWT' };
+  const header = encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const principal: SessionPrincipal = {
     ...payload,
     sessionId: payload.sessionId ?? randomUUID(),
     exp: Math.floor(Date.now() / 1000) + (payload.expiresInSeconds ?? TOKEN_TTL_SECONDS),
   };
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedPayload = base64UrlEncode(JSON.stringify(principal));
-  const signature = createHmac('sha256', SECRET)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64url');
-
-  return {
-    token: `${encodedHeader}.${encodedPayload}.${signature}`,
-    principal,
-  };
+  const body = encode(JSON.stringify(principal));
+  const signature = createHmac('sha256', SECRET).update(`${header}.${body}`).digest('base64url');
+  return { token: `${header}.${body}.${signature}`, principal };
 }
 
-export function verifySignedSessionToken(token: string): SessionPrincipal {
-  const [encodedHeader, encodedPayload, signature] = token.split('.');
-  if (!encodedHeader || !encodedPayload || !signature) {
+export function verifySignedSessionToken(token: string) {
+  const [header, payload, signature] = token.split('.');
+  if (!header || !payload || !signature) {
     throw new Error('Invalid token format.');
   }
-
-  const expectedSignature = createHmac('sha256', SECRET)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64url');
-
-  if (
-    signature.length !== expectedSignature.length ||
-    !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
-  ) {
+  const expected = createHmac('sha256', SECRET).update(`${header}.${payload}`).digest('base64url');
+  if (expected.length !== signature.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) {
     throw new Error('Invalid token signature.');
   }
-
-  const principal = JSON.parse(base64UrlDecode(encodedPayload)) as SessionPrincipal;
-  if (principal.exp <= Math.floor(Date.now() / 1000)) {
+  const principal = JSON.parse(decode(payload)) as SessionPrincipal;
+  if (principal.exp < Math.floor(Date.now() / 1000)) {
     throw new Error('Session expired.');
   }
-
   return principal;
+}
+
+export function validatePasswordPolicy(password: string) {
+  return /^(?=.*[A-Za-z])(?=.*\d).{8,64}$/.test(password);
 }
 
 export function extractBearerToken(request: FastifyRequest) {
@@ -106,18 +81,29 @@ export function extractBearerToken(request: FastifyRequest) {
   return authorization.slice('Bearer '.length);
 }
 
-export function requireAuth(options: { roles?: AuthRole[]; audience?: string }): preHandlerHookHandler {
+async function resolveSession(token: string): Promise<Session | null> {
+  return prisma.session.findFirst({
+    where: {
+      tokenHash: hashOpaqueToken(token),
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+  });
+}
+
+export function requireAuth(options?: { roles?: UserRole[] }): preHandlerHookHandler {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const token = extractBearerToken(request);
-      const principal = verifySignedSessionToken(token);
-      if (options.roles && !options.roles.includes(principal.role)) {
-        reply.code(403);
-        throw new Error('Role does not have access to this resource.');
+      const rawToken = extractBearerToken(request);
+      const principal = verifySignedSessionToken(rawToken);
+      const session = await resolveSession(rawToken);
+      if (!session || session.id !== principal.sessionId) {
+        reply.code(401);
+        throw new Error('Session is no longer valid.');
       }
-      if (options.audience && principal.audience !== options.audience) {
+      if (options?.roles && !options.roles.includes(principal.role)) {
         reply.code(403);
-        throw new Error('Token audience mismatch.');
+        throw new Error('You do not have permission to access this resource.');
       }
       request.user = principal;
     } catch (error) {

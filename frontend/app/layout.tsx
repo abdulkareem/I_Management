@@ -3,27 +3,22 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'InternSuite',
+  title: 'Prism SaaS',
   description:
-    'InternSuite is a public-facing internship cloud ERP for colleges with separate role access for colleges, students, industry partners, and private super admin operations.',
+    'Prism is a multi-tenant SaaS platform starter with tenant isolation, email verification, role-based access control, notifications, and premium product design.',
   manifest: '/manifest.webmanifest',
-  appleWebApp: {
-    capable: true,
-    title: 'InternSuite',
-    statusBarStyle: 'default',
-  },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#1e40af',
+  themeColor: '#050816',
 };
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="text-white antialiased">{children}</body>
     </html>
   );
 }

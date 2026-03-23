@@ -1,211 +1,123 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
+import { prisma, VerificationTokenType } from '@prism/database';
 import { buildServer } from '../server.js';
 
-const studentRegistration = {
-  email: 'asha@example.edu',
-  role: 'student',
-  registration: {
-    fullName: 'Asha Student',
-    universityRegNo: 'REG-2026-001',
-    photoUrl: 'https://cdn.internsuite.app/photo/asha.jpg',
-    photoSizeBytes: 180000,
-    dob: '2005-05-01',
-    whatsappNumber: '919999999999',
-    address: 'Calicut, Kerala, India',
-    programme: 'BCA',
-    year: 3,
-    semester: 6,
-    collegeId: 'college-demo',
-  },
-};
+const tenantSlug = 'aurora-campus';
+const adminEmail = 'owner@aurora.edu';
 
+test('multi-tenant auth lifecycle, user management, notifications, and dashboard summary work end-to-end', async () => {
+  await prisma.session.deleteMany({});
+  await prisma.verificationToken.deleteMany({ where: { email: adminEmail } });
+  await prisma.notification.deleteMany({});
+  await prisma.auditLog.deleteMany({});
+  await prisma.user.deleteMany({ where: { tenant: { slug: tenantSlug } } });
+  await prisma.tenant.deleteMany({ where: { slug: tenantSlug } });
 
-test('email discovery routes existing and new users correctly', async () => {
   const app = buildServer();
+  await app.ready();
 
-  const existing = await app.inject({
+  const register = await app.inject({
     method: 'POST',
-    url: '/api/auth/discover',
-    payload: { email: 'student@internsuite.app', role: 'student' },
-  });
-  assert.equal(existing.statusCode, 200);
-  assert.equal((existing.json() as { exists: boolean; redirectTo: string }).exists, true);
-  assert.equal((existing.json() as { redirectTo: string }).redirectTo, '/login/student');
-
-  const fresh = await app.inject({
-    method: 'POST',
-    url: '/api/auth/discover',
-    payload: { email: 'new-college@example.edu', role: 'college' },
-  });
-  assert.equal(fresh.statusCode, 200);
-  assert.equal((fresh.json() as { exists: boolean; redirectTo: string }).exists, false);
-  assert.equal((fresh.json() as { redirectTo: string }).redirectTo, '/signup/college');
-
-  await app.close();
-});
-
-test('student registration requires OTP verification before password creation', async () => {
-  const app = buildServer();
-
-  const registration = await app.inject({
-    method: 'POST',
-    url: '/api/auth/send-otp',
-    payload: studentRegistration,
-  });
-
-  assert.equal(registration.statusCode, 201);
-
-  const prematurePassword = await app.inject({
-    method: 'POST',
-    url: '/api/auth/set-password',
+    url: '/api/auth/register',
     payload: {
-      email: studentRegistration.email,
-      password: 'Demo1234',
+      tenantName: 'Aurora Campus',
+      tenantSlug,
+      plan: 'PRO',
+      name: 'Aurora Owner',
+      email: adminEmail,
+      password: 'Passw0rd123',
+      registrationNumber: 'REG-9001',
+      dob: '2000-01-01',
+      whatsappNumber: '+15550001111',
+      address: '1 SaaS Plaza, San Francisco, CA',
+      programme: 'B.Tech',
+      year: 4,
+      semester: 8,
+      photoUrl: 'https://images.example.com/avatar.png',
     },
   });
+  assert.equal(register.statusCode, 201);
+  const registerBody = register.json() as { success: boolean; data: { delivery: { accepted?: boolean; preview?: { simulated?: boolean } } } };
+  assert.equal(registerBody.success, true);
+  assert.equal(registerBody.data.delivery.preview?.simulated, true);
 
-  assert.equal(prematurePassword.statusCode, 403);
-  await app.close();
-});
-
-test('verified users can create passwords and authenticate', async () => {
-  const app = buildServer();
-
-  const registration = await app.inject({
-    method: 'POST',
-    url: '/api/auth/send-otp',
-    payload: {
-      email: 'rahul@company.com',
-      role: 'industry',
-      registration: {
-        industryName: 'Rahul Industries',
-        logoUrl: 'https://cdn.internsuite.app/logo/rahul.png',
-        logoSizeBytes: 120000,
-        industryField: 'IT',
-        description: 'Production software engineering internship partner for InternSuite.',
-        internshipRoles: ['Backend Intern'],
-      },
-    },
+  const verification = await prisma.verificationToken.findFirstOrThrow({
+    where: { email: adminEmail, type: VerificationTokenType.EMAIL_VERIFICATION, usedAt: null },
+    orderBy: { createdAt: 'desc' },
   });
+  const previewHtml = registerBody.data.delivery.preview?.htmlPreview ?? '';
+  const tokenMatch = previewHtml.match(/token=([^"&<]+)/);
+  assert.ok(tokenMatch?.[1]);
 
-  const preview = registration.json() as { otpPreview: string };
-
-  const verification = await app.inject({
-    method: 'POST',
-    url: '/api/auth/verify-otp',
-    payload: {
-      email: 'rahul@company.com',
-      otp: preview.otpPreview,
-    },
+  const verifyEmail = await app.inject({
+    method: 'GET',
+    url: `/api/auth/verify-email?token=${tokenMatch![1]}`,
   });
-  assert.equal(verification.statusCode, 200);
-
-  const passwordSet = await app.inject({
-    method: 'POST',
-    url: '/api/auth/set-password',
-    payload: {
-      email: 'rahul@company.com',
-      password: 'Demo1234',
-    },
-  });
-  assert.equal(passwordSet.statusCode, 200);
+  assert.equal(verifyEmail.statusCode, 200);
+  assert.equal((verifyEmail.json() as { data: { verified: boolean } }).data.verified, true);
+  assert.ok(verification.id);
 
   const login = await app.inject({
     method: 'POST',
     url: '/api/auth/login',
     payload: {
-      email: 'rahul@company.com',
-      password: 'Demo1234',
+      tenantSlug,
+      email: adminEmail,
+      password: 'Passw0rd123',
     },
   });
   assert.equal(login.statusCode, 200);
-  assert.ok((login.json() as { accessToken: string }).accessToken);
-  await app.close();
-});
+  const token = (login.json() as { data: { accessToken: string } }).data.accessToken;
+  assert.ok(token);
 
-test('industry posting, student apply, college approve, and marksheet workflow returns expected artifacts', async () => {
-  const app = buildServer();
-
-  const collegeLogin = await app.inject({
+  const createUser = await app.inject({
     method: 'POST',
-    url: '/api/auth/login',
-    payload: { email: 'college@internsuite.app', password: 'Demo1234' },
-  });
-
-  const industryLogin = await app.inject({
-    method: 'POST',
-    url: '/api/auth/login',
-    payload: { email: 'industry@internsuite.app', password: 'Demo1234' },
-  });
-
-  const studentLogin = await app.inject({
-    method: 'POST',
-    url: '/api/auth/login',
-    payload: { email: 'student@internsuite.app', password: 'Demo1234' },
-  });
-
-  const collegeToken = (collegeLogin.json() as { accessToken: string }).accessToken;
-  const industryToken = (industryLogin.json() as { accessToken: string }).accessToken;
-  const studentToken = (studentLogin.json() as { accessToken: string }).accessToken;
-
-  const internship = await app.inject({
-    method: 'POST',
-    url: '/api/industry/internship',
-    headers: { authorization: `Bearer ${industryToken}` },
+    url: '/api/users',
+    headers: { authorization: `Bearer ${token}` },
     payload: {
-      title: 'Node API Intern',
-      description: 'Work on Fastify services, Prisma schema design, and SaaS automation flows.',
-      field: 'IT',
-      duration: '12 weeks',
-      stipend: 10000,
-      visibility: 'PUBLIC',
-      collegeId: 'college-demo',
+      name: 'Nova Staff',
+      email: 'staff@aurora.edu',
+      role: 'STAFF',
+      registrationNumber: 'EMP-77',
+      programme: 'Ops',
+      year: 1,
+      semester: 1,
+      password: 'Passw0rd123',
     },
   });
-  assert.equal(internship.statusCode, 201);
-  const internshipId = (internship.json() as { internshipId: string }).internshipId;
+  assert.equal(createUser.statusCode, 201);
+  const createdUserId = (createUser.json() as { data: { user: { id: string } } }).data.user.id;
 
-  const approveInternship = await app.inject({
+  const assignNotice = await app.inject({
     method: 'POST',
-    url: '/api/college/approve',
-    headers: { authorization: `Bearer ${collegeToken}` },
-    payload: { entity: 'internship', targetId: internshipId, status: 'APPROVED' },
+    url: '/api/notifications/assign',
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      title: 'Complete onboarding tasks',
+      body: 'Upload the final compliance checklist before Friday.',
+      userId: createdUserId,
+    },
   });
-  assert.equal(approveInternship.statusCode, 200);
+  assert.equal(assignNotice.statusCode, 200);
+  assert.equal((assignNotice.json() as { data: { created: number } }).data.created, 1);
 
-  const application = await app.inject({
-    method: 'POST',
-    url: '/api/student/apply',
-    headers: { authorization: `Bearer ${studentToken}` },
-    payload: { internshipId },
-  });
-  assert.equal(application.statusCode, 201);
-  const applicationId = (application.json() as { applicationId: string }).applicationId;
-
-  const approveApplication = await app.inject({
-    method: 'POST',
-    url: '/api/college/approve',
-    headers: { authorization: `Bearer ${collegeToken}` },
-    payload: { entity: 'application', targetId: applicationId, status: 'APPROVED' },
-  });
-  assert.equal(approveApplication.statusCode, 200);
-
-  const evaluation = await app.inject({
-    method: 'POST',
-    url: '/api/college/evaluation',
-    headers: { authorization: `Bearer ${collegeToken}` },
-    payload: { studentId: 'student-demo', marks: 93, grade: 'A+', remarks: 'Excellent performance' },
-  });
-  assert.equal(evaluation.statusCode, 201);
-  const marksheetId = (evaluation.json() as { marksheetId: string }).marksheetId;
-
-  const marksheet = await app.inject({
+  const summary = await app.inject({
     method: 'GET',
-    url: `/api/pdf/marksheet/${marksheetId}`,
-    headers: { authorization: `Bearer ${studentToken}` },
+    url: '/api/dashboard/summary',
+    headers: { authorization: `Bearer ${token}` },
   });
-  assert.equal(marksheet.statusCode, 200);
-  assert.match((marksheet.json() as { fileUrl: string }).fileUrl, /marksheet/);
+  assert.equal(summary.statusCode, 200);
+  const summaryBody = summary.json() as { data: { stats: { totalUsers: number } } };
+  assert.equal(summaryBody.data.stats.totalUsers, 2);
+
+  const users = await app.inject({
+    method: 'GET',
+    url: '/api/users',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(users.statusCode, 200);
+  assert.equal((users.json() as { data: { users: Array<unknown> } }).data.users.length, 2);
+
   await app.close();
 });
