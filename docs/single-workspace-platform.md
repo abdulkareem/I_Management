@@ -98,8 +98,9 @@ docs/
 1. Set `NEXT_PUBLIC_API_BASE_URL` to the Railway API base URL plus `/api`.
 2. Build command: `npm install && npm run build`.
 3. Root directory: `frontend`.
-4. Ensure HTTPS is enabled so the manifest and service worker remain installable on Android.
-5. Upload the `_headers` file to keep the service worker fresh.
+4. Build output directory: `out`.
+5. Ensure HTTPS is enabled so the manifest and service worker remain installable on Android.
+6. Upload the `_headers` file to keep the service worker fresh.
 
 ### Cloudflare R2 storage
 
