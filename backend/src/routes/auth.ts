@@ -14,6 +14,7 @@ import {
   passwordResetChallenges,
   passwordSchema,
   students,
+  emailDiscoverySchema,
   studentRegistrationSchema,
   collegeRegistrationSchema,
   industryRegistrationSchema,
@@ -126,6 +127,49 @@ function resolveRoleSpecificProfile(email: string, role: 'college' | 'student' |
 }
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
+
+  app.post('/auth/discover', async (request) => {
+    const payload = emailDiscoverySchema.parse(request.body);
+    const existingUser = authUsers.get(payload.email);
+
+    if (existingUser) {
+      return {
+        email: payload.email,
+        exists: true,
+        role: existingUser.role,
+        nextStep: 'LOGIN_PASSWORD',
+        redirectTo:
+          existingUser.role === 'college'
+            ? '/login/college'
+            : existingUser.role === 'student'
+              ? '/login/student'
+              : '/login/industry',
+        dashboard:
+          existingUser.role === 'college'
+            ? '/portal/college'
+            : existingUser.role === 'student'
+              ? '/portal/student'
+              : '/portal/industry',
+        message: 'Existing account found. Continue to login.',
+      };
+    }
+
+    const role = payload.role ?? 'student';
+    return {
+      email: payload.email,
+      exists: false,
+      role,
+      nextStep: 'REGISTER',
+      redirectTo:
+        role === 'college'
+          ? '/signup/college'
+          : role === 'student'
+            ? '/signup/student'
+            : '/signup/industry',
+      message: 'No account found. Continue with registration.',
+    };
+  });
+
   app.post('/auth/send-otp', async (request, reply) => {
     const payload = otpSendSchema.parse(request.body);
     const existingUser = authUsers.get(payload.email);

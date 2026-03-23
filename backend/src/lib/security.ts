@@ -29,7 +29,7 @@ function base64UrlDecode(value: string) {
 }
 
 export function validatePasswordPolicy(password: string) {
-  return /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d\W_]{12,}$/.test(password);
+  return /^[A-Za-z0-9]{4,12}$/.test(password) && /[A-Za-z]/.test(password) && /\d/.test(password);
 }
 
 export function hashPassword(password: string) {

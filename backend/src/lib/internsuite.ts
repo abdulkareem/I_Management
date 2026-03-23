@@ -248,12 +248,19 @@ export const verifyOtpSchema = z.object({
 
 export const passwordSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(12).regex(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d\W_]{12,}$/),
+  password: z
+    .string()
+    .min(4)
+    .max(12)
+    .regex(/^[A-Za-z0-9]{4,12}$/, 'Password must be 4 to 12 characters long and alphanumeric only.')
+    .refine((value) => /[A-Za-z]/.test(value) && /\d/.test(value), {
+      message: 'Password must contain at least one letter and one number.',
+    }),
 });
 
 export const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(12),
+  password: z.string().min(4).max(12),
 });
 
 export const internshipSchema = z.object({
@@ -307,7 +314,7 @@ export function seedPlatformData() {
     id: collegeUserId,
     tenantId: baseTenantId,
     email: 'college@internsuite.app',
-    passwordHash: hashPassword('SecurePass123'),
+    passwordHash: hashPassword('Demo1234'),
     role: 'college',
     isVerified: true,
     status: 'active',
@@ -320,7 +327,7 @@ export function seedPlatformData() {
     id: industryUserId,
     tenantId: baseTenantId,
     email: 'industry@internsuite.app',
-    passwordHash: hashPassword('SecurePass123'),
+    passwordHash: hashPassword('Demo1234'),
     role: 'industry',
     isVerified: true,
     status: 'active',
@@ -333,7 +340,7 @@ export function seedPlatformData() {
     id: studentUserId,
     tenantId: baseTenantId,
     email: 'student@internsuite.app',
-    passwordHash: hashPassword('SecurePass123'),
+    passwordHash: hashPassword('Demo1234'),
     role: 'student',
     isVerified: true,
     status: 'active',

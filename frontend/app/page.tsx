@@ -12,47 +12,72 @@ import { PricingGrid, PublicShell, SectionCard } from './ui';
 export default function HomePage() {
   return (
     <PublicShell
-      title="InternSuite: production-ready internship ERP for colleges"
-      lead="Multi-tenant onboarding, OTP + password authentication, workflow automation, PDF generation, and mobile-first SaaS delivery in one system."
+      title="The internship platform colleges will actually be proud to launch"
+      lead="InternSuite now blends modern SaaS aesthetics with practical identity orchestration: role-aware email discovery, OTP verification, dashboard routing, and lifecycle operations in one polished product."
     >
-      <section className="hero-layout">
-        <div className="hero-main card-surface">
+      <section className="hero-layout modern-hero-layout">
+        <div className="hero-main card-surface hero-gradient-panel">
           <div className="hero-copy">
-            <h2>Paperless internship lifecycle automation from posting to marksheet.</h2>
+            <span className="eyebrow">Human-made SaaS experience</span>
+            <h2>From first click to dashboard, every step feels intentional.</h2>
             <p>
-              InternSuite unifies college, student, industry, and admin operations with a scalable data model,
-              verified onboarding, compliance-safe approvals, and auto-generated documents.
+              Whether a college admin, student, or industry partner clicks login or register, InternSuite first checks
+              whether the email already exists, routes them intelligently, sends a six-digit OTP when needed, and keeps
+              the journey beautifully simple.
             </p>
+            <div className="hero-actions">
+              <a className="button primary" href="/auth?role=college">
+                Start with email access
+              </a>
+              <a className="button secondary" href="/pricing">
+                Explore pricing
+              </a>
+            </div>
           </div>
 
-          <div className="hero-spotlight">
-            <div className="hero-kpi card-surface inset-card">
-              <span className="chip">What the platform covers</span>
+          <div className="hero-spotlight modern-spotlight">
+            <div className="hero-kpi card-surface inset-card glass-card">
+              <span className="chip">Experience snapshot</span>
               <ul className="bullet-list compact-bullets">
                 {homepageOverview.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
             </div>
-            <div className="hero-actions">
-              <a className="button primary" href="/auth">
-                Register / Login
-              </a>
-              <a className="button secondary" href="/pricing">
-                View Pricing
-              </a>
+
+            <div className="saas-mockup card-surface">
+              <div className="mockup-topbar">
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="mockup-content">
+                <div className="mockup-card active">
+                  <strong>Email discovery</strong>
+                  <p>Returning users are routed to the right login instantly.</p>
+                </div>
+                <div className="mockup-card">
+                  <strong>OTP verification</strong>
+                  <p>New accounts verify with a six-digit code before password setup.</p>
+                </div>
+                <div className="mockup-card accent">
+                  <strong>Role dashboards</strong>
+                  <p>Students, colleges, and industries each enter their own workspace.</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <aside className="access-panel">
+        <aside className="access-panel modern-access-panel">
           <div className="access-head">
-            <span className="eyebrow">Role access</span>
-            <h2>Choose your workspace</h2>
+            <span className="eyebrow">Jump in by role</span>
+            <h2>One platform, three beautifully separated experiences.</h2>
+            <p>Choose the workspace you belong to and let InternSuite decide the next step automatically.</p>
           </div>
           <div className="access-stack">
             {roleAccessCards.map((card) => (
-              <article key={card.title} className="card-surface access-card">
+              <article key={card.title} className="card-surface access-card access-card-modern">
                 <div>
                   <span className="eyebrow">{card.title}</span>
                   <h3>{card.title}</h3>
@@ -68,7 +93,7 @@ export default function HomePage() {
       </section>
 
       <section className="section-grid two-col landing-detail-grid">
-        <SectionCard title="Why this architecture works" kicker="SaaS readiness">
+        <SectionCard title="Why the new flow feels premium" kicker="Product thinking">
           <div className="card-list">
             {homepageJourney.map((item) => (
               <article key={item.title} className="mini-card info-card">
@@ -79,7 +104,7 @@ export default function HomePage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Capability stack" kicker="Backend + frontend">
+        <SectionCard title="Capability stack" kicker="Platform depth">
           <div className="card-list">
             {erpCapabilityCards.map((item) => (
               <article key={item.title} className="mini-card info-card">
@@ -91,10 +116,10 @@ export default function HomePage() {
         </SectionCard>
       </section>
 
-      <SectionCard title="Authentication flow" kicker="Email-first onboarding">
-        <div className="card-list">
+      <SectionCard title="Modern authentication sequence" kicker="Login + registration logic">
+        <div className="card-list auth-logic-grid">
           {authFlowCards.map((item) => (
-            <article key={item.title} className="mini-card info-card">
+            <article key={item.title} className="mini-card info-card flow-step-card">
               <strong>{item.title}</strong>
               <p>{item.detail}</p>
             </article>
@@ -102,10 +127,10 @@ export default function HomePage() {
         </div>
       </SectionCard>
 
-      <SectionCard title="Automated internship lifecycle" kicker="Industry to marksheet">
-        <div className="card-list">
+      <SectionCard title="How the operating system unfolds" kicker="Lifecycle automation">
+        <div className="card-list lifecycle-grid">
           {lifecycleSteps.map((item) => (
-            <article key={item.title} className="mini-card info-card">
+            <article key={item.title} className="mini-card info-card flow-step-card">
               <strong>{item.title}</strong>
               <p>{item.detail}</p>
             </article>
@@ -113,7 +138,7 @@ export default function HomePage() {
         </div>
       </SectionCard>
 
-      <SectionCard title="College pricing" kicker="Simple annual plans">
+      <SectionCard title="Simple annual pricing" kicker="For colleges">
         <PricingGrid plans={publicPlans} />
       </SectionCard>
     </PublicShell>

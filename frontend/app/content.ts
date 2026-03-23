@@ -1,31 +1,31 @@
 export const publicNav = [
   { label: 'Platform', href: '/' },
   { label: 'Pricing', href: '/pricing' },
-  { label: 'Auth', href: '/auth' },
+  { label: 'Access', href: '/auth' },
 ];
 
 export const homepageOverview = [
-  'Email-first OTP + password onboarding for colleges, students, and industry.',
-  'College-controlled internship approvals, MoU generation, attendance review, and evaluations.',
-  'Industry workflows for posting internships, managing applicants, and submitting attendance.',
-  'Student workspace for verified registration, internship applications, approval letters, and marksheets.',
+  'Role-aware email discovery that routes existing users to login and brand-new users into the right registration flow.',
+  'OTP-first onboarding with a six-digit email verification step before password creation for colleges, students, and industry partners.',
+  'Operational dashboards for approvals, internships, applications, attendance, evaluations, and audit-safe document delivery.',
+  'A premium, mobile-friendly SaaS experience designed to feel custom-built rather than template-generated.',
 ];
 
 export const homepageJourney = [
   {
-    title: 'Discover by email first',
+    title: 'Detect identity before the form maze',
     detail:
-      'The primary Register / Login CTA first asks for email, then routes the user to login or role-specific registration based on account existence.',
+      'Every primary CTA starts with email discovery so InternSuite can instantly decide whether a person should log in or continue to role-specific registration.',
   },
   {
-    title: 'Automate the paperwork',
+    title: 'Make verification feel trustworthy',
     detail:
-      'InternSuite turns internship approvals into system-generated documents including MOU, approval letter, attendance report, and marksheet PDFs.',
+      'A 6-digit OTP is created during registration and emailed before password creation, giving institutions and partners a clean, human-friendly trust checkpoint.',
   },
   {
-    title: 'Protect tenant boundaries',
+    title: 'Move users into work, not admin',
     detail:
-      'Every workflow is scoped by tenant, college, role, and entity ownership so one college never sees another college’s records.',
+      'After login, users land directly in the correct dashboard context—college, student, or industry—without friction or role confusion.',
   },
 ];
 
@@ -33,26 +33,26 @@ export const publicPlans = [
   {
     name: 'Foundation',
     price: '₹12,000 / year',
-    audience: 'For colleges managing up to 500 students with core internship ERP automation.',
+    audience: 'For colleges launching a polished internship operating system with verified onboarding and workflow automation.',
     bullets: [
-      'Up to 500 students',
-      'OTP + password authentication',
-      'Internship approvals, attendance, evaluation, and basic document automation',
-      'Mobile-first dashboards for college, student, and industry',
+      'Up to 500 active students',
+      'Email discovery, OTP verification, and password-based access',
+      'Approvals, attendance, evaluations, and core reporting',
+      'Modern mobile-first dashboards for all roles',
     ],
-    cta: 'Register Your College',
+    cta: 'Start Foundation',
   },
   {
     name: 'Growth',
     price: '₹25,000 / year',
-    audience: 'For colleges managing up to 2000 students with analytics and higher workflow throughput.',
+    audience: 'For institutions scaling across departments and requiring stronger analytics, partner coordination, and higher throughput.',
     bullets: [
-      'Up to 2000 students',
-      'Advanced analytics and reporting',
-      'Higher internship, application, and document volumes',
-      'Designed for scaled multi-department internship operations',
+      'Up to 2000 active students',
+      'Advanced reporting and portfolio-level visibility',
+      'Larger internship, application, and document volumes',
+      'Built for multi-department internship operations',
     ],
-    cta: 'Register Your College',
+    cta: 'Talk to Growth',
   },
 ];
 
@@ -86,78 +86,78 @@ export const publicInternships = [
 export const roleAccessCards = [
   {
     title: 'College',
-    detail: 'Approve internships, onboard students, review attendance, capture evaluations, and publish marksheets.',
-    href: '/auth',
-    cta: 'Register / Login',
+    detail: 'Use an official email to check whether your institution should log in or continue to verified onboarding.',
+    href: '/auth?role=college',
+    cta: 'Access College Workspace',
   },
   {
     title: 'Student',
-    detail: 'Verify identity, complete profile, apply for internships, track approvals, and download marksheets.',
-    href: '/auth',
-    cta: 'Register / Login',
+    detail: 'Students are routed to the right next step automatically—login if registered, OTP onboarding if new.',
+    href: '/auth?role=student',
+    cta: 'Access Student Workspace',
   },
   {
     title: 'Industry',
-    detail: 'Create internships, collaborate with colleges, review applicants, and record daily attendance.',
-    href: '/auth',
-    cta: 'Register / Login',
+    detail: 'Partners can launch directly into login or verified registration before posting internships.',
+    href: '/auth?role=industry',
+    cta: 'Access Industry Workspace',
   },
 ];
 
 export const lifecycleSteps = [
   {
-    title: '1. Industry posts internship',
-    detail: 'Industry creates a listing with visibility, field, duration, stipend, and target college scope.',
+    title: '1. Smart entry',
+    detail: 'Users start with email discovery, reducing duplicate accounts and routing every role into the correct authentication path.',
   },
   {
-    title: '2. College approves and MOU is generated',
-    detail: 'Once the college approves, the system generates a branded MOU PDF and stores its file URL.',
+    title: '2. Verified onboarding',
+    detail: 'New users receive a six-digit OTP by email, verify it, and then create a short alphanumeric password to activate access.',
   },
   {
-    title: '3. Students apply and receive approval letters',
-    detail: 'Students apply through verified accounts, and approved applications trigger approval-letter generation.',
+    title: '3. Role-specific workspaces',
+    detail: 'College teams, students, and industry partners enter dashboards tailored to their exact workflow and permissions.',
   },
   {
-    title: '4. Attendance, evaluation, and marksheet',
-    detail: 'Industry marks attendance, college approves it, then evaluation marks produce a final marksheet PDF.',
+    title: '4. Full lifecycle automation',
+    detail: 'Internship posting, approvals, attendance, evaluations, and marksheets continue inside one connected SaaS operating layer.',
   },
 ];
 
 export const erpCapabilityCards = [
   {
-    title: 'Authentication system',
-    detail: '6-digit OTP verification through Resend with password creation only after successful verification.',
+    title: 'Identity orchestration',
+    detail: 'Email discovery, OTP verification, and gated password creation align registration and login without role confusion.',
   },
   {
-    title: 'PDF automation',
-    detail: 'System-triggered MOU, approval letter, attendance report, and marksheet documents with stored file URLs.',
+    title: 'Operations automation',
+    detail: 'Approval flows, attendance capture, evaluations, and generated artifacts stay connected in one workflow system.',
   },
   {
     title: 'Prisma-first SaaS schema',
-    detail: 'Tenant-safe entities, indexed relationships, and workflow approvals for production-grade scale.',
+    detail: 'Tenant-safe entities, indexed relationships, and production-minded structures support real deployment paths.',
   },
   {
-    title: 'Role-aware API design',
-    detail: 'Copy-paste ready routes for auth, college, student, industry, PDF retrieval, and governance endpoints.',
+    title: 'Modern frontend system',
+    detail: 'The landing page and access flows now feel deliberate, premium, and human-designed instead of generic or mechanical.',
   },
 ];
 
 export const authFlowCards = [
   {
     title: 'Step 1',
-    detail: 'User clicks Register / Login and enters email only.',
+    detail: 'User clicks a login/register CTA, chooses a role, and enters only an email first.',
   },
   {
     title: 'Step 2',
-    detail: 'Existing email routes to password login. New email routes to role-specific registration.',
+    detail: 'The system checks whether that email is already registered and routes to login or role-specific registration.',
   },
   {
     title: 'Step 3',
-    detail: 'System sends a 6-digit OTP by email using Resend.',
+    detail: 'New users receive a 6-digit OTP by email and must verify it before password creation.',
   },
   {
     title: 'Step 4',
-    detail: 'After OTP verification, user sets a 12+ character alphanumeric password and enters the dashboard.',
+    detail: 'After OTP verification, the user creates a 4 to 12 character alphanumeric password and continues to the correct dashboard login flow.',
   },
 ];
 
