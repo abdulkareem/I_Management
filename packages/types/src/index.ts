@@ -1,284 +1,81 @@
-export type InternshipType = 'MAJOR' | 'MINOR' | 'INTERDISCIPLINARY' | 'ALLIED';
-export type InternshipMode = 'OFFLINE' | 'ONLINE' | 'HYBRID';
-export type ProviderCategory =
-  | 'EDUCATIONAL_INSTITUTION'
-  | 'RESEARCH_LAB'
-  | 'GOVERNMENT_INSTITUTION'
-  | 'NGO'
-  | 'MSME_OR_INDUSTRY'
-  | 'BANK_OR_FINANCIAL'
-  | 'IT_OR_DIGITAL'
-  | 'HEALTHCARE_OR_WELLNESS'
-  | 'MEDIA_OR_CULTURAL'
-  | 'AGRICULTURE_OR_ENVIRONMENT';
+export type Role = 'COLLEGE_COORDINATOR' | 'INDUSTRY' | 'STUDENT';
+export type MouStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED';
+export type ApplicationStatus = 'APPLIED' | 'ACCEPTED' | 'REJECTED';
+export type AttendanceStatus = 'PRESENT' | 'ABSENT';
 
-export type ProgramCode = 'BA' | 'BSC' | 'BCOM' | 'BBA' | 'BCA' | 'BVOC' | 'OTHER';
-export type WorkflowState =
-  | 'DRAFT'
-  | 'SUBMITTED'
-  | 'DEPARTMENT_REVIEW'
-  | 'DEPARTMENT_APPROVED'
-  | 'COLLEGE_APPROVED'
-  | 'REJECTED'
-  | 'ACTIVE'
-  | 'COMPLETED';
-
-export type StudentLifecycleStatus = 'ACTIVE' | 'AT_RISK' | 'READY_TO_ARCHIVE' | 'ARCHIVED';
-export type PlanTier = 'FOUNDATION' | 'GROWTH' | 'STATEWIDE';
-export type ListingVisibility = 'PUBLIC' | 'SELECTED_COLLEGES';
-export type AuthRole = 'college' | 'student' | 'industry' | 'super_admin';
-export type DocumentType = 'MOU' | 'APPROVAL_LETTER' | 'ATTENDANCE_REPORT' | 'MARKSHEET';
-export type UploadKind =
-  | 'college-logo'
-  | 'industry-logo'
-  | 'student-passport-photo'
-  | 'student-resume'
-  | 'generated-pdf';
-
-export interface InternshipCellStructure {
-  principalUserId: string;
-  internshipCoordinatorUserId: string;
-  departmentCoordinatorUserIds: string[];
-}
-
-export interface InternshipDraft {
-  collegeId: string;
-  studentCollegeId: string;
-  studentProgram: ProgramCode;
-  internshipType: InternshipType;
-  mode: InternshipMode;
-  providerCategory: ProviderCategory;
-  providerName: string;
-  providerIsPrivate: boolean;
-  providerYearsOfExperience: number;
-  partnerYearsOfExperience?: number | null;
-  hasMoUUpload: boolean;
-  isOwnCollege: boolean;
-  semester: number;
-  affectsAcademicSchedule: boolean;
-  vacationPreferred: boolean;
-  startDate: string;
-  endDate: string;
-  totalHours: number;
-  industrySupervisorUserId?: string | null;
-  externalPlatform?: 'KSHEC' | 'DIRECT' | null;
-  departmentCouncilApproved: boolean;
-}
-
-export interface ComplianceResult {
-  isEligible: boolean;
-  errors: string[];
-  warnings: string[];
-  derived: {
-    minimumHoursRequired: number;
-    evaluation: {
-      cca: number;
-      ese: number;
-      total: number;
-    };
-    reportLanguages: string[];
-  };
-}
-
-export interface StudentRankingInput {
-  studentId: string;
-  rankScore: number;
-  preferredInternshipIds: string[];
-}
-
-export interface SeatInventory {
-  internshipId: string;
-  seats: number;
-}
-
-export interface AllocationResult {
-  internshipId: string;
-  studentId: string;
-  rankScore: number;
-  allocationRank: number;
-}
-
-export interface EvaluationMarks {
-  ccaMarks: number;
-  eseMarks: number;
-}
-
-export interface PaymentRule {
-  internshipSource: 'INTERNAL' | 'EXTERNAL';
-  amountInInr: number;
-  requiresFacultyVerification: true;
-  requiresCoordinatorVerification: true;
-}
-
-export interface StorageBreakdownMb {
-  activeStudentData: number;
-  archivedStudentData: number;
-  industryData: number;
-  documents: number;
-}
-
-export interface StudentCostProfile {
-  activePerSemesterInInr: number;
-  archivedPerYearInInr: number;
-  notes: string[];
-}
-
-export interface CollegeCostScenario {
-  activeStudents: number;
-  archivedStudents: number;
-  annualInfraCostInInr: number;
-  recommendedPlan: PlanTier;
-  recommendedFeeInInr: number;
-  projectedGrossMarginMultiple: number;
-}
-
-export interface CollegeStorageUsage {
-  collegeId: string;
-  collegeName: string;
-  activeStudents: number;
-  archivedStudents: number;
-  industriesRegistered: number;
-  storageBreakdownMb: StorageBreakdownMb;
-  totalStorageMb: number;
-  estimatedAnnualInfraCostInInr: number;
-  recommendedPlan: PlanTier;
-}
-
-export interface StorageSummary {
-  collegesRegistered: number;
-  activeStudents: number;
-  archivedStudents: number;
-  industriesRegistered: number;
-  totalStorageMb: number;
-  estimatedAnnualInfraCostInInr: number;
-}
-
-export interface PricingPlan {
-  name: string;
-  tier: PlanTier;
-  annualPriceInInr: number;
-  activeStudentsIncludedPerSemester: number;
-  archiveStudentsIncluded: number;
-  additionalActiveStudentPriceInInr: number;
-  archiveAddOnPricePer500InInr: number;
-  supportModel: string;
-  highlights: string[];
-}
-
-export interface SemesterCycleSummary {
+export interface SessionUser {
   id: string;
-  label: string;
-  semester: number;
-  academicYear: string;
-  activeStudents: number;
-  archivedStudents: number;
-  applications: number;
-  placementRate: number;
-  lifecycleStatus: 'PLANNING' | 'ACTIVE' | 'CLOSED' | 'ARCHIVED';
+  name: string;
+  email: string;
+  role: Role;
 }
 
-export interface PlatformOverview {
-  platform: string;
-  positioning: string;
-  deployment: {
-    frontendDirectory: string;
-    frontendTarget: string;
-    backendDirectory: string;
-    backendTarget: string;
-  };
-  superAdminEmail: string;
-  headlineMetrics: {
-    collegesRegistered: number;
-    activeStudents: number;
-    archivedStudents: number;
-    industriesRegistered: number;
-    totalStorageMb: number;
-  };
-  pricingPlans: PricingPlan[];
-  studentCostProfile: StudentCostProfile;
-  storageSummary: StorageSummary;
-  storageUsage: CollegeStorageUsage[];
-  collegeCostScenarios: CollegeCostScenario[];
-  semesterCycles: SemesterCycleSummary[];
-}
-
-export interface AuthArchitecture {
-  scopes: Array<{
-    role: 'COLLEGE' | 'STUDENT' | 'INDUSTRY' | 'SUPER_ADMIN';
-    authSurface: string;
-    tokenAudience: string;
-    accessRules: string[];
-  }>;
-  multiTenantRules: string[];
-}
-
-export interface ArchivePolicy {
-  baseArchiveIncludedStudents: number;
-  readOnlyAccess: string[];
-  compressionPolicy: string[];
-  monetization: string[];
-}
-
-export interface SaaSReadinessReport {
-  architecture: AuthArchitecture;
-  archivePolicy: ArchivePolicy;
-  profitGuardrail: {
-    targetMultiple: number;
-    achievedOnPlans: PlanTier[];
-    explanation: string;
-  };
-  dbUpgradeNotes: string[];
-  apiUpgradeNotes: string[];
-  workflowGuarantees: string[];
-}
-
-export interface IdentityBlueprint {
-  canonicalIdentifier: 'EMAIL';
-  studentRequirements: string[];
-  verification: {
-    provider: 'RESEND';
-    methods: Array<'OTP' | 'LINK'>;
-    passwordCreationPolicy: string;
-  };
-  sessions: {
-    tokenType: 'JWT';
-    rotation: string;
-    revocation: string;
+export interface SessionProfile {
+  accessToken: string;
+  user: SessionUser;
+  profile: {
+    collegeId?: string;
+    industryId?: string;
+    studentId?: string;
   };
 }
 
-export interface UploadPolicy {
-  kind: UploadKind;
-  storageProvider: 'cloudflare-r2';
-  maxBytes: number;
-  allowedMimeTypes: string[];
-  visibility: 'private' | 'tenant' | 'shared';
-  pathTemplate: string;
-}
-
-export interface GeneratedDocumentBlueprint {
-  type: DocumentType;
-  templateVersion: string;
-  visibility: AuthRole[];
-  requiredAssets: string[];
-  sections: string[];
-}
-
-export interface ApiEndpointBlueprint {
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  path: string;
-  owner: AuthRole | 'system';
-  purpose: string;
-}
-
-export interface WorkflowBlueprintStep {
+export interface StudentOpportunityCard {
   id: string;
   title: string;
-  owner: AuthRole | 'system';
-  outputs: string[];
+  description: string;
+  industryName: string;
+  industryEmblem?: string | null;
+  mouStatus: 'APPROVED';
+  applied: boolean;
+  status?: ApplicationStatus;
 }
 
-export interface WorkflowBlueprint {
-  name: string;
-  steps: WorkflowBlueprintStep[];
+export interface StudentDashboard {
+  journeyCompletion: number;
+  journeySteps: Array<{ label: string; done: boolean }>;
+  internships: StudentOpportunityCard[];
+  applications: Array<{
+    id: string;
+    internshipTitle: string;
+    industryName: string;
+    status: ApplicationStatus;
+    acceptanceUrl?: string | null;
+  }>;
+}
+
+export interface CollegeDashboard {
+  college: { id: string; name: string; address: string; emblem?: string | null };
+  stats: {
+    pendingMous: number;
+    approvedIndustries: number;
+    activeStudents: number;
+    applicationsSubmitted: number;
+  };
+  pendingMous: Array<{
+    id: string;
+    industryName: string;
+    industryDescription?: string | null;
+    createdAtLabel: string;
+  }>;
+  approvedIndustries: Array<{ id: string; name: string; emblem?: string | null }>;
+  studentActivity: Array<{ studentName: string; universityRegNo: string; applications: number }>;
+}
+
+export interface IndustryDashboard {
+  industry: { id: string; name: string; description?: string | null; emblem?: string | null };
+  stats: {
+    liveOpportunities: number;
+    pendingApplications: number;
+    acceptedApplications: number;
+    attendanceToday: number;
+  };
+  opportunities: Array<{ id: string; title: string; description: string; applications: number }>;
+  applications: Array<{
+    id: string;
+    studentName: string;
+    collegeName: string;
+    opportunityTitle: string;
+    status: ApplicationStatus;
+  }>;
 }

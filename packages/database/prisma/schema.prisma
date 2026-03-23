@@ -3,150 +3,177 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-enum TenantPlan {
-  FREE
-  PRO
+enum Role {
+  COLLEGE_COORDINATOR
+  INDUSTRY
+  STUDENT
 }
 
-enum TenantStatus {
-  ACTIVE
-  SUSPENDED
+enum MouStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
 }
 
-enum UserRole {
-  ADMIN
-  STAFF
-  USER
+enum ApplicationStatus {
+  APPLIED
+  ACCEPTED
+  REJECTED
 }
 
-enum VerificationTokenType {
-  EMAIL_VERIFICATION
-  PASSWORD_RESET
-}
-
-enum NotificationType {
-  GENERAL
-  TASK_ASSIGNED
-  SECURITY
-  BILLING
-}
-
-model Tenant {
-  id            String          @id @default(cuid())
-  name          String
-  slug          String          @unique
-  plan          TenantPlan      @default(FREE)
-  status        TenantStatus    @default(ACTIVE)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  users         User[]
-  sessions      Session[]
-  notifications Notification[]
-  auditLogs     AuditLog[]
-  tokens        VerificationToken[]
-
-  @@index([status])
-  @@index([plan])
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
 }
 
 model User {
-  id                 String              @id @default(cuid())
-  tenantId           String
-  name               String
-  email              String
-  passwordHash       String
-  role               UserRole            @default(USER)
-  registrationNumber String?
-  dob                DateTime?
-  whatsappNumber     String?
-  address            String?
-  programme          String?
-  year               Int?
-  semester           Int?
-  photoUrl           String?
-  emailVerifiedAt    DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sessions           Session[]
-  notifications      Notification[]
-  tokens             VerificationToken[]
-  auditLogs          AuditLog[]          @relation("AuditLogActor")
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role
+  createdAt DateTime @default(now())
 
-  @@unique([tenantId, email])
-  @@index([tenantId, role])
-  @@index([tenantId, emailVerifiedAt])
-  @@index([registrationNumber])
+  college  College?
+  industry Industry?
+  student  Student?
+
+  @@index([role])
+  @@index([createdAt])
 }
 
-model VerificationToken {
-  id        String                @id @default(cuid())
-  tenantId  String?
-  userId    String?
-  email     String
-  tokenHash String                @unique
-  type      VerificationTokenType
-  expiresAt DateTime
-  createdAt DateTime              @default(now())
-  usedAt    DateTime?
-  tenant    Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user      User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+model College {
+  id            String   @id @default(cuid())
+  name          String
+  emblem        String?
+  address       String
+  coordinatorId String   @unique
+  coordinator   User     @relation(fields: [coordinatorId], references: [id], onDelete: Cascade)
 
-  @@index([email, type])
-  @@index([tenantId, userId, type])
+  departments Department[]
+  students    Student[]
+  mous        MoU[]
+
+  createdAt DateTime @default(now())
+
+  @@index([name])
+  @@index([createdAt])
 }
 
-model Session {
+model Industry {
+  id          String   @id @default(cuid())
+  name        String
+  emblem      String?
+  description String?
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  opportunities InternshipOpportunity[]
+  mous          MoU[]
+  attendances   Attendance[]
+
+  createdAt DateTime @default(now())
+
+  @@index([name])
+  @@index([createdAt])
+}
+
+model Department {
+  id        String  @id @default(cuid())
+  name      String
+  collegeId String
+  college   College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+
+  students Student[]
+
+  @@unique([collegeId, name])
+  @@index([collegeId])
+}
+
+model Student {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  collegeId       String
+  departmentId    String?
+  universityRegNo String    @unique
+  dob             DateTime
+  whatsapp        String
+  address         String
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  college    College     @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [departmentId], references: [id])
+
+  applications Application[]
+  attendances  Attendance[]
+
+  createdAt DateTime @default(now())
+
+  @@index([collegeId])
+  @@index([departmentId])
+  @@index([createdAt])
+}
+
+model MoU {
   id         String    @id @default(cuid())
-  tenantId   String
-  userId     String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  createdAt  DateTime  @default(now())
-  revokedAt  DateTime?
-  ipAddress  String?
-  userAgent  String?
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collegeId  String
+  industryId String
+  status     MouStatus @default(PENDING)
+  signedAt   DateTime?
+  pdfUrl     String?
 
-  @@index([tenantId, userId])
-  @@index([expiresAt])
+  college  College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  industry Industry @relation(fields: [industryId], references: [id], onDelete: Cascade)
+
+  @@unique([collegeId, industryId])
+  @@index([collegeId, status])
+  @@index([industryId, status])
 }
 
-model Notification {
-  id        String           @id @default(cuid())
-  tenantId  String
-  userId    String
-  type      NotificationType @default(GENERAL)
-  title     String
-  body      String
-  readAt    DateTime?
-  createdAt DateTime         @default(now())
-  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+model InternshipOpportunity {
+  id          String   @id @default(cuid())
+  industryId  String
+  title       String
+  description String
 
-  @@index([tenantId, userId, readAt])
-  @@index([tenantId, createdAt])
+  industry     Industry      @relation(fields: [industryId], references: [id], onDelete: Cascade)
+  applications Application[]
+
+  createdAt DateTime @default(now())
+
+  @@index([industryId])
+  @@index([createdAt])
 }
 
-model AuditLog {
-  id          String    @id @default(cuid())
-  tenantId     String
-  actorUserId  String?
-  action       String
-  entityType   String
-  entityId     String?
-  description  String
-  metadata     Json?
-  createdAt    DateTime @default(now())
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  actor        User?    @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+model Application {
+  id            String            @id @default(cuid())
+  studentId     String
+  opportunityId String
+  status        ApplicationStatus @default(APPLIED)
+  acceptanceUrl String?
 
-  @@index([tenantId, action])
-  @@index([tenantId, createdAt])
-  @@index([entityType, entityId])
+  student     Student                @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  opportunity InternshipOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, opportunityId])
+  @@index([opportunityId, status])
+  @@index([studentId, status])
+}
+
+model Attendance {
+  id         String           @id @default(cuid())
+  studentId  String
+  industryId String
+  date       DateTime
+  status     AttendanceStatus
+
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  industry Industry @relation(fields: [industryId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, date])
+  @@index([industryId, date])
 }

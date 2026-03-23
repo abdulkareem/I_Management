@@ -1,11 +1,15 @@
 {
   "name": "InternSuite",
   "short_name": "InternSuite",
-  "description": "InternSuite is an installable internship cloud ERP for colleges, students, and industry partners.",
+  "description": "Single workspace internship platform for students, colleges, and industries.",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#1e40af",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
   "start_url": "/",
+  "scope": "/",
+  "orientation": "portrait",
+  "lang": "en-US",
   "icons": [
     {
       "src": "/icon.svg",

@@ -1,218 +1,120 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ArrowRight, BarChart3, BellRing, Building2, CheckCircle2, LockKeyhole, UsersRound } from 'lucide-react';
-import { MarketingShell } from './marketing-shell';
+import { ArrowRight, BadgeCheck, Building2, Factory, GraduationCap, HeartHandshake, Sparkles, Zap } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { ButtonLink } from './ui/button';
 import { Card } from './ui/card';
 
-const features = [
+const roleCards = [
   {
-    title: 'Strict tenant isolation',
-    body: 'Every record, query, session, notification, and audit event is scoped by tenantId so workspaces remain fully separated.',
+    href: '/join/student',
+    title: 'Join as Student',
+    description: 'Discover only approved internships, apply in one tap, and track your journey like a game.',
+    icon: GraduationCap,
+  },
+  {
+    href: '/join/college',
+    title: 'Register College',
+    description: 'Approve MoUs, monitor student activity, and keep the whole internship cycle simple.',
     icon: Building2,
   },
   {
-    title: 'Verification + RBAC',
-    body: 'Email verification, password resets, persisted sessions, and ADMIN/STAFF/USER permissions are wired directly into the platform shell.',
-    icon: LockKeyhole,
+    href: '/join/industry',
+    title: 'Join as Industry',
+    description: 'Request partnerships, publish internships in under 30 seconds, and accept students instantly.',
+    icon: Factory,
   },
-  {
-    title: 'Operational command center',
-    body: 'Dashboards, profile experiences, user management, billing-ready plans, and notification streams are production-minded from day one.',
-    icon: BarChart3,
-  },
-];
-
-const testimonials = [
-  ['Head of IT, Radian Health', 'The tenant-aware architecture is refreshingly clean, and the product polish looks like it came straight from our design team.'],
-  ['COO, Northstar University', 'We finally have onboarding, verification, admin controls, and notifications in one coherent SaaS operating system.'],
-  ['Founder, LatticeWorks', 'The platform feels investor-ready while still being pragmatic for engineering handoff and deployment.'],
-];
-
-const stats = [
-  ['99.99%', 'availability target'],
-  ['3 roles', 'admin, staff, end-user'],
-  ['1 schema', 'tenant-safe Prisma data model'],
-  ['Resend', 'verification + reset delivery'],
 ];
 
 export function LandingPage() {
   return (
-    <MarketingShell>
-      <section className="relative overflow-hidden rounded-[40px] border border-white/10 bg-white/5 px-8 py-12 shadow-[0_40px_120px_rgba(2,6,23,0.5)] lg:px-12 lg:py-16">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(124,58,237,0.25),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(6,182,212,0.22),transparent_28%)]" />
-        <div className="relative grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="space-y-8">
-            <Badge>Production-grade SaaS foundation</Badge>
-            <div className="space-y-6">
-              <h1 className="max-w-3xl text-5xl font-semibold tracking-tight text-white md:text-7xl">
-                Build a premium multi-tenant platform without compromising backend rigor.
+    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-10 px-4 py-6 sm:px-6 lg:px-8">
+      <section className="relative overflow-hidden rounded-[40px] border border-white/10 bg-slate-950/70 px-6 py-8 shadow-[0_30px_120px_rgba(15,23,42,0.45)] sm:px-10 sm:py-12">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.22),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(34,197,94,0.18),transparent_28%)]" />
+        <div className="relative grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="space-y-6">
+            <Badge className="bg-emerald-400/10 text-emerald-200">Student-first internship platform</Badge>
+            <div className="space-y-4">
+              <h1 className="max-w-4xl text-4xl font-semibold tracking-tight text-white sm:text-6xl">
+                One internship platform. Three joyful journeys. Zero tenancy complexity.
               </h1>
-              <p className="max-w-2xl text-lg leading-8 text-slate-300">
-                Prism combines a glassmorphism-first landing experience, tenant-safe authentication, Prisma-powered persistence,
-                Resend email verification, auditability, and role-based dashboards in one cohesive stack.
+              <p className="max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
+                InternSuite helps students find approved internships fast, colleges approve MoUs in one click, and industries recruit without friction.
               </p>
             </div>
-            <div className="flex flex-wrap gap-4">
-              <ButtonLink href="/register">Create a tenant</ButtonLink>
-              <ButtonLink variant="secondary" href="/pricing">View pricing</ButtonLink>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {roleCards.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <ButtonLink key={card.href} href={card.href} className="justify-between rounded-[22px] px-5 py-4 text-left text-sm sm:text-base">
+                    <span className="flex items-center gap-3"><Icon className="h-5 w-5" /> {card.title}</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </ButtonLink>
+                );
+              })}
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {stats.map(([value, label]) => (
-                <Card key={label} className="rounded-3xl border-white/10 bg-slate-950/40 p-5">
-                  <p className="text-3xl font-semibold text-white">{value}</p>
-                  <p className="mt-2 text-sm text-slate-400">{label}</p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {[
+                ['2 clicks', 'from discovery to application'],
+                ['100%', 'MoU-filtered internship feed'],
+                ['PWA ready', 'installable on Android and iPhone'],
+              ].map(([value, label]) => (
+                <Card key={label} className="rounded-[24px] bg-white/5 p-5">
+                  <p className="text-2xl font-semibold text-white">{value}</p>
+                  <p className="mt-2 text-sm text-slate-300">{label}</p>
                 </Card>
               ))}
             </div>
           </motion.div>
 
           <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.7, delay: 0.1 }}>
-            <Card className="relative overflow-hidden rounded-[32px] p-0">
-              <div className="border-b border-white/10 px-6 py-4 text-sm text-slate-300">Tenant workspace preview</div>
-              <div className="grid gap-4 p-6">
-                <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-                  <Card className="bg-slate-950/50 p-5">
-                    <p className="text-sm text-slate-400">Workspace</p>
-                    <p className="mt-3 text-2xl font-semibold text-white">Northstar University</p>
-                    <div className="mt-4 space-y-3 text-sm text-slate-300">
-                      <div className="flex items-center justify-between rounded-2xl border border-white/10 px-4 py-3">
-                        <span>Plan</span>
-                        <span className="text-cyan-300">Pro</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-2xl border border-white/10 px-4 py-3">
-                        <span>Status</span>
-                        <span className="text-emerald-300">Active</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-2xl border border-white/10 px-4 py-3">
-                        <span>Unread notifications</span>
-                        <span className="text-fuchsia-300">08</span>
-                      </div>
-                    </div>
-                  </Card>
-                  <Card className="bg-slate-950/50 p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-sm text-slate-400">Today’s command center</p>
-                        <p className="mt-2 text-xl font-semibold text-white">Assign onboarding tasks, review activity, and manage roles.</p>
-                      </div>
-                      <ArrowRight className="h-5 w-5 text-cyan-300" />
-                    </div>
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                      {[
-                        ['Admins', '02'],
-                        ['Staff', '07'],
-                        ['Users', '128'],
-                        ['Audit events', '284'],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                          <p className="text-sm text-slate-400">{label}</p>
-                          <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
+            <Card className="rounded-[32px] bg-slate-950/80 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">Your Internship Journey</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">Apply, get accepted, show up, level up.</h2>
                 </div>
+                <Sparkles className="h-6 w-6 text-cyan-300" />
+              </div>
+              <div className="mt-6 space-y-4">
+                {[
+                  ['Profile ready', 'Completed', '100%'],
+                  ['Applied to UI Design Intern', 'Under review', '66%'],
+                  ['Offer letter unlocked', 'Pending acceptance', '33%'],
+                ].map(([title, status, progress]) => (
+                  <div key={title} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-white">{title}</p>
+                        <p className="text-sm text-slate-300">{status}</p>
+                      </div>
+                      <BadgeCheck className="h-5 w-5 text-emerald-300" />
+                    </div>
+                    <div className="mt-4 h-2 rounded-full bg-white/10">
+                      <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: progress }} />
+                    </div>
+                  </div>
+                ))}
               </div>
             </Card>
           </motion.div>
         </div>
       </section>
 
-      <section id="features" className="grid gap-6 lg:grid-cols-3">
-        {features.map((feature, index) => {
-          const Icon = feature.icon;
-          return (
-            <motion.div key={feature.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: index * 0.1 }}>
-              <Card className="h-full rounded-[30px] p-8">
-                <div className="mb-5 inline-flex rounded-2xl border border-white/10 bg-white/5 p-3"><Icon className="h-6 w-6 text-cyan-300" /></div>
-                <h2 className="text-2xl font-semibold text-white">{feature.title}</h2>
-                <p className="mt-4 leading-7 text-slate-300">{feature.body}</p>
-              </Card>
-            </motion.div>
-          );
-        })}
-      </section>
-
-      <section id="security" className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-        <Card className="rounded-[34px] p-8">
-          <Badge>Secure by design</Badge>
-          <h2 className="mt-5 text-4xl font-semibold text-white">Auth flows that respect tenants, plans, and real production controls.</h2>
-          <div className="mt-8 grid gap-4 md:grid-cols-2">
-            {[
-              'Tenant-aware login using tenant slug + email + password.',
-              'Verification tokens and reset links stored in Prisma with expiration and single-use semantics.',
-              'Persisted sessions with token hashing and revocation-friendly server checks.',
-              'Audit logs for registration, login, tenant changes, user management, and notifications.',
-            ].map((item) => (
-              <div key={item} className="rounded-3xl border border-white/10 bg-white/5 p-5 text-slate-300">
-                <CheckCircle2 className="mb-3 h-5 w-5 text-emerald-300" />
-                {item}
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card className="rounded-[34px] p-8">
-          <h3 className="text-2xl font-semibold text-white">Designed for go-to-market velocity</h3>
-          <div className="mt-6 space-y-4">
-            {[
-              ['White-label-ready tenant metadata', 'Plan, status, workspace slug, notifications, and user roster available for future billing workflows.'],
-              ['Role-based dashboards', 'Admins manage tenant operations, staff handle tasks, and end-users focus on their profile and alerts.'],
-              ['PWA-ready shell', 'Manifest support and responsive patterns make the application deployment-ready across devices.'],
-            ].map(([title, body]) => (
-              <div key={title} className="rounded-3xl border border-white/10 bg-slate-950/45 p-5">
-                <p className="font-semibold text-white">{title}</p>
-                <p className="mt-2 text-slate-300">{body}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </section>
-
-      <section id="testimonials" className="grid gap-6 lg:grid-cols-3">
-        {testimonials.map(([author, quote]) => (
-          <Card key={author} className="rounded-[30px] p-7">
-            <BellRing className="h-6 w-6 text-fuchsia-300" />
-            <p className="mt-5 text-lg leading-8 text-slate-200">“{quote}”</p>
-            <p className="mt-5 text-sm uppercase tracking-[0.2em] text-slate-500">{author}</p>
+      <section className="grid gap-4 md:grid-cols-3">
+        {[
+          { icon: HeartHandshake, title: 'Only approved internships', body: 'Students only see opportunities from industries with accepted MoUs for their college.' },
+          { icon: Zap, title: 'Fast approvals', body: 'Coordinators review requests, sign MoUs, and unlock student access in one tap.' },
+          { icon: Sparkles, title: 'Minimal typing', body: 'Big buttons, card layouts, and tap-first flows make the app feel WhatsApp simple.' },
+        ].map(({ icon: Icon, title, body }) => (
+          <Card key={title} className="rounded-[28px] p-6">
+            <Icon className="h-6 w-6 text-cyan-300" />
+            <h3 className="mt-4 text-xl font-semibold text-white">{title}</h3>
+            <p className="mt-3 text-sm leading-7 text-slate-300">{body}</p>
           </Card>
         ))}
       </section>
-
-      <section id="pricing" className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-        <Card className="rounded-[34px] p-8">
-          <Badge>Billing-ready foundation</Badge>
-          <h2 className="mt-4 text-4xl font-semibold text-white">Launch on Free, expand on Pro, and keep your data model ready for subscriptions.</h2>
-          <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-300">Plans are encoded at the tenant level so you can add Stripe, entitlements, seat management, and feature gating without reshaping your core schema.</p>
-          <div className="mt-8 flex flex-wrap gap-4">
-            <ButtonLink href="/pricing">See pricing details</ButtonLink>
-            <ButtonLink variant="secondary" href="/register">Start a workspace</ButtonLink>
-          </div>
-        </Card>
-        <div className="grid gap-6">
-          {[
-            ['Free', 'Perfect for pilots and internal teams', '$0 / month', ['1 tenant workspace', 'Core auth + verification', 'Notifications + audit trail']],
-            ['Pro', 'For growing operations teams', '$79 / month', ['Unlimited team members', 'Priority onboarding', 'Billing-ready tenant controls']],
-          ].map(([title, subtitle, price, bullets]) => (
-            <Card key={title} className="rounded-[34px] p-8">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-2xl font-semibold text-white">{title}</h3>
-                  <p className="mt-2 text-slate-400">{subtitle}</p>
-                </div>
-                <p className="text-3xl font-semibold text-white">{price}</p>
-              </div>
-              <div className="mt-6 space-y-3 text-slate-300">
-                {(bullets as string[]).map((bullet) => (
-                  <div key={bullet} className="flex items-center gap-3"><UsersRound className="h-4 w-4 text-cyan-300" /> {bullet}</div>
-                ))}
-              </div>
-            </Card>
-          ))}
-        </div>
-      </section>
-    </MarketingShell>
+    </main>
   );
 }
