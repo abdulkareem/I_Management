@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { compareSync, hashSync } from 'bcryptjs';
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
-import type { Role } from '@prism/database';
+import type { Role } from './prisma.js';
 
 export interface SessionPrincipal {
   sub: string;

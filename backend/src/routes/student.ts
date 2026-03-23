@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { MouStatus, Role, prisma } from '@prism/database';
+import { MouStatus, Role, prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { ok } from '../lib/http.js';
 import { requireAuth } from '../lib/security.js';

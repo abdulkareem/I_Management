@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { ApplicationStatus, AttendanceStatus, MouStatus, Role, prisma } from '@prism/database';
+import { ApplicationStatus, AttendanceStatus, MouStatus, Role, prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 import { generateOfferLetterPdf } from '../lib/documents.js';
 import { ok } from '../lib/http.js';

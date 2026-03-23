@@ -47,7 +47,9 @@ export function buildServer() {
   });
 
   app.addHook('onReady', async () => {
-    await bootstrapDemoData();
+    if (process.env.NODE_ENV !== 'production') {
+      await bootstrapDemoData();
+    }
   });
 
   return app;

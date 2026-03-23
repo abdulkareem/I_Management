@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { prisma } from '@prism/database';
+import { prisma } from '../lib/prisma.js';
 import { ok } from '../lib/http.js';
 
 export const catalogRoutes: FastifyPluginAsync = async (app) => {

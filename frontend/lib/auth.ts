@@ -1,4 +1,4 @@
-import type { CollegeDashboard, IndustryDashboard, Role, SessionProfile, StudentDashboard } from '@prism/types';
+import type { CollegeDashboard, IndustryDashboard, Role, SessionProfile, StudentDashboard } from '@/lib/types';
 import { apiRequest } from './api';
 
 export type DashboardPayload = StudentDashboard | CollegeDashboard | IndustryDashboard;

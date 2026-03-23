@@ -1,8 +1,11 @@
-import { prisma } from '@prism/database';
+import { validateRuntimeEnv } from './lib/env.js';
+import { prisma } from './lib/prisma.js';
 import { buildServer } from './server.js';
 
 const port = Number(process.env.PORT ?? 4000);
 const host = process.env.HOST ?? '0.0.0.0';
+
+validateRuntimeEnv();
 
 const app = buildServer();
 app.listen({ port, host }).catch(async (error: unknown) => {

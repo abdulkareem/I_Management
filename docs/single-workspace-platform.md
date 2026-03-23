@@ -4,6 +4,10 @@
 
 ```text
 backend/
+  prisma/
+    schema.prisma
+    migrations/
+    seed.js
   src/
     index.ts
     server.ts
@@ -45,15 +49,10 @@ frontend/
     auth.ts
   public/
     icon.svg
+    icons/
+    manifest.json
     manifest.webmanifest
     sw.js
-packages/
-  database/
-    prisma/
-      schema.prisma
-      migrations/20260323120000_single_workspace_platform/migration.sql
-  types/
-    src/index.ts
 docs/
   single-workspace-platform.md
 ```
@@ -76,7 +75,8 @@ docs/
 
 ## PWA configuration
 
-- `frontend/public/manifest.webmanifest`: modern manifest with standalone display, scope, theme color, and maskable icon.
+- `frontend/public/manifest.json`: primary manifest for Cloudflare-served installs.
+- `frontend/public/manifest.webmanifest`: compatibility manifest for browsers that still request it.
 - `frontend/public/sw.js`: offline-first cache for shell routes and stale-while-revalidate fetches.
 - `frontend/components/service-worker-register.tsx`: client-side service worker registration.
 - `frontend/public/_headers`: Cloudflare-friendly cache directives for shell assets and service worker.
@@ -87,17 +87,17 @@ docs/
 
 1. Provision a PostgreSQL database on Railway.
 2. Set environment variables: `DATABASE_URL`, `JWT_SECRET`, `APP_URL`, `PUBLIC_ASSET_BASE_URL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`.
-3. Run `pnpm install --frozen-lockfile`.
-4. Run `pnpm prisma:generate`.
-5. Run `pnpm prisma:migrate:deploy`.
-6. Run `pnpm --filter @prism/api build`.
-7. Start with `pnpm railway:start`.
+3. Run `npm install --prefix backend`.
+4. Run `npm run prisma:generate --prefix backend`.
+5. Run `npm run prisma:migrate:deploy --prefix backend`.
+6. Run `npm run build --prefix backend`.
+7. Start with `npm run start --prefix backend`.
 
 ### Cloudflare Pages frontend
 
 1. Set `NEXT_PUBLIC_API_BASE_URL` to the Railway API base URL plus `/api`.
-2. Build command: `pnpm install --frozen-lockfile && pnpm --filter @prism/web build`.
-3. Output directory: `frontend/out`.
+2. Build command: `npm install && npm run build`.
+3. Root directory: `frontend`.
 4. Ensure HTTPS is enabled so the manifest and service worker remain installable on Android.
 5. Upload the `_headers` file to keep the service worker fresh.
 

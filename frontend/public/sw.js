@@ -1,5 +1,5 @@
 const CACHE_NAME = 'internsuite-v2';
-const APP_SHELL = ['/', '/login', '/offline', '/manifest.webmanifest', '/icon.svg'];
+const APP_SHELL = ['/', '/login', '/offline', '/manifest.json', '/manifest.webmanifest', '/icon.svg', '/icons/icon-192.svg', '/icons/icon-512.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
