@@ -4,20 +4,17 @@ NODE_ENV = "production"
 NPM_CONFIG_UPDATE_NOTIFIER = "false"
 
 [phases.setup]
-nixPkgs = ["nodejs_22", "pnpm"]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = [
-  "corepack enable",
-  "corepack prepare pnpm@latest --activate",
-  "pnpm install --frozen-lockfile"
+  "npm install --prefix backend"
 ]
 
 [phases.build]
 cmds = [
-  "pnpm --filter @prism/database prisma:generate",
-  "pnpm build"
+  "npm run build --prefix backend"
 ]
 
 [start]
-cmd = "pnpm prisma:migrate:deploy && pnpm --filter @prism/api start"
+cmd = "npm run prisma:migrate:deploy --prefix backend && npm run start --prefix backend"

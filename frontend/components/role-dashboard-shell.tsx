@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import type { Role, SessionProfile } from '@prism/types';
+import type { Role, SessionProfile } from '@/lib/types';
 import { Building2, BriefcaseBusiness, GraduationCap, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';

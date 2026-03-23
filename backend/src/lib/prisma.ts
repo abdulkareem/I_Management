@@ -1,20 +1,23 @@
-declare const process: { env: Record<string, string | undefined> };
-
 import { PrismaClient } from '@prisma/client';
 
 declare global {
   // eslint-disable-next-line no-var
-  var __prismPrisma__: PrismaClient | undefined;
+  var __internsuitePrisma__: PrismaClient | undefined;
 }
 
 export const prisma =
-  globalThis.__prismPrisma__ ??
+  globalThis.__internsuitePrisma__ ??
   new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'warn', 'error'] : ['error'],
   });
 
 if (process.env.NODE_ENV !== 'production') {
-  globalThis.__prismPrisma__ = prisma;
+  globalThis.__internsuitePrisma__ = prisma;
 }
 
-export * from '@prisma/client';
+export {
+  ApplicationStatus,
+  AttendanceStatus,
+  MouStatus,
+  Role,
+} from '@prisma/client';

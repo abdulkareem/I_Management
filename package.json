@@ -2,26 +2,18 @@
   "name": "internsuite-platform",
   "private": true,
   "version": "1.0.0",
-  "packageManager": "pnpm@10.13.1",
   "engines": {
-    "node": ">=22.0.0",
-    "pnpm": ">=9.0.0"
+    "node": ">=18"
   },
   "scripts": {
-    "dev": "turbo run dev --parallel",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
-    "format": "prettier --write .",
-    "prisma:generate": "pnpm --filter @prism/database prisma:generate",
-    "prisma:migrate:deploy": "pnpm --filter @prism/database prisma:migrate:deploy",
-    "railway:build": "pnpm install --frozen-lockfile && pnpm prisma:generate && pnpm build",
-    "railway:start": "pnpm prisma:migrate:deploy && pnpm --filter @prism/api start"
-  },
-  "devDependencies": {
-    "prettier": "^3.3.3",
-    "turbo": "^2.3.3",
-    "typescript": "^5.7.2"
+    "build": "npm run build --prefix backend && npm run build --prefix frontend",
+    "dev": "sh -c 'npm run dev --prefix backend & npm run dev --prefix frontend'",
+    "lint": "npm run lint --prefix backend && npm run lint --prefix frontend",
+    "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",
+    "test": "npm run test --prefix backend",
+    "frontend:build": "npm run build --prefix frontend",
+    "backend:build": "npm run build --prefix backend",
+    "prisma:generate": "npm run prisma:generate --prefix backend",
+    "prisma:migrate:deploy": "npm run prisma:migrate:deploy --prefix backend"
   }
 }

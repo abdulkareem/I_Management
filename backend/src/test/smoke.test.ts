@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AttendanceStatus, MouStatus, prisma } from '@prism/database';
+import { AttendanceStatus, MouStatus, prisma } from '../lib/prisma.js';
 import { buildServer } from '../server.js';
 
 const nowIso = new Date('2026-03-23T10:00:00.000Z').toISOString();

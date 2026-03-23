@@ -13,8 +13,17 @@
 /manifest.webmanifest
   Cache-Control: public, max-age=86400
 
+/manifest.json
+  Cache-Control: public, max-age=86400
+
 /sw.js
   Cache-Control: public, max-age=0, must-revalidate
 
 /
+  Cache-Control: public, max-age=0, must-revalidate
+
+/login
+  Cache-Control: public, max-age=0, must-revalidate
+
+/dashboard/*
   Cache-Control: public, max-age=0, must-revalidate

@@ -1,4 +1,4 @@
-import { MouStatus, Role, prisma } from '@prism/database';
+import { MouStatus, Role, prisma } from '../lib/prisma.js';
 import { generateMouPdf } from './documents.js';
 import { hashPassword } from './security.js';
 
