@@ -1,7 +1,7 @@
 import { app } from './app.js';
 import { prisma } from './utils/prisma.js';
 
-const PORT = Number(process.env.PORT ?? 5000);
+const PORT = Number(process.env.PORT ?? 8080);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
