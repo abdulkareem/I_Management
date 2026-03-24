@@ -1,5 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
-console.log('API:', BASE_URL);
+import { API_BASE_URL } from './config';
 
 export interface ApiEnvelope<T> {
   success: boolean;
@@ -8,14 +7,10 @@ export interface ApiEnvelope<T> {
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  if (!BASE_URL) {
-    throw new Error('NEXT_PUBLIC_API_BASE_URL is not configured.');
-  }
-
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
   try {
-    const response = await fetch(`${BASE_URL}/api${normalizedPath}`, {
+    const res = await fetch(`${API_BASE_URL}/api${normalizedPath}`, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
@@ -24,15 +19,19 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
       cache: 'no-store',
     });
 
-    const body = (await response.json().catch(() => ({ success: false, message: 'Unexpected response', data: null }))) as ApiEnvelope<T>;
-    if (!response.ok) {
-      console.error(await response.clone().text());
-      throw new Error(body.message || 'Request failed.');
+    if (!res.ok) {
+      throw new Error('API failed');
     }
+
+    const body = (await res.json().catch(() => ({
+      success: false,
+      message: 'Unexpected response',
+      data: null,
+    }))) as ApiEnvelope<T>;
 
     return body;
   } catch (err) {
-    console.error('Fetch failed:', err);
+    console.error('Fetch error:', err);
     throw err;
   }
 }
