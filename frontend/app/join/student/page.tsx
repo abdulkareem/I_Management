@@ -17,7 +17,6 @@ export default function StudentJoinPage() {
   const router = useRouter();
   const [catalog, setCatalog] = useState<CollegeCatalog['colleges']>([]);
   const [selectedCollegeId, setSelectedCollegeId] = useState<string>('');
-  const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,13 +27,6 @@ export default function StudentJoinPage() {
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load colleges.'));
   }, []);
-
-  useEffect(() => {
-    if (!selectedCollegeId) return;
-    apiRequest<Array<{ id: string; name: string }>>(`/departments/${selectedCollegeId}`)
-      .then((response) => setDepartments(response.data))
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load departments.'));
-  }, [selectedCollegeId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,8 +41,8 @@ export default function StudentJoinPage() {
         email: form.get('email'),
         password: form.get('password'),
         name: form.get('name'),
+        phone: form.get('phone'),
         collegeId: form.get('collegeId'),
-        departmentId: form.get('departmentId'),
       });
       router.push('/login');
     } catch (reason) {
@@ -68,10 +60,10 @@ export default function StudentJoinPage() {
         <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
           <div className="space-y-2"><label htmlFor="name">Name</label><input id="name" name="name" required /></div>
           <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
+          <div className="space-y-2"><label htmlFor="phone">Phone</label><input id="phone" name="phone" required /></div>
           <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>
           <div className="space-y-2"><label htmlFor="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" required /></div>
           <div className="space-y-2"><label htmlFor="collegeId">College</label><select id="collegeId" name="collegeId" value={selectedCollegeId} onChange={(event) => setSelectedCollegeId(event.target.value)} required>{catalog.map((college) => <option key={college.id} value={college.id}>{college.name}</option>)}</select></div>
-          <div className="space-y-2"><label htmlFor="departmentId">Department</label><select id="departmentId" name="departmentId" required>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></div>
           {error ? <p className="md:col-span-2 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
           <Button className="md:col-span-2">Create student account</Button>
         </form>

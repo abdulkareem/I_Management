@@ -1,16 +1,26 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { register } from '@/lib/auth';
+import { apiRequest } from '@/lib/api';
+
+type IndustryType = { id: string; name: string };
 
 export default function IndustryJoinPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [types, setTypes] = useState<IndustryType[]>([]);
+
+  useEffect(() => {
+    apiRequest<IndustryType[]>('/industry-type/list')
+      .then((response) => setTypes(response.data))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load industry categories.'));
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,7 +57,12 @@ export default function IndustryJoinPage() {
           <div className="space-y-2"><label htmlFor="industryName">Industry Name</label><input id="industryName" name="industryName" required /></div>
           <div className="space-y-2"><label htmlFor="supervisorName">Internship Supervisor Name</label><input id="supervisorName" name="supervisorName" required /></div>
           <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
-          <div className="space-y-2"><label htmlFor="industryType">Industry Type</label><input id="industryType" name="industryType" placeholder="Manufacturing / Service / Govt" required /></div>
+          <div className="space-y-2">
+            <label htmlFor="industryType">Industry Type</label>
+            <select id="industryType" name="industryType" required>
+              {types.map((type) => <option key={type.id} value={type.name}>{type.name}</option>)}
+            </select>
+          </div>
           <div className="space-y-2"><label htmlFor="registrationNumber">Registration Number</label><input id="registrationNumber" name="registrationNumber" required /></div>
           <div className="space-y-2"><label htmlFor="registrationYear">Registration Year</label><input id="registrationYear" name="registrationYear" required /></div>
           <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>

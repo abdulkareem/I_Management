@@ -7,259 +7,103 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  SUPER_ADMIN
-  COLLEGE_ADMIN
-  DEPARTMENT_COORDINATOR
-  INDUSTRY
-  STUDENT
-  EXTERNAL_STUDENT
-
-  ADMIN
-  COLLEGE
-  COORDINATOR
-}
-
-enum CollegeStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum ApplicationStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum AttendanceStatus {
-  PRESENT
-  ABSENT
-}
-
 model User {
   id        String   @id @default(cuid())
-  name      String?
   email     String   @unique
   password  String
   role      Role
   createdAt DateTime @default(now())
 
-  createdCollege       College?          @relation("CollegeCreator")
-  coordinator          Coordinator?
-  student              Student?
-  externalStudent      ExternalStudent?
-  industry             Industry?
-  coordinatedDept      Department?       @relation("DepartmentCoordinator")
-  oneTimePasswords     OneTimePassword[]
-
-  @@index([role])
+  colleges         College[]
+  industries       Industry[]
+  students         Student[]
+  externalStudents ExternalStudent[]
 }
 
-model OneTimePassword {
-  id        String   @id @default(cuid())
-  userId    String
-  code      String
-  purpose   String
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, purpose])
-  @@index([expiresAt])
+enum Role {
+  SUPER_ADMIN
+  COLLEGE_ADMIN
+  INDUSTRY
+  STUDENT
+  EXTERNAL_STUDENT
 }
 
 model College {
-  id            String        @id @default(cuid())
+  id            String   @id @default(cuid())
   name          String
-  email         String?
-  phone         String?
-  address       String?
-  university    String?
-  status        CollegeStatus @default(PENDING)
-  createdById   String        @unique
-  createdAt     DateTime      @default(now())
+  email         String
+  phone         String
+  address       String
+  university    String
+  status        String
+  coordinatorId String
 
-  createdBy    User           @relation("CollegeCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  departments  Department[]
-  students     Student[]
-  internships  Internship[]
-
-  @@index([name])
-  @@index([status])
-}
-
-model Department {
-  id                String   @id @default(cuid())
-  name              String
-  collegeId         String
-  coordinatorId     String?  @unique
-  coordinatorUserId String?  @unique
-  createdAt         DateTime @default(now())
-
-  college           College            @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  coordinator       Coordinator?       @relation(fields: [coordinatorId], references: [id])
-  coordinatorUser   User?              @relation("DepartmentCoordinator", fields: [coordinatorUserId], references: [id])
-  students          Student[]
-  internshipIdeas   InternshipIdea[]
-  interests         IndustryInterest[]
-  internships       Internship[]
-
-  @@unique([collegeId, name])
-  @@index([collegeId])
-}
-
-model Coordinator {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  departmentId String?  @unique
-  phone        String
-  createdAt    DateTime @default(now())
-
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  department   Department?
-  createdIdeas InternshipIdea[]
-
-  @@index([departmentId])
-}
-
-model Student {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  collegeId    String
-  departmentId String
-  phone        String?
-  createdAt    DateTime @default(now())
-
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  college      College       @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  department   Department    @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-  applications Application[]
-  attendance   Attendance[]
-
-  @@index([collegeId])
-  @@index([departmentId])
-}
-
-model ExternalStudent {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  name       String
-  email      String   @unique
-  phone      String
-  whatsapp   String
-  college    String
-  university String
-  regNumber  String
-  department String
-  createdAt  DateTime @default(now())
-
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  applications Application[]
+  coordinator User         @relation(fields: [coordinatorId], references: [id])
+  internships Internship[]
+  students    Student[]
 }
 
 model Industry {
-  id                  String   @id @default(cuid())
-  name                String
-  registrationDetails String?
-  type                String?
-  userId              String   @unique
-  email               String?
-  approved            Boolean  @default(false)
-  createdAt           DateTime @default(now())
+  id       String  @id @default(cuid())
+  name     String
+  email    String
+  typeId   String
+  approved Boolean @default(false)
 
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  interests   IndustryInterest[]
-  internships Internship[]
+  userId String
+  user   User @relation(fields: [userId], references: [id])
 
-  @@index([name])
+  type IndustryType @relation(fields: [typeId], references: [id])
 }
 
-model InternshipIdea {
-  id           String   @id @default(cuid())
-  title        String
-  description  String
-  outcomes     String
-  departmentId String
-  createdById  String
-  createdAt    DateTime @default(now())
+model IndustryType {
+  id   String @id @default(cuid())
+  name String
 
-  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  createdBy    Coordinator @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  internships  Internship[]
-
-  @@index([departmentId])
-  @@index([createdById])
-}
-
-model IndustryInterest {
-  id           String   @id @default(cuid())
-  industryId   String
-  departmentId String
-  createdAt    DateTime @default(now())
-
-  industry     Industry   @relation(fields: [industryId], references: [id], onDelete: Cascade)
-  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-
-  @@unique([industryId, departmentId])
-  @@index([departmentId])
+  industries Industry[]
 }
 
 model Internship {
-  id           String   @id @default(cuid())
-  title        String   @default("")
-  description  String   @default("")
-  industryId   String
-  collegeId    String
-  departmentId String
-  ideaId       String
-  createdAt    DateTime @default(now())
+  id          String @id @default(cuid())
+  title       String
+  description String
+  collegeId   String
 
-  industry     Industry       @relation(fields: [industryId], references: [id], onDelete: Cascade)
-  college      College        @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  department   Department     @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  idea         InternshipIdea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  college      College       @relation(fields: [collegeId], references: [id])
   applications Application[]
-  attendance   Attendance[]
+}
 
-  @@index([industryId])
-  @@index([collegeId])
-  @@index([departmentId])
+model Student {
+  id        String @id @default(cuid())
+  name      String
+  email     String @unique
+  phone     String
+  collegeId String
+
+  userId String
+  user   User @relation(fields: [userId], references: [id])
+
+  college      College       @relation(fields: [collegeId], references: [id])
+  applications Application[]
+}
+
+model ExternalStudent {
+  id         String @id @default(cuid())
+  name       String
+  email      String @unique
+  phone      String
+  college    String
+  university String
+
+  userId String
+  user   User @relation(fields: [userId], references: [id])
 }
 
 model Application {
-  id                String            @id @default(cuid())
-  studentType       String            @default("INTERNAL")
-  studentId         String?
-  externalStudentId String?
-  studentName       String?
-  email             String?
-  phone             String?
-  internshipId      String
-  status            ApplicationStatus @default(PENDING)
-  createdAt         DateTime          @default(now())
-
-  student         Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  externalStudent ExternalStudent? @relation(fields: [externalStudentId], references: [id], onDelete: Cascade)
-  internship      Internship       @relation(fields: [internshipId], references: [id], onDelete: Cascade)
-
-  @@unique([studentId, internshipId])
-  @@index([internshipId, status])
-}
-
-model Attendance {
-  id           String           @id @default(cuid())
+  id           String @id @default(cuid())
   studentId    String
   internshipId String
-  date         DateTime
-  status       AttendanceStatus
-  createdAt    DateTime         @default(now())
 
-  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  internship   Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
-
-  @@unique([studentId, internshipId, date])
-  @@index([internshipId, date])
+  student    Student    @relation(fields: [studentId], references: [id])
+  internship Internship @relation(fields: [internshipId], references: [id])
 }
