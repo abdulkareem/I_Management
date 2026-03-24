@@ -1,4 +1,5 @@
 import { Role } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 import { authRepository } from '../repositories/auth.repository.js';
 import { industryRepository } from '../repositories/industry.repository.js';
 
@@ -10,7 +11,11 @@ export const industryService = {
     emblemBinary?: string;
     owner: { name: string; email: string; password: string };
   }) {
-    const user = await authRepository.createUser({ ...payload.owner, role: Role.INDUSTRY });
+    const user = await authRepository.createUser({
+      ...payload.owner,
+      password: await bcrypt.hash(payload.owner.password, 10),
+      role: Role.INDUSTRY,
+    });
     return industryRepository.create({
       name: payload.name,
       registrationDetails: payload.registrationDetails,

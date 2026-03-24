@@ -33,9 +33,11 @@ export async function login(payload: { email: string; password: string }) {
 
 export async function register(role: Role, payload: Record<string, unknown>) {
   const routeMap: Record<Role, string> = {
-    STUDENT: '/auth/register/student',
-    COLLEGE_COORDINATOR: '/auth/register/college',
-    INDUSTRY: '/auth/register/industry',
+    STUDENT: '/student/register',
+    COLLEGE: '/college/create',
+    INDUSTRY: '/industry/create',
+    COORDINATOR: '/auth/register',
+    ADMIN: '/auth/register',
   };
   const response = await apiRequest<SessionState>(routeMap[role], {
     method: 'POST',
@@ -50,7 +52,7 @@ export function fetchWithSession<T>(path: string, init?: RequestInit) {
   return apiRequest<T>(path, {
     ...init,
     headers: {
-      Authorization: session ? `Bearer ${session.accessToken}` : '',
+      Authorization: session ? `Bearer ${session.token}` : '',
       ...(init?.headers ?? {}),
     },
   });

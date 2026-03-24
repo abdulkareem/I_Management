@@ -1,4 +1,5 @@
 import { Role } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 import { authRepository } from '../repositories/auth.repository.js';
 import { collegeRepository } from '../repositories/college.repository.js';
 import { getPagination } from '../utils/pagination.js';
@@ -16,6 +17,7 @@ export const collegeService = {
       const creator = await tx.user.create({
         data: {
           ...payload.createdBy,
+          password: await bcrypt.hash(payload.createdBy.password, 10),
           role: Role.COLLEGE,
         },
       });
@@ -34,7 +36,7 @@ export const collegeService = {
           data: {
             name: department.coordinator.name,
             email: department.coordinator.email,
-            password: department.coordinator.password,
+            password: await bcrypt.hash(department.coordinator.password, 10),
             role: Role.COORDINATOR,
           },
         });

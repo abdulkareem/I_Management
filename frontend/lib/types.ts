@@ -1,6 +1,6 @@
-export type Role = 'COLLEGE_COORDINATOR' | 'INDUSTRY' | 'STUDENT';
+export type Role = 'COLLEGE' | 'COORDINATOR' | 'INDUSTRY' | 'STUDENT' | 'ADMIN';
 export type MouStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED';
-export type ApplicationStatus = 'APPLIED' | 'ACCEPTED' | 'REJECTED';
+export type ApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type AttendanceStatus = 'PRESENT' | 'ABSENT';
 
 export interface SessionUser {
@@ -11,13 +11,8 @@ export interface SessionUser {
 }
 
 export interface SessionProfile {
-  accessToken: string;
+  token: string;
   user: SessionUser;
-  profile: {
-    collegeId?: string;
-    industryId?: string;
-    studentId?: string;
-  };
 }
 
 export interface StudentOpportunityCard {

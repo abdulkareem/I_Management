@@ -4,17 +4,18 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { dashboardPathFor, register } from '@/lib/auth';
+import { register } from '@/lib/auth';
 import { apiRequest } from '@/lib/api';
 
 interface CollegeCatalog {
-  colleges: Array<{ id: string; name: string; departments: Array<{ id: string; name: string }> }>;
+  colleges: Array<{ id: string; name: string }>;
 }
 
 export default function StudentJoinPage() {
   const router = useRouter();
   const [catalog, setCatalog] = useState<CollegeCatalog['colleges']>([]);
   const [selectedCollegeId, setSelectedCollegeId] = useState<string>('');
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,12 +27,19 @@ export default function StudentJoinPage() {
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load colleges.'));
   }, []);
 
+  useEffect(() => {
+    if (!selectedCollegeId) return;
+    apiRequest<Array<{ id: string; name: string }>>(`/departments/${selectedCollegeId}`)
+      .then((response) => setDepartments(response.data))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load departments.'));
+  }, [selectedCollegeId]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     const form = new FormData(event.currentTarget);
     try {
-      const response = await register('STUDENT', {
+      await register('STUDENT', {
         email: form.get('email'),
         password: form.get('password'),
         name: form.get('name'),
@@ -42,7 +50,7 @@ export default function StudentJoinPage() {
         whatsapp: form.get('whatsapp'),
         address: form.get('address'),
       });
-      router.push(dashboardPathFor(response.data.user.role));
+      router.push('/login');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to create student account.');
     }
@@ -63,7 +71,7 @@ export default function StudentJoinPage() {
           <div className="space-y-2"><label htmlFor="dob">Date of birth</label><input id="dob" name="dob" type="date" required /></div>
           <div className="space-y-2"><label htmlFor="whatsapp">WhatsApp number</label><input id="whatsapp" name="whatsapp" required /></div>
           <div className="space-y-2"><label htmlFor="collegeId">College</label><select id="collegeId" name="collegeId" value={selectedCollegeId} onChange={(event) => setSelectedCollegeId(event.target.value)} required>{catalog.map((college) => <option key={college.id} value={college.id}>{college.name}</option>)}</select></div>
-          <div className="space-y-2"><label htmlFor="departmentId">Department</label><select id="departmentId" name="departmentId" required>{(selectedCollege?.departments ?? []).map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></div>
+          <div className="space-y-2"><label htmlFor="departmentId">Department</label><select id="departmentId" name="departmentId" required>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></div>
           <div className="space-y-2 md:col-span-2"><label htmlFor="address">Address</label><textarea id="address" name="address" rows={3} required /></div>
           {error ? <p className="md:col-span-2 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
           <Button className="md:col-span-2">Create student account</Button>
