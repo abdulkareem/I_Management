@@ -17,4 +17,4 @@ cmds = [
 ]
 
 [start]
-cmd = "npm run prisma:migrate:deploy --prefix backend && npm run start --prefix backend"
+cmd = "npm run prisma:db:push --prefix backend && npm run start --prefix backend"

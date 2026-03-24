@@ -32,6 +32,24 @@ DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DB" npx prisma migrate dev --
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DB" npx prisma db seed
 ```
 
+## Railway production database sync
+
+Use the same `DATABASE_URL` value configured for the backend service. In Railway shell:
+
+```bash
+cd /app/backend
+echo "$DATABASE_URL"
+npx prisma db push
+npx prisma studio
+```
+
+Verify the following models are present in Prisma Studio for the same database:
+
+- `User`
+- `College`
+- `Industry`
+- `Internship`
+
 ## Role redirects after login
 
 - STUDENT -> `/dashboard/student`
