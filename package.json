@@ -8,7 +8,7 @@
   "scripts": {
     "build": "npm run build --prefix backend && npm run build --prefix frontend",
     "dev": "sh -c 'npm run dev --prefix backend & npm run dev --prefix frontend'",
-    "start": "npm run prisma:migrate:deploy --prefix backend && npm run start --prefix backend",
+    "start": "npm run prisma:db:push --prefix backend && npm run start --prefix backend",
     "lint": "npm run lint --prefix backend && npm run lint --prefix frontend",
     "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",
     "test": "npm run test --prefix backend",
