@@ -1,77 +1,89 @@
-import { Role } from '@prisma/client';
+import { CollegeStatus, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
-import { authRepository } from '../repositories/auth.repository.js';
-import { collegeRepository } from '../repositories/college.repository.js';
-import { getPagination } from '../utils/pagination.js';
 import { prisma } from '../utils/prisma.js';
+import { AppError } from '../utils/errors.js';
 
 export const collegeService = {
-  async createCollegeWorkspace(payload: {
+  async registerCollege(payload: {
     collegeName: string;
-    emblemUrl?: string;
-    emblemBinary?: string;
-    createdBy: { name: string; email: string; password: string };
-    departments: Array<{ name: string; coordinator: { name: string; email: string; password?: string; phone: string } }>;
+    address: string;
+    email: string;
+    phone: string;
+    university: string;
+    loginEmail: string;
+    password: string;
   }) {
-    return collegeRepository.createWorkspaceTransaction(async (tx) => {
-      const creator = await tx.user.create({
-        data: {
-          ...payload.createdBy,
-          password: await bcrypt.hash(payload.createdBy.password, 10),
-          role: Role.COLLEGE,
-        },
-      });
+    const existing = await prisma.user.findUnique({ where: { email: payload.loginEmail } });
+    if (existing) throw new AppError('Email already exists', 409);
 
-      const college = await tx.college.create({
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
         data: {
           name: payload.collegeName,
-          emblemUrl: payload.emblemUrl,
-          emblemBinary: payload.emblemBinary ? Uint8Array.from(Buffer.from(payload.emblemBinary, 'base64')) : undefined,
-          createdById: creator.id,
+          email: payload.loginEmail,
+          password: await bcrypt.hash(payload.password, 10),
+          role: Role.COLLEGE_ADMIN,
         },
       });
 
-      for (const department of payload.departments) {
-        const generatedCoordinatorPassword = department.coordinator.password ?? crypto.randomBytes(6).toString('base64url');
-        const coordinatorUser = await tx.user.create({
-          data: {
-            name: department.coordinator.name,
-            email: department.coordinator.email,
-            password: await bcrypt.hash(generatedCoordinatorPassword, 10),
-            role: Role.COORDINATOR,
-          },
-        });
-
-        const coordinator = await tx.coordinator.create({
-          data: {
-            userId: coordinatorUser.id,
-            phone: department.coordinator.phone,
-          },
-        });
-
-        await tx.department.create({
-          data: {
-            name: department.name,
-            collegeId: college.id,
-            coordinatorId: coordinator.id,
-          },
-        });
-      }
-
-      return college;
+      return tx.college.create({
+        data: {
+          name: payload.collegeName,
+          email: payload.email,
+          phone: payload.phone,
+          address: payload.address,
+          university: payload.university,
+          status: CollegeStatus.PENDING_APPROVAL,
+          createdById: user.id,
+        },
+      });
     });
   },
 
-  async listColleges(query: { page?: string; limit?: string }) {
-    const { page, limit, skip } = getPagination(query);
-    const [items, total] = await prisma.$transaction([
-      collegeRepository.listColleges(skip, limit),
-      collegeRepository.countColleges(),
-    ]);
-
-    return { items, pagination: { page, limit, total } };
+  async approveCollege(collegeId: string, action: 'APPROVED' | 'REJECTED') {
+    return prisma.college.update({ where: { id: collegeId }, data: { status: action } });
   },
 
-  getDepartmentsByCollege: collegeRepository.findDepartmentsByCollege,
+  async listColleges() {
+    return prisma.college.findMany({ orderBy: { createdAt: 'desc' } });
+  },
+
+  async createDepartment(payload: { collegeId: string; name: string; coordinatorName: string; coordinatorEmail: string; coordinatorPhone: string }) {
+    const password = crypto.randomBytes(8).toString('base64url');
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name: payload.coordinatorName,
+          email: payload.coordinatorEmail,
+          password: await bcrypt.hash(password, 10),
+          role: Role.DEPARTMENT_COORDINATOR,
+        },
+      });
+
+      const coordinator = await tx.coordinator.create({
+        data: { userId: user.id, phone: payload.coordinatorPhone },
+      });
+
+      const department = await tx.department.create({
+        data: {
+          name: payload.name,
+          collegeId: payload.collegeId,
+          coordinatorId: coordinator.id,
+          coordinatorUserId: user.id,
+        },
+      });
+
+      return { department, generatedPassword: password, coordinatorUser: user };
+    });
+  },
+
+  async catalogApproved() {
+    const colleges = await prisma.college.findMany({
+      where: { status: CollegeStatus.APPROVED },
+      select: { id: true, name: true, departments: { select: { id: true, name: true } } },
+      orderBy: { name: 'asc' },
+    });
+    return { colleges };
+  },
 };

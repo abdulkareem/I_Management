@@ -105,7 +105,7 @@ export default function IndustryDashboardPage() {
                 <Badge className="bg-emerald-400/10 text-emerald-200">Tap to decide</Badge>
               </div>
               <div className="mt-5 space-y-3">
-                {dashboard?.applications.map((application) => (
+                {dashboard?.applications?.map((application) => (
                   <div key={application.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                     <p className="font-semibold text-white">{application.studentName}</p>
                     <p className="mt-1 text-sm text-slate-300">{application.collegeName} • {application.opportunityTitle}</p>

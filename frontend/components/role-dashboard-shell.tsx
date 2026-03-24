@@ -5,25 +5,33 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import type { Role, SessionProfile } from '@/lib/types';
-import { Building2, BriefcaseBusiness, GraduationCap, LogOut } from 'lucide-react';
+import { Building2, BriefcaseBusiness, GraduationCap, LogOut, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { clearSession, dashboardPathFor, loadSession } from '@/lib/auth';
 
 const roleLabel: Record<Role, string> = {
   ADMIN: 'Admin space',
+  SUPER_ADMIN: 'Super Admin',
   STUDENT: 'Student space',
+  EXTERNAL_STUDENT: 'Student space',
   INDUSTRY: 'Industry space',
   COLLEGE: 'College space',
-  COORDINATOR: 'Coordinator space',
+  COLLEGE_ADMIN: 'College space',
+  COORDINATOR: 'Department space',
+  DEPARTMENT_COORDINATOR: 'Department space',
 };
 
 const roleIcon: Record<Role, typeof GraduationCap> = {
-  ADMIN: Building2,
+  ADMIN: ShieldCheck,
+  SUPER_ADMIN: ShieldCheck,
   STUDENT: GraduationCap,
+  EXTERNAL_STUDENT: GraduationCap,
   INDUSTRY: BriefcaseBusiness,
   COLLEGE: Building2,
+  COLLEGE_ADMIN: Building2,
   COORDINATOR: Building2,
+  DEPARTMENT_COORDINATOR: Building2,
 };
 
 export function RoleDashboardShell({ title, subtitle, children }: { title: string; subtitle: string; children: (session: SessionProfile) => ReactNode }) {

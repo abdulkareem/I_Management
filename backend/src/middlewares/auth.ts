@@ -11,20 +11,33 @@ export type AuthenticatedRequest = Request & {
   user?: TokenPayload;
 };
 
+function decodeToken(token: string) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new AppError('JWT secret missing', 500);
+  }
+  return jwt.verify(token, secret) as TokenPayload;
+}
+
 export function verifyJWT(req: AuthenticatedRequest, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new AppError('Unauthorized', 401);
   }
 
-  const token = authHeader.slice(7);
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new AppError('JWT secret missing', 500);
-  }
+  req.user = decodeToken(authHeader.slice(7));
+  next();
+}
 
-  const payload = jwt.verify(token, secret) as TokenPayload;
-  req.user = payload;
+export function optionalJWT(req: AuthenticatedRequest, _res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      req.user = decodeToken(authHeader.slice(7));
+    } catch {
+      req.user = undefined;
+    }
+  }
   next();
 }
 

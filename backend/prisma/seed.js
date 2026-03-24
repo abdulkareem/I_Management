@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
-import { PrismaClient, Role, ApplicationStatus, AttendanceStatus } from '@prisma/client';
+import crypto from 'node:crypto';
+import { PrismaClient, Role, CollegeStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -16,58 +17,39 @@ async function main() {
   await prisma.college.deleteMany();
   await prisma.user.deleteMany();
 
-  const hashed = await bcrypt.hash('Password@123', 10);
+  const superAdminPassword = crypto.randomBytes(8).toString('base64url');
 
-  const admin = await prisma.user.create({ data: { name: 'Platform Admin', email: 'admin@internsuite.com', password: hashed, role: Role.ADMIN } });
-  const collegeUser = await prisma.user.create({ data: { name: 'IIT College Admin', email: 'college@internsuite.com', password: hashed, role: Role.COLLEGE } });
-  const coordinatorUser = await prisma.user.create({ data: { name: 'CSE Coordinator', email: 'coordinator@internsuite.com', password: hashed, role: Role.COORDINATOR } });
-  const industryUser = await prisma.user.create({ data: { name: 'Industry Owner', email: 'industry@internsuite.com', password: hashed, role: Role.INDUSTRY } });
-  const studentUser = await prisma.user.create({ data: { name: 'Student One', email: 'student@internsuite.com', password: hashed, role: Role.STUDENT } });
-
-  const coordinator = await prisma.coordinator.create({ data: { userId: coordinatorUser.id, phone: '9999999999' } });
-
-  const college = await prisma.college.create({ data: { name: 'IIT Demo College', createdById: collegeUser.id } });
-  const department = await prisma.department.create({ data: { name: 'Computer Science', collegeId: college.id, coordinatorId: coordinator.id } });
-
-  const student = await prisma.student.create({ data: { userId: studentUser.id, collegeId: college.id, departmentId: department.id } });
-
-  const industry = await prisma.industry.create({
-    data: { name: 'TechNova Industries', registrationDetails: 'Reg No TN-9988', userId: industryUser.id },
-  });
-
-  const idea = await prisma.internshipIdea.create({
+  const admin = await prisma.user.create({
     data: {
-      title: 'AI Campus Assistant',
-      description: 'Build an AI assistant for campus services.',
-      outcomes: 'Production-ready assistant with analytics',
-      departmentId: department.id,
-      createdById: coordinator.id,
+      name: 'Platform Super Admin',
+      email: 'abdulkareem.t@gmail.com',
+      password: await bcrypt.hash(superAdminPassword, 10),
+      role: Role.SUPER_ADMIN,
     },
   });
 
-  await prisma.industryInterest.create({ data: { industryId: industry.id, departmentId: department.id } });
-
-  const internship = await prisma.internship.create({
+  const collegeUser = await prisma.user.create({
     data: {
-      industryId: industry.id,
-      collegeId: college.id,
-      departmentId: department.id,
-      ideaId: idea.id,
+      name: 'Sample College Admin',
+      email: 'college@internsuite.com',
+      password: await bcrypt.hash('Password@123', 10),
+      role: Role.COLLEGE_ADMIN,
     },
   });
 
-  await prisma.application.create({ data: { studentId: student.id, internshipId: internship.id, status: ApplicationStatus.APPROVED } });
-
-  await prisma.attendance.create({
+  const college = await prisma.college.create({
     data: {
-      studentId: student.id,
-      internshipId: internship.id,
-      date: new Date(),
-      status: AttendanceStatus.PRESENT,
+      name: 'IIT Demo College',
+      email: 'info@iit-demo.edu',
+      phone: '9999999999',
+      address: 'Demo Address',
+      university: 'Demo University',
+      status: CollegeStatus.APPROVED,
+      createdById: collegeUser.id,
     },
   });
 
-  console.log({ admin: admin.email, college: college.name, industry: industry.name });
+  console.log({ superAdmin: admin.email, generatedPassword: superAdminPassword, college: college.name });
 }
 
 main()

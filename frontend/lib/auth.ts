@@ -33,17 +33,25 @@ export async function login(payload: { email: string; password: string }) {
 
 export async function register(role: Role, payload: Record<string, unknown>) {
   const routeMap: Record<Role, string> = {
-    STUDENT: '/student/register',
-    COLLEGE: '/college/create',
+    STUDENT: '/auth/register',
+    COLLEGE: '/college/register',
+    COLLEGE_ADMIN: '/college/register',
     INDUSTRY: '/industry/create',
     COORDINATOR: '/auth/register',
+    DEPARTMENT_COORDINATOR: '/auth/register',
     ADMIN: '/auth/register',
+    SUPER_ADMIN: '/auth/register',
+    EXTERNAL_STUDENT: '/apply',
   };
   const response = await apiRequest<SessionState>(routeMap[role], {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  saveSession(response.data);
+
+  if (response?.data?.token) {
+    saveSession(response.data);
+  }
+
   return response;
 }
 
@@ -61,5 +69,7 @@ export function fetchWithSession<T>(path: string, init?: RequestInit) {
 export function dashboardPathFor(role: Role) {
   if (role === 'STUDENT') return '/dashboard/student';
   if (role === 'INDUSTRY') return '/dashboard/industry';
+  if (role === 'SUPER_ADMIN' || role === 'ADMIN') return '/dashboard/super-admin';
+  if (role === 'DEPARTMENT_COORDINATOR' || role === 'COORDINATOR') return '/dashboard/department';
   return '/dashboard/college';
 }
