@@ -1,4 +1,5 @@
 import { Role } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 import { authRepository } from '../repositories/auth.repository.js';
 import { studentRepository } from '../repositories/student.repository.js';
 
@@ -7,7 +8,7 @@ export const studentService = {
     const user = await authRepository.createUser({
       name: payload.name,
       email: payload.email,
-      password: payload.password,
+      password: await bcrypt.hash(payload.password, 10),
       role: Role.STUDENT,
     });
 

@@ -24,14 +24,20 @@ router.post('/auth/login', validate(z.object({ body: z.object({ email: z.string(
 
 router.post('/college/create', validate(z.object({ body: z.object({ collegeName: z.string(), emblemUrl: z.string().url().optional(), emblemBinary: z.string().optional(), createdBy: z.object({ name: z.string(), email: z.string().email(), password: z.string().min(6) }), departments: z.array(z.object({ name: z.string(), coordinator: z.object({ name: z.string(), email: z.string().email(), password: z.string().min(6), phone: z.string().min(8) }) })).min(1) }) })), collegeController.create);
 router.get('/college/list', verifyJWT, requireRole('ADMIN', 'COLLEGE', 'COORDINATOR'), collegeController.list);
+router.get('/college/dashboard', verifyJWT, requireRole('COLLEGE'), collegeController.dashboard);
 router.get('/departments/:collegeId', collegeController.departmentsByCollege);
+router.get('/catalog/colleges', collegeController.catalog);
 
 router.post('/department/bulk-create', verifyJWT, requireRole('COLLEGE', 'ADMIN'), validate(z.object({ body: z.object({ departments: z.array(z.object({ name: z.string(), collegeId: z.string(), coordinatorId: z.string().optional() })) }) })), departmentController.bulkCreate);
 
 router.post('/coordinator/create', verifyJWT, requireRole('COLLEGE', 'ADMIN'), validate(z.object({ body: z.object({ userId: z.string(), departmentId: z.string(), phone: z.string() }) })), coordinatorController.create);
 router.post('/student/register', validate(z.object({ body: z.object({ name: z.string(), email: z.string().email(), password: z.string().min(6), collegeId: z.string(), departmentId: z.string() }) })), studentController.register);
+router.get('/student/dashboard', verifyJWT, requireRole('STUDENT'), studentController.dashboard);
+router.post('/student/applications/:internshipId', verifyJWT, requireRole('STUDENT'), studentController.apply);
 
 router.post('/industry/create', validate(z.object({ body: z.object({ name: z.string(), registrationDetails: z.string(), emblemUrl: z.string().url().optional(), emblemBinary: z.string().optional(), owner: z.object({ name: z.string(), email: z.string().email(), password: z.string().min(6) }) }) })), industryController.create);
+router.get('/industry/dashboard', verifyJWT, requireRole('INDUSTRY'), industryController.dashboard);
+router.post('/industry/applications/:applicationId/accept', verifyJWT, requireRole('INDUSTRY'), industryController.acceptApplication);
 
 router.post('/ideas/create', verifyJWT, requireRole('COORDINATOR'), validate(z.object({ body: z.object({ ideas: z.array(z.object({ title: z.string(), description: z.string(), outcomes: z.string(), departmentId: z.string() })).min(1), createdById: z.string().optional() }) })), ideaController.create);
 router.get('/ideas/:departmentId', verifyJWT, ideaController.listByDepartment);

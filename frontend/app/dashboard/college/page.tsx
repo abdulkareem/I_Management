@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import type { CollegeDashboard } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
@@ -20,11 +19,6 @@ export default function CollegeDashboardPage() {
   useEffect(() => {
     load().catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'));
   }, []);
-
-  async function approveMou(mouId: string) {
-    await fetchWithSession(`/college/mous/${mouId}/approve`, { method: 'POST' });
-    await load();
-  }
 
   return (
     <RoleDashboardShell title="College Dashboard" subtitle="Approve MoUs, see which industries are unlocked, and watch student activity without digging through menus.">
@@ -58,7 +52,6 @@ export default function CollegeDashboardPage() {
                   <div key={mou.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                     <p className="font-semibold text-white">{mou.industryName}</p>
                     <p className="mt-1 text-sm text-slate-300">{mou.industryDescription}</p>
-                    <Button className="mt-4 w-full" onClick={() => approveMou(mou.id)}>Approve and generate PDF</Button>
                   </div>
                 )) ?? <p className="text-slate-300">No pending requests.</p>}
               </div>

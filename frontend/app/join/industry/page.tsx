@@ -4,7 +4,7 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { dashboardPathFor, register } from '@/lib/auth';
+import { register } from '@/lib/auth';
 
 export default function IndustryJoinPage() {
   const router = useRouter();
@@ -15,15 +15,17 @@ export default function IndustryJoinPage() {
     setError(null);
     const form = new FormData(event.currentTarget);
     try {
-      const response = await register('INDUSTRY', {
-        email: form.get('email'),
-        password: form.get('password'),
-        name: form.get('name'),
-        companyName: form.get('companyName'),
-        emblem: form.get('emblem') || undefined,
-        description: form.get('description'),
+      await register('INDUSTRY', {
+        name: form.get('companyName'),
+        registrationDetails: form.get('description'),
+        emblemUrl: form.get('emblem') || undefined,
+        owner: {
+          name: form.get('name'),
+          email: form.get('email'),
+          password: form.get('password'),
+        },
       });
-      router.push(dashboardPathFor(response.data.user.role));
+      router.push('/login');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to register industry profile.');
     }

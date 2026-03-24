@@ -59,7 +59,7 @@ export default function StudentDashboardPage() {
                         <p className="font-semibold text-white">{application.internshipTitle}</p>
                         <p className="text-sm text-slate-300">{application.industryName}</p>
                       </div>
-                      <Badge className={application.status === 'ACCEPTED' ? 'bg-emerald-400/10 text-emerald-200' : 'bg-amber-400/10 text-amber-200'}>{application.status}</Badge>
+                      <Badge className={application.status === 'APPROVED' ? 'bg-emerald-400/10 text-emerald-200' : 'bg-amber-400/10 text-amber-200'}>{application.status}</Badge>
                     </div>
                     {application.acceptanceUrl ? <a className="mt-3 inline-flex text-sm text-cyan-300" href={application.acceptanceUrl} target="_blank">Download offer letter</a> : null}
                   </div>

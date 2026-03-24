@@ -11,15 +11,19 @@ import { Card } from '@/components/ui/card';
 import { clearSession, dashboardPathFor, loadSession } from '@/lib/auth';
 
 const roleLabel: Record<Role, string> = {
+  ADMIN: 'Admin space',
   STUDENT: 'Student space',
   INDUSTRY: 'Industry space',
-  COLLEGE_COORDINATOR: 'College space',
+  COLLEGE: 'College space',
+  COORDINATOR: 'Coordinator space',
 };
 
 const roleIcon: Record<Role, typeof GraduationCap> = {
+  ADMIN: Building2,
   STUDENT: GraduationCap,
   INDUSTRY: BriefcaseBusiness,
-  COLLEGE_COORDINATOR: Building2,
+  COLLEGE: Building2,
+  COORDINATOR: Building2,
 };
 
 export function RoleDashboardShell({ title, subtitle, children }: { title: string; subtitle: string; children: (session: SessionProfile) => ReactNode }) {
