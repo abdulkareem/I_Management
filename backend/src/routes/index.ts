@@ -138,6 +138,7 @@ router.post('/auth/login', async (req, res) => {
   if (!email) return res.status(400).json({ success: false, message: 'Email is required', data: null });
 
   const normalizedEmail = String(email).toLowerCase();
+  console.log('NEW LOGIN LOGIC RUNNING');
   console.log('LOGIN TYPE:', normalizedEmail);
   const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user) return res.status(404).json({ success: false, message: 'User not found', data: null });
@@ -177,7 +178,7 @@ router.post('/auth/verify-otp', async (req, res) => {
 
 router.post('/auth/login-password', async (req, res) => {
   const { email, password } = req.body ?? {};
-  if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password required', data: null });
+  if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password are required for password login', data: null });
 
   const normalizedEmail = String(email).toLowerCase();
   if (normalizedEmail === SUPER_ADMIN_EMAIL) return res.status(400).json({ success: false, message: 'Super admin must use OTP login', data: null });
