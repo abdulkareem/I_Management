@@ -16,8 +16,9 @@ export const internshipController = {
     res.status(201).json({ success: true, data });
   },
 
-  publicList: async (_req: Request, res: Response) => {
+  publicList: async (req: Request, res: Response) => {
     const internships = await prisma.internship.findMany({
+      where: req.query.collegeId ? { collegeId: String(req.query.collegeId) } : undefined,
       include: {
         department: { select: { id: true, name: true, college: { select: { id: true, name: true } } } },
       },

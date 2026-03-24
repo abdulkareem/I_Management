@@ -3,6 +3,17 @@ export const emailService = {
     const subject = `Internship Platform access for ${params.role}`;
     const text = `Hello ${params.name ?? 'User'}, your temporary password is: ${params.password}`;
 
+    await this.sendEmail(params.to, subject, text);
+  },
+
+  async sendOtpEmail(params: { to: string; purpose: 'LOGIN' | 'RESET_PASSWORD'; otp: string }) {
+    const subject = params.purpose === 'LOGIN' ? 'Your Super Admin Login OTP' : 'Your Password Reset OTP';
+    const text = `Your verification code is ${params.otp}. It will expire in 10 minutes.`;
+
+    await this.sendEmail(params.to, subject, text);
+  },
+
+  async sendEmail(to: string, subject: string, text: string) {
     if (process.env.RESEND_API_KEY) {
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -12,7 +23,7 @@ export const emailService = {
         },
         body: JSON.stringify({
           from: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
-          to: [params.to],
+          to: [to],
           subject,
           text,
         }),
@@ -20,6 +31,6 @@ export const emailService = {
       return;
     }
 
-    console.log(`[EMAIL:DEV] to=${params.to} subject=${subject} text=${text}`);
+    console.log(`[EMAIL:DEV] to=${to} subject=${subject} text=${text}`);
   },
 };

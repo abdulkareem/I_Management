@@ -10,6 +10,11 @@ export const industryController = {
     res.status(201).json({ success: true, data: industry });
   },
 
+  approve: async (req: Request, res: Response) => {
+    const industry = await industryService.approve(req.body.industryId, req.body.action === 'APPROVED');
+    res.json({ success: true, data: industry });
+  },
+
   dashboard: async (req: AuthenticatedRequest, res: Response) => {
     const industry = await prisma.industry.findUnique({
       where: { userId: req.user!.userId },

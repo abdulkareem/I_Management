@@ -5,15 +5,19 @@ import { prisma } from '../utils/prisma.js';
 export const industryService = {
   async create(payload: {
     name: string;
-    registrationDetails: string;
-    owner: { name: string; email: string; password: string };
+    internshipSupervisorName: string;
+    email: string;
+    password: string;
+    registrationNumber: string;
+    registrationYear: string;
+    industryType: string;
   }) {
     return prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
-          name: payload.owner.name,
-          email: payload.owner.email,
-          password: await bcrypt.hash(payload.owner.password, 10),
+          name: payload.internshipSupervisorName,
+          email: payload.email,
+          password: await bcrypt.hash(payload.password, 10),
           role: Role.INDUSTRY,
         },
       });
@@ -21,12 +25,17 @@ export const industryService = {
       return tx.industry.create({
         data: {
           name: payload.name,
-          registrationDetails: payload.registrationDetails,
-          email: payload.owner.email,
+          registrationDetails: `${payload.registrationNumber} / ${payload.registrationYear}`,
+          type: payload.industryType,
+          email: payload.email,
           approved: false,
           userId: user.id,
         },
       });
     });
+  },
+
+  async approve(industryId: string, approved: boolean) {
+    return prisma.industry.update({ where: { id: industryId }, data: { approved } });
   },
 };
