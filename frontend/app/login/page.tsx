@@ -8,15 +8,16 @@ import { Card } from '@/components/ui/card';
 import { beginLogin, dashboardPathFor, loginWithPassword, verifyOtp } from '@/lib/auth';
 import { apiRequest } from '@/lib/api';
 
-const SUPER_ADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
+type LoginMethod = 'OTP' | 'PASSWORD' | null;
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>(null);
   const [showReset, setShowReset] = useState(false);
   const [resetOtpSent, setResetOtpSent] = useState(false);
 
@@ -27,12 +28,18 @@ export default function LoginPage() {
 
     try {
       const response = await beginLogin(email);
-      if (response.data.requiresOtp || response.data.requiresPassword) {
-        setShowPassword(true);
-      }
-      if (response.data.requiresOtp) {
+      if (response.data.requireOtp) {
+        setLoginMethod('OTP');
         setError('OTP sent to your email. Enter the code to continue.');
+        return;
       }
+
+      if (response.data.requirePassword) {
+        setLoginMethod('PASSWORD');
+        return;
+      }
+
+      setError('Unexpected login response. Please try again.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to continue login.');
     } finally {
@@ -40,12 +47,12 @@ export default function LoginPage() {
     }
   }
 
-  async function handlePasswordStep(event: FormEvent<HTMLFormElement>) {
+  async function handleAuthStep(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      const response = email === SUPER_ADMIN_EMAIL ? await verifyOtp(email, password) : await loginWithPassword(email, password);
+      const response = loginMethod === 'OTP' ? await verifyOtp(email, otp) : await loginWithPassword(email, password);
       router.push(dashboardPathFor(response.data.user.role));
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Login failed.';
@@ -98,7 +105,7 @@ export default function LoginPage() {
         <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">Welcome back</p>
         <h1 className="mt-3 text-3xl font-semibold text-white">Continue your internship journey</h1>
 
-        {!showPassword ? (
+        {!loginMethod ? (
           <form className="mt-6 space-y-4" onSubmit={handleEmailStep}>
             <div className="space-y-2">
               <label htmlFor="email">Email</label>
@@ -107,11 +114,18 @@ export default function LoginPage() {
             <Button className="w-full" disabled={loading}>{loading ? 'Processing…' : 'Continue'}</Button>
           </form>
         ) : (
-          <form className="mt-6 space-y-4" onSubmit={handlePasswordStep}>
-            <div className="space-y-2">
-              <label htmlFor="password">{email === SUPER_ADMIN_EMAIL ? 'OTP' : 'Password'}</label>
-              <input id="password" name="password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} />
-            </div>
+          <form className="mt-6 space-y-4" onSubmit={handleAuthStep}>
+            {loginMethod === 'OTP' ? (
+              <div className="space-y-2">
+                <label htmlFor="otp">OTP</label>
+                <input id="otp" name="otp" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required value={otp} onChange={(event) => setOtp(event.target.value)} />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label htmlFor="password">Password</label>
+                <input id="password" name="password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+              </div>
+            )}
             <Button className="w-full" disabled={loading}>{loading ? 'Signing in…' : 'Login'}</Button>
           </form>
         )}

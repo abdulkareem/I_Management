@@ -23,7 +23,7 @@ export function clearSession() {
 }
 
 export async function beginLogin(email: string) {
-  return apiRequest<{ requiresOtp?: boolean; requiresPassword?: boolean }>('/auth/login', {
+  return apiRequest<{ requireOtp?: boolean; requirePassword?: boolean }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email }),
   });
@@ -85,7 +85,7 @@ export function fetchWithSession<T>(path: string, init?: RequestInit) {
 export function dashboardPathFor(role: Role) {
   if (role === 'STUDENT') return '/dashboard/student';
   if (role === 'INDUSTRY') return '/dashboard/industry';
-  if (role === 'SUPER_ADMIN' || role === 'ADMIN') return '/dashboard/super-admin';
+  if (role === 'SUPER_ADMIN' || role === 'ADMIN') return '/dashboard/admin';
   if (role === 'DEPARTMENT_COORDINATOR' || role === 'COORDINATOR') return '/dashboard/department';
   if (role === 'EXTERNAL_STUDENT') return '/dashboard/external-student';
   return '/dashboard/college';
