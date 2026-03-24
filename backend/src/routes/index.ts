@@ -11,7 +11,7 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret';
 const SUPER_ADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
 
-const otpStore = new Map<string, { code: string; expiresAt: number }>();
+const otpStore = new Map<string, { code: string; expiresAt: number; attempts: number }>();
 const resetOtpStore = new Map<string, { code: string; expiresAt: number }>();
 const loginAttemptsStore = new Map<string, { count: number; lastAttemptAt: number }>();
 const industryTypes = new Map<string, { id: string; name: string }>();
@@ -138,17 +138,19 @@ router.post('/auth/login', async (req, res) => {
   if (!email) return res.status(400).json({ success: false, message: 'Email is required', data: null });
 
   const normalizedEmail = String(email).toLowerCase();
+  console.log('LOGIN TYPE:', normalizedEmail);
   const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user) return res.status(404).json({ success: false, message: 'User not found', data: null });
 
   if (normalizedEmail === SUPER_ADMIN_EMAIL) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    otpStore.set(normalizedEmail, { code: otp, expiresAt: Date.now() + 10 * 60_000 });
+    otpStore.set(normalizedEmail, { code: otp, expiresAt: Date.now() + 5 * 60_000, attempts: 0 });
+    console.log('OTP SENT:', otp);
     await emailService.sendEmail(normalizedEmail, 'Your Admin Login Code', `Your OTP: ${otp}`, `<h2>Your OTP: ${otp}</h2>`);
-    return res.json(ok({ requiresOtp: true }, 'OTP sent to super admin email'));
+    return res.json(ok({ requireOtp: true }, 'OTP sent'));
   }
 
-  return res.json(ok({ requiresPassword: true }, 'Password required'));
+  return res.json(ok({ requirePassword: true }, 'Password required'));
 });
 
 router.post('/auth/verify-otp', async (req, res) => {
@@ -163,7 +165,11 @@ router.post('/auth/verify-otp', async (req, res) => {
 
   const entry = otpStore.get(normalizedEmail);
   if (!entry || Date.now() > entry.expiresAt) return res.status(400).json({ success: false, message: 'Code expired', data: null });
-  if (entry.code !== String(otp)) return res.status(401).json({ success: false, message: 'Incorrect code', data: null });
+  if (entry.attempts >= 5) return res.status(429).json({ success: false, message: 'Too many attempts. Request a new code.', data: null });
+  if (entry.code !== String(otp)) {
+    otpStore.set(normalizedEmail, { ...entry, attempts: entry.attempts + 1 });
+    return res.status(401).json({ success: false, message: 'Incorrect code', data: null });
+  }
 
   otpStore.delete(normalizedEmail);
   return res.json(ok({ token: signToken(user.id, user.role), role: user.role, user: { id: user.id, email: user.email, role: user.role } }));
