@@ -1,23 +1,15 @@
-import { validateRuntimeEnv } from './lib/env.js';
-import { prisma } from './lib/prisma.js';
-import { buildServer } from './server.js';
+import { app } from './app.js';
+import { prisma } from './utils/prisma.js';
 
-const port = Number(process.env.PORT ?? 4000);
-const host = process.env.HOST ?? '0.0.0.0';
+const PORT = Number(process.env.PORT ?? 4000);
 
-validateRuntimeEnv();
-
-const app = buildServer();
-app.listen({ port, host }).catch(async (error: unknown) => {
-  app.log.error(error);
-  await prisma.$disconnect();
-  process.exit(1);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, async () => {
     await prisma.$disconnect();
-    await app.close();
     process.exit(0);
   });
 }
