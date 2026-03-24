@@ -7,7 +7,7 @@ import { prisma } from '../utils/prisma.js';
 export const collegeController = {
   register: async (req: Request, res: Response) => {
     const college = await collegeService.registerCollege(req.body);
-    res.status(201).json({ success: true, message: 'College registration submitted', data: { ...college, status: 'PENDING_APPROVAL' } });
+    res.status(201).json({ success: true, message: 'College registration submitted', data: { ...college, status: 'PENDING' } });
   },
 
   approve: async (req: Request, res: Response) => {

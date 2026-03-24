@@ -33,7 +33,7 @@ export async function login(payload: { email: string; password: string }) {
 
 export async function register(role: Role, payload: Record<string, unknown>) {
   const routeMap: Record<Role, string> = {
-    STUDENT: '/auth/register',
+    STUDENT: '/student/register',
     COLLEGE: '/college/register',
     COLLEGE_ADMIN: '/college/register',
     INDUSTRY: '/industry/create',
@@ -41,7 +41,7 @@ export async function register(role: Role, payload: Record<string, unknown>) {
     DEPARTMENT_COORDINATOR: '/auth/register',
     ADMIN: '/auth/register',
     SUPER_ADMIN: '/auth/register',
-    EXTERNAL_STUDENT: '/apply',
+    EXTERNAL_STUDENT: '/external/apply',
   };
   const response = await apiRequest<SessionState>(routeMap[role], {
     method: 'POST',
@@ -71,5 +71,6 @@ export function dashboardPathFor(role: Role) {
   if (role === 'INDUSTRY') return '/dashboard/industry';
   if (role === 'SUPER_ADMIN' || role === 'ADMIN') return '/dashboard/super-admin';
   if (role === 'DEPARTMENT_COORDINATOR' || role === 'COORDINATOR') return '/dashboard/department';
+  if (role === 'EXTERNAL_STUDENT') return '/dashboard/external-student';
   return '/dashboard/college';
 }

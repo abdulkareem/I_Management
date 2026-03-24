@@ -61,7 +61,6 @@ export const studentController = {
           title: internship.idea.title,
           description: internship.idea.description,
           industryName: internship.industry.name,
-          industryEmblem: internship.industry.emblemUrl,
           mouStatus: 'APPROVED',
           applied: internship.applications.length > 0,
           status: internship.applications[0]?.status,

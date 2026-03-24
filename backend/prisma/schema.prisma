@@ -21,7 +21,7 @@ enum Role {
 }
 
 enum CollegeStatus {
-  PENDING_APPROVAL
+  PENDING
   APPROVED
   REJECTED
 }
@@ -45,32 +45,47 @@ model User {
   role      Role
   createdAt DateTime @default(now())
 
-  createdCollege     College?       @relation("CollegeCreator")
-  coordinator        Coordinator?
-  student            Student?
-  industry           Industry?
-  coordinatedDept    Department?    @relation("DepartmentCoordinator")
+  createdCollege       College?          @relation("CollegeCreator")
+  coordinator          Coordinator?
+  student              Student?
+  externalStudent      ExternalStudent?
+  industry             Industry?
+  coordinatedDept      Department?       @relation("DepartmentCoordinator")
+  oneTimePasswords     OneTimePassword[]
 
   @@index([role])
 }
 
-model College {
-  id           String        @id @default(cuid())
-  name         String
-  email        String?
-  phone        String?
-  address      String?
-  university   String?
-  status       CollegeStatus @default(PENDING_APPROVAL)
-  emblemUrl    String?
-  emblemBinary Bytes?
-  createdById  String        @unique
-  createdAt    DateTime      @default(now())
+model OneTimePassword {
+  id        String   @id @default(cuid())
+  userId    String
+  code      String
+  purpose   String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
 
-  createdBy   User           @relation("CollegeCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  departments Department[]
-  students    Student[]
-  internships Internship[]
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+model College {
+  id            String        @id @default(cuid())
+  name          String
+  email         String?
+  phone         String?
+  address       String?
+  university    String?
+  status        CollegeStatus @default(PENDING)
+  createdById   String        @unique
+  createdAt     DateTime      @default(now())
+
+  createdBy    User           @relation("CollegeCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  departments  Department[]
+  students     Student[]
+  internships  Internship[]
 
   @@index([name])
   @@index([status])
@@ -115,6 +130,7 @@ model Student {
   userId       String   @unique
   collegeId    String
   departmentId String
+  phone        String?
   createdAt    DateTime @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -127,12 +143,28 @@ model Student {
   @@index([departmentId])
 }
 
+model ExternalStudent {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  name       String
+  email      String   @unique
+  phone      String
+  whatsapp   String
+  college    String
+  university String
+  regNumber  String
+  department String
+  createdAt  DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applications Application[]
+}
+
 model Industry {
   id                  String   @id @default(cuid())
   name                String
   registrationDetails String?
-  emblemUrl           String?
-  emblemBinary        Bytes?
+  type                String?
   userId              String   @unique
   email               String?
   approved            Boolean  @default(false)
@@ -198,17 +230,20 @@ model Internship {
 }
 
 model Application {
-  id           String            @id @default(cuid())
-  studentId    String?
-  studentName  String?
-  email        String?
-  phone        String?
-  internshipId String
-  status       ApplicationStatus @default(PENDING)
-  createdAt    DateTime          @default(now())
+  id                String            @id @default(cuid())
+  studentType       String            @default("INTERNAL")
+  studentId         String?
+  externalStudentId String?
+  studentName       String?
+  email             String?
+  phone             String?
+  internshipId      String
+  status            ApplicationStatus @default(PENDING)
+  createdAt         DateTime          @default(now())
 
-  student      Student?   @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  internship   Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  student         Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  externalStudent ExternalStudent? @relation(fields: [externalStudentId], references: [id], onDelete: Cascade)
+  internship      Internship       @relation(fields: [internshipId], references: [id], onDelete: Cascade)
 
   @@unique([studentId, internshipId])
   @@index([internshipId, status])

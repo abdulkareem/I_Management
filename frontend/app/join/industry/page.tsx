@@ -16,15 +16,19 @@ export default function IndustryJoinPage() {
     event.preventDefault();
     setError(null);
     const form = new FormData(event.currentTarget);
+    if (form.get('password') !== form.get('confirmPassword')) {
+      setError('Password and confirm password must match.');
+      return;
+    }
     try {
       await register('INDUSTRY', {
-        name: form.get('companyName'),
-        registrationDetails: form.get('description'),
-        owner: {
-          name: form.get('name'),
-          email: form.get('email'),
-          password: form.get('password'),
-        },
+        name: form.get('industryName'),
+        internshipSupervisorName: form.get('supervisorName'),
+        email: form.get('email'),
+        password: form.get('password'),
+        registrationNumber: form.get('registrationNumber'),
+        registrationYear: form.get('registrationYear'),
+        industryType: form.get('industryType'),
       });
       router.push('/login');
     } catch (reason) {
@@ -36,16 +40,18 @@ export default function IndustryJoinPage() {
     <main className="mx-auto flex min-h-screen w-full max-w-3xl items-center px-4 py-10">
       <Card className="w-full rounded-[32px] p-6 sm:p-8">
         <Link href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-cyan-200 hover:text-cyan-100">
-          <ArrowLeft className="h-4 w-4" /> Back to home
+          <ArrowLeft className="h-4 w-4" /> Back
         </Link>
-        <h1 className="text-3xl font-semibold text-white">Join as Industry</h1>
-        <p className="mt-3 text-sm leading-7 text-slate-300">Register and collaborate with approved colleges and departments.</p>
+        <h1 className="text-3xl font-semibold text-white">Industry Registration</h1>
         <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
-          <div className="space-y-2"><label htmlFor="name">Contact name</label><input id="name" name="name" required /></div>
-          <div className="space-y-2"><label htmlFor="email">Work email</label><input id="email" name="email" type="email" required /></div>
+          <div className="space-y-2"><label htmlFor="industryName">Industry Name</label><input id="industryName" name="industryName" required /></div>
+          <div className="space-y-2"><label htmlFor="supervisorName">Internship Supervisor Name</label><input id="supervisorName" name="supervisorName" required /></div>
+          <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
+          <div className="space-y-2"><label htmlFor="industryType">Industry Type</label><input id="industryType" name="industryType" placeholder="Manufacturing / Service / Govt" required /></div>
+          <div className="space-y-2"><label htmlFor="registrationNumber">Registration Number</label><input id="registrationNumber" name="registrationNumber" required /></div>
+          <div className="space-y-2"><label htmlFor="registrationYear">Registration Year</label><input id="registrationYear" name="registrationYear" required /></div>
           <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>
-          <div className="space-y-2"><label htmlFor="companyName">Industry name</label><input id="companyName" name="companyName" required /></div>
-          <div className="space-y-2 md:col-span-2"><label htmlFor="description">About your internships</label><textarea id="description" name="description" rows={4} required /></div>
+          <div className="space-y-2"><label htmlFor="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" required /></div>
           {error ? <p className="md:col-span-2 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
           <Button className="md:col-span-2">Create industry profile</Button>
         </form>

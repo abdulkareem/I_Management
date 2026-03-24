@@ -34,7 +34,7 @@ export const collegeService = {
           phone: payload.phone,
           address: payload.address,
           university: payload.university,
-          status: CollegeStatus.PENDING_APPROVAL,
+          status: CollegeStatus.PENDING,
           createdById: user.id,
         },
       });
