@@ -17,14 +17,10 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev --name init_internship_platform",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:validate": "prisma validate",
-    "prisma:seed": "node prisma/seed.js"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
+    "prisma:validate": "prisma validate"
   },
   "dependencies": {
-    "@prisma/client": "^6.4.1",
+    "@prisma/client": "6.19.2",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "express": "^4.21.2",
@@ -40,7 +36,7 @@
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.10.2",
     "nodemon": "^3.1.10",
-    "prisma": "^6.4.1",
+    "prisma": "6.19.2",
     "tsx": "^4.19.3",
     "typescript": "^5.7.2"
   }
