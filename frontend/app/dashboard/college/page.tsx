@@ -27,10 +27,10 @@ export default function CollegeDashboardPage() {
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
           <section className="grid gap-4 md:grid-cols-4">
             {[
-              ['Pending MoUs', String(dashboard?.stats.pendingMous ?? 0)],
-              ['Approved industries', String(dashboard?.stats.approvedIndustries ?? 0)],
-              ['Active students', String(dashboard?.stats.activeStudents ?? 0)],
-              ['Applications', String(dashboard?.stats.applicationsSubmitted ?? 0)],
+              ['Pending MoUs', String(dashboard?.stats?.pendingMous ?? 0)],
+              ['Approved industries', String(dashboard?.stats?.approvedIndustries ?? 0)],
+              ['Active students', String(dashboard?.stats?.activeStudents ?? 0)],
+              ['Applications', String(dashboard?.stats?.applicationsSubmitted ?? 0)],
             ].map(([label, value]) => (
               <Card key={label} className="rounded-[28px] p-5">
                 <p className="text-sm uppercase tracking-[0.24em] text-slate-400">{label}</p>
@@ -48,7 +48,7 @@ export default function CollegeDashboardPage() {
                 <Badge className="bg-amber-400/10 text-amber-200">1-tap approval</Badge>
               </div>
               <div className="mt-5 space-y-3">
-                {dashboard?.pendingMous.map((mou) => (
+                {dashboard?.pendingMous?.map((mou) => (
                   <div key={mou.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                     <p className="font-semibold text-white">{mou.industryName}</p>
                     <p className="mt-1 text-sm text-slate-300">{mou.industryDescription}</p>
@@ -60,7 +60,7 @@ export default function CollegeDashboardPage() {
               <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">Unlocked network</p>
               <h2 className="mt-2 text-2xl font-semibold text-white">Approved industries</h2>
               <div className="mt-5 space-y-3">
-                {dashboard?.approvedIndustries.map((industry) => (
+                {dashboard?.approvedIndustries?.map((industry) => (
                   <div key={industry.id} className="rounded-[24px] border border-white/10 bg-white/5 px-4 py-3 text-white">{industry.name}</div>
                 )) ?? <p className="text-slate-300">No industries approved yet.</p>}
               </div>

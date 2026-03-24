@@ -35,7 +35,7 @@ export default function StudentDashboardPage() {
               <h2 className="mt-3 text-2xl font-semibold text-white">{dashboard?.journeyCompletion ?? 0}% complete</h2>
               <div className="mt-4 h-3 rounded-full bg-white/10"><div className="h-3 rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: `${dashboard?.journeyCompletion ?? 0}%` }} /></div>
               <div className="mt-5 space-y-3">
-                {dashboard?.journeySteps.map((step) => (
+                {dashboard?.journeySteps?.map((step) => (
                   <div key={step.label} className="flex items-center justify-between rounded-[22px] border border-white/10 bg-white/5 px-4 py-3">
                     <span className="text-sm text-white">{step.label}</span>
                     <Badge className={step.done ? 'bg-emerald-400/10 text-emerald-200' : 'bg-white/10 text-slate-200'}>{step.done ? 'Done' : 'Pending'}</Badge>
@@ -52,7 +52,7 @@ export default function StudentDashboardPage() {
                 <Badge className="bg-cyan-400/10 text-cyan-200">2-click experience</Badge>
               </div>
               <div className="mt-5 space-y-3">
-                {dashboard?.applications.map((application) => (
+                {dashboard?.applications?.map((application) => (
                   <div key={application.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>

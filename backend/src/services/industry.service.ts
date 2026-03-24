@@ -1,29 +1,32 @@
 import { Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { authRepository } from '../repositories/auth.repository.js';
-import { industryRepository } from '../repositories/industry.repository.js';
+import { prisma } from '../utils/prisma.js';
 
 export const industryService = {
   async create(payload: {
     name: string;
     registrationDetails: string;
-    emblemUrl?: string;
-    emblemBinary?: string;
     owner: { name: string; email: string; password: string };
   }) {
-    const user = await authRepository.createUser({
-      ...payload.owner,
-      password: await bcrypt.hash(payload.owner.password, 10),
-      role: Role.INDUSTRY,
-    });
-    return industryRepository.create({
-      name: payload.name,
-      registrationDetails: payload.registrationDetails,
-      emblemUrl: payload.emblemUrl,
-      emblemBinary: payload.emblemBinary ? Uint8Array.from(Buffer.from(payload.emblemBinary, 'base64')) : undefined,
-      userId: user.id,
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name: payload.owner.name,
+          email: payload.owner.email,
+          password: await bcrypt.hash(payload.owner.password, 10),
+          role: Role.INDUSTRY,
+        },
+      });
+
+      return tx.industry.create({
+        data: {
+          name: payload.name,
+          registrationDetails: payload.registrationDetails,
+          email: payload.owner.email,
+          approved: false,
+          userId: user.id,
+        },
+      });
     });
   },
-
-  findByUserId: industryRepository.findByUserId,
 };

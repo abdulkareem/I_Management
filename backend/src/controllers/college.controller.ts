@@ -1,68 +1,80 @@
 import type { Request, Response } from 'express';
+import { CollegeStatus, Role } from '@prisma/client';
 import { collegeService } from '../services/college.service.js';
 import type { AuthenticatedRequest } from '../middlewares/auth.js';
 import { prisma } from '../utils/prisma.js';
 
 export const collegeController = {
-  create: async (req: Request, res: Response) => {
-    const college = await collegeService.createCollegeWorkspace(req.body);
-    res.status(201).json({ success: true, data: college });
+  register: async (req: Request, res: Response) => {
+    const college = await collegeService.registerCollege(req.body);
+    res.status(201).json({ success: true, message: 'College registration submitted', data: { ...college, status: 'PENDING_APPROVAL' } });
   },
-  list: async (req: Request, res: Response) => {
-    const result = await collegeService.listColleges(req.query as { page?: string; limit?: string });
-    res.json({ success: true, data: result.items, pagination: result.pagination });
+
+  approve: async (req: Request, res: Response) => {
+    const updated = await collegeService.approveCollege(req.body.collegeId, req.body.action);
+    res.json({ success: true, data: updated });
   },
-  departmentsByCollege: async (req: Request, res: Response) => {
-    const data = await collegeService.getDepartmentsByCollege(req.params.collegeId);
-    res.json({ success: true, data });
+
+  list: async (_req: Request, res: Response) => {
+    const colleges = await collegeService.listColleges();
+    res.json({ success: true, data: colleges });
   },
+
   dashboard: async (req: AuthenticatedRequest, res: Response) => {
     const college = await prisma.college.findUnique({
       where: { createdById: req.user!.userId },
       include: {
-        students: true,
-        departments: true,
-        internships: {
-          include: {
-            industry: true,
-            applications: true,
-          },
-        },
+        departments: { include: { coordinatorUser: true } },
       },
     });
 
-    const approvedIndustryMap = new Map(
-      college!.internships.map((internship) => [internship.industryId, { id: internship.industry.id, name: internship.industry.name, emblem: internship.industry.emblemUrl }]),
-    );
-    const applicationsSubmitted = college!.internships.reduce((sum, internship) => sum + internship.applications.length, 0);
+    if (!college) {
+      return res.status(404).json({ success: false, message: 'College not found' });
+    }
+
+    if (college.status !== CollegeStatus.APPROVED) {
+      return res.status(403).json({ success: false, message: 'College pending approval' });
+    }
 
     res.json({
       success: true,
       data: {
-        college: { id: college!.id, name: college!.name, address: '', emblem: college!.emblemUrl },
-        stats: {
-          pendingMous: 0,
-          approvedIndustries: approvedIndustryMap.size,
-          activeStudents: college!.students.length,
-          applicationsSubmitted,
-        },
-        pendingMous: [],
-        approvedIndustries: Array.from(approvedIndustryMap.values()),
-        studentActivity: [],
+        college,
+        modules: ['Departments', 'Coordinators', 'Reports'],
       },
     });
   },
+
+  departmentsByCollege: async (req: Request, res: Response) => {
+    const departments = await prisma.department.findMany({ where: { collegeId: req.params.collegeId }, select: { id: true, name: true } });
+    res.json({ success: true, data: departments });
+  },
+
   catalog: async (_req: Request, res: Response) => {
-    const colleges = await prisma.college.findMany({
-      select: {
-        id: true,
-        name: true,
-        departments: {
-          select: { id: true, name: true },
-        },
+    const data = await collegeService.catalogApproved();
+    res.json({ success: true, data });
+  },
+
+  addDepartment: async (req: Request, res: Response) => {
+    const created = await collegeService.createDepartment(req.body);
+    res.status(201).json({ success: true, data: created.department, generatedPassword: created.generatedPassword });
+  },
+
+  superAdminDashboard: async (_req: Request, res: Response) => {
+    const [colleges, industries, internships, applications] = await Promise.all([
+      prisma.college.findMany({ orderBy: { createdAt: 'desc' } }),
+      prisma.industry.findMany({ orderBy: { createdAt: 'desc' } }),
+      prisma.internship.count(),
+      prisma.application.count(),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        colleges,
+        industries,
+        analytics: { totalInternships: internships, totalApplications: applications },
       },
-      orderBy: { name: 'asc' },
     });
-    res.json({ success: true, data: { colleges } });
   },
 };

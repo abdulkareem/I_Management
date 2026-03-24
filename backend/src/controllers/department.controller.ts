@@ -1,9 +1,9 @@
 import type { Request, Response } from 'express';
-import { departmentService } from '../services/department.service.js';
+import { collegeService } from '../services/college.service.js';
 
 export const departmentController = {
-  bulkCreate: async (req: Request, res: Response) => {
-    const result = await departmentService.bulkCreate(req.body.departments);
-    res.status(201).json({ success: true, data: result });
+  create: async (req: Request, res: Response) => {
+    const data = await collegeService.createDepartment(req.body);
+    res.status(201).json({ success: true, data: data.department, generatedPassword: data.generatedPassword });
   },
 };

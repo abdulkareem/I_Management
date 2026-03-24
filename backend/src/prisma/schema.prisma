@@ -8,11 +8,22 @@ datasource db {
 }
 
 enum Role {
+  SUPER_ADMIN
+  COLLEGE_ADMIN
+  DEPARTMENT_COORDINATOR
+  INDUSTRY
+  STUDENT
+  EXTERNAL_STUDENT
+
   ADMIN
   COLLEGE
   COORDINATOR
-  STUDENT
-  INDUSTRY
+}
+
+enum CollegeStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
 }
 
 enum ApplicationStatus {
@@ -28,27 +39,33 @@ enum AttendanceStatus {
 
 model User {
   id        String   @id @default(cuid())
-  name      String
+  name      String?
   email     String   @unique
   password  String
   role      Role
   createdAt DateTime @default(now())
 
-  createdCollege College?     @relation("CollegeCreator")
-  coordinator    Coordinator?
-  student        Student?
-  industry       Industry?
+  createdCollege     College?       @relation("CollegeCreator")
+  coordinator        Coordinator?
+  student            Student?
+  industry           Industry?
+  coordinatedDept    Department?    @relation("DepartmentCoordinator")
 
   @@index([role])
 }
 
 model College {
-  id           String   @id @default(cuid())
+  id           String        @id @default(cuid())
   name         String
+  email        String?
+  phone        String?
+  address      String?
+  university   String?
+  status       CollegeStatus @default(PENDING_APPROVAL)
   emblemUrl    String?
   emblemBinary Bytes?
-  createdById  String   @unique
-  createdAt    DateTime @default(now())
+  createdById  String        @unique
+  createdAt    DateTime      @default(now())
 
   createdBy   User           @relation("CollegeCreator", fields: [createdById], references: [id], onDelete: Cascade)
   departments Department[]
@@ -56,21 +73,24 @@ model College {
   internships Internship[]
 
   @@index([name])
+  @@index([status])
 }
 
 model Department {
-  id            String   @id @default(cuid())
-  name          String
-  collegeId     String
-  coordinatorId String?  @unique
-  createdAt     DateTime @default(now())
+  id                String   @id @default(cuid())
+  name              String
+  collegeId         String
+  coordinatorId     String?  @unique
+  coordinatorUserId String?  @unique
+  createdAt         DateTime @default(now())
 
-  college         College            @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  coordinator     Coordinator?       @relation(fields: [coordinatorId], references: [id])
-  students        Student[]
-  internshipIdeas InternshipIdea[]
-  interests       IndustryInterest[]
-  internships     Internship[]
+  college           College            @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  coordinator       Coordinator?       @relation(fields: [coordinatorId], references: [id])
+  coordinatorUser   User?              @relation("DepartmentCoordinator", fields: [coordinatorUserId], references: [id])
+  students          Student[]
+  internshipIdeas   InternshipIdea[]
+  interests         IndustryInterest[]
+  internships       Internship[]
 
   @@unique([collegeId, name])
   @@index([collegeId])
@@ -83,9 +103,9 @@ model Coordinator {
   phone        String
   createdAt    DateTime @default(now())
 
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  department      Department?
-  createdIdeas    InternshipIdea[]
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department?
+  createdIdeas InternshipIdea[]
 
   @@index([departmentId])
 }
@@ -110,10 +130,12 @@ model Student {
 model Industry {
   id                  String   @id @default(cuid())
   name                String
-  registrationDetails String
+  registrationDetails String?
   emblemUrl           String?
   emblemBinary        Bytes?
   userId              String   @unique
+  email               String?
+  approved            Boolean  @default(false)
   createdAt           DateTime @default(now())
 
   user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -124,17 +146,17 @@ model Industry {
 }
 
 model InternshipIdea {
-  id          String   @id @default(cuid())
-  title       String
-  description String
-  outcomes    String
+  id           String   @id @default(cuid())
+  title        String
+  description  String
+  outcomes     String
   departmentId String
-  createdById String
-  createdAt   DateTime @default(now())
+  createdById  String
+  createdAt    DateTime @default(now())
 
-  department Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  createdBy  Coordinator @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  internships Internship[]
+  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  createdBy    Coordinator @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  internships  Internship[]
 
   @@index([departmentId])
   @@index([createdById])
@@ -146,8 +168,8 @@ model IndustryInterest {
   departmentId String
   createdAt    DateTime @default(now())
 
-  industry   Industry   @relation(fields: [industryId], references: [id], onDelete: Cascade)
-  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  industry     Industry   @relation(fields: [industryId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
 
   @@unique([industryId, departmentId])
   @@index([departmentId])
@@ -155,6 +177,8 @@ model IndustryInterest {
 
 model Internship {
   id           String   @id @default(cuid())
+  title        String   @default("")
+  description  String   @default("")
   industryId   String
   collegeId    String
   departmentId String
@@ -175,13 +199,16 @@ model Internship {
 
 model Application {
   id           String            @id @default(cuid())
-  studentId    String
+  studentId    String?
+  studentName  String?
+  email        String?
+  phone        String?
   internshipId String
   status       ApplicationStatus @default(PENDING)
   createdAt    DateTime          @default(now())
 
-  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  student      Student?   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  internship   Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
 
   @@unique([studentId, internshipId])
   @@index([internshipId, status])
@@ -195,8 +222,8 @@ model Attendance {
   status       AttendanceStatus
   createdAt    DateTime         @default(now())
 
-  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  internship   Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
 
   @@unique([studentId, internshipId, date])
   @@index([internshipId, date])

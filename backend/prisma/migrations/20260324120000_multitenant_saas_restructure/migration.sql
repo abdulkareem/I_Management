@@ -1,0 +1,5 @@
+-- Migration scaffold for multi-tenant SaaS restructure.
+-- Generate concrete SQL in a connected environment:
+-- npx prisma migrate dev --name multitenant_saas_restructure
+-- or
+-- npx prisma migrate deploy
