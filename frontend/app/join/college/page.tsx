@@ -9,7 +9,37 @@ import { register } from '@/lib/auth';
 export default function CollegeJoinPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [departments, setDepartments] = useState([{ name: '', coordinatorName: '', coordinatorEmail: '', coordinatorPassword: '', coordinatorPhone: '' }]);
+  const [departments, setDepartments] = useState([{ name: '', coordinatorName: '', coordinatorEmail: '', coordinatorPhone: '' }]);
+  const [embelmBinary, setEmbelmBinary] = useState<string | undefined>();
+
+  async function handleEmbelmUpload(file: File | null) {
+    if (!file) {
+      setEmbelmBinary(undefined);
+      return;
+    }
+
+    if (file.size < 10 * 1024 || file.size > 200 * 1024) {
+      setError('Embelm image size must be between 10 KB and 200 KB.');
+      return;
+    }
+
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result !== 'string') {
+          reject(new Error('Unable to read embelm image.'));
+          return;
+        }
+        const [, data] = result.split(',');
+        resolve(data ?? '');
+      };
+      reader.onerror = () => reject(new Error('Unable to read embelm image.'));
+      reader.readAsDataURL(file);
+    });
+    setError(null);
+    setEmbelmBinary(base64);
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -18,7 +48,7 @@ export default function CollegeJoinPage() {
     try {
       await register('COLLEGE', {
         collegeName: form.get('collegeName'),
-        emblemUrl: form.get('emblem') || undefined,
+        emblemBinary: embelmBinary,
         createdBy: {
           name: form.get('name'),
           email: form.get('email'),
@@ -29,7 +59,6 @@ export default function CollegeJoinPage() {
           coordinator: {
             name: department.coordinatorName,
             email: department.coordinatorEmail,
-            password: department.coordinatorPassword,
             phone: department.coordinatorPhone,
           },
         })),
@@ -50,22 +79,34 @@ export default function CollegeJoinPage() {
           <div className="space-y-2"><label htmlFor="email">Coordinator email</label><input id="email" name="email" type="email" required /></div>
           <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>
           <div className="space-y-2"><label htmlFor="collegeName">College name</label><input id="collegeName" name="collegeName" required /></div>
-          <div className="space-y-2"><label htmlFor="emblem">Emblem URL</label><input id="emblem" name="emblem" type="url" placeholder="https://..." /></div>
-          <div className="space-y-2 md:col-span-2">
-            <label>Departments + Coordinators</label>
+          <div className="space-y-2">
+            <label htmlFor="embelm">Embelm</label>
+            <input
+              id="embelm"
+              name="embelm"
+              type="file"
+              accept="image/*"
+              onChange={(event) => handleEmbelmUpload(event.target.files?.[0] ?? null)}
+            />
+            <p className="text-xs text-slate-400">Upload image from 10 KB to 200 KB. It will be saved in the database.</p>
+          </div>
+          <Card className="space-y-2 rounded-[24px] p-4 md:col-span-2">
+            <label className="text-sm uppercase tracking-[0.2em] text-cyan-200">Add Department</label>
+            <p className="text-sm text-slate-300">
+              Departments + Coordinators (coordinator password is automatically generated and sent to the coordinator email).
+            </p>
             <div className="space-y-3">
               {departments.map((department, index) => (
                 <div key={index} className="grid gap-2 rounded-[18px] border border-white/10 p-3 md:grid-cols-2">
                   <input placeholder="Department name" value={department.name} required onChange={(event) => setDepartments((prev) => prev.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} />
                   <input placeholder="Coordinator name" value={department.coordinatorName} required onChange={(event) => setDepartments((prev) => prev.map((item, i) => i === index ? { ...item, coordinatorName: event.target.value } : item))} />
                   <input type="email" placeholder="Coordinator email" value={department.coordinatorEmail} required onChange={(event) => setDepartments((prev) => prev.map((item, i) => i === index ? { ...item, coordinatorEmail: event.target.value } : item))} />
-                  <input type="password" placeholder="Coordinator password" value={department.coordinatorPassword} required onChange={(event) => setDepartments((prev) => prev.map((item, i) => i === index ? { ...item, coordinatorPassword: event.target.value } : item))} />
                   <input className="md:col-span-2" placeholder="Coordinator phone" value={department.coordinatorPhone} required onChange={(event) => setDepartments((prev) => prev.map((item, i) => i === index ? { ...item, coordinatorPhone: event.target.value } : item))} />
                 </div>
               ))}
-              <Button type="button" variant="secondary" onClick={() => setDepartments((prev) => [...prev, { name: '', coordinatorName: '', coordinatorEmail: '', coordinatorPassword: '', coordinatorPhone: '' }])}>Add More Department</Button>
+              <Button type="button" variant="secondary" onClick={() => setDepartments((prev) => [...prev, { name: '', coordinatorName: '', coordinatorEmail: '', coordinatorPhone: '' }])}>Add More Department</Button>
             </div>
-          </div>
+          </Card>
           {error ? <p className="md:col-span-2 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
           <Button className="md:col-span-2">Create college workspace</Button>
         </form>

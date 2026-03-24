@@ -18,11 +18,15 @@ const router = Router();
 const roleEnum = z.enum(['ADMIN', 'COLLEGE', 'COORDINATOR', 'STUDENT', 'INDUSTRY']);
 const appStatusEnum = z.enum(['PENDING', 'APPROVED', 'REJECTED']);
 const attendanceStatusEnum = z.enum(['PRESENT', 'ABSENT']);
+const emblemBinarySchema = z.string().refine((value) => {
+  const size = Buffer.from(value, 'base64').byteLength;
+  return size >= 10 * 1024 && size <= 200 * 1024;
+}, 'Embelm image must be between 10 KB and 200 KB.');
 
 router.post('/auth/register', validate(z.object({ body: z.object({ name: z.string(), email: z.string().email(), password: z.string().min(6), role: roleEnum }) })), authController.register);
 router.post('/auth/login', validate(z.object({ body: z.object({ email: z.string().email(), password: z.string() }) })), authController.login);
 
-router.post('/college/create', validate(z.object({ body: z.object({ collegeName: z.string(), emblemUrl: z.string().url().optional(), emblemBinary: z.string().optional(), createdBy: z.object({ name: z.string(), email: z.string().email(), password: z.string().min(6) }), departments: z.array(z.object({ name: z.string(), coordinator: z.object({ name: z.string(), email: z.string().email(), password: z.string().min(6), phone: z.string().min(8) }) })).min(1) }) })), collegeController.create);
+router.post('/college/create', validate(z.object({ body: z.object({ collegeName: z.string(), emblemUrl: z.string().url().optional(), emblemBinary: emblemBinarySchema.optional(), createdBy: z.object({ name: z.string(), email: z.string().email(), password: z.string().min(6) }), departments: z.array(z.object({ name: z.string(), coordinator: z.object({ name: z.string(), email: z.string().email(), password: z.string().min(6).optional(), phone: z.string().min(8) }) })).min(1) }) })), collegeController.create);
 router.get('/college/list', verifyJWT, requireRole('ADMIN', 'COLLEGE', 'COORDINATOR'), collegeController.list);
 router.get('/college/dashboard', verifyJWT, requireRole('COLLEGE'), collegeController.dashboard);
 router.get('/departments/:collegeId', collegeController.departmentsByCollege);

@@ -8,6 +8,12 @@ import { Card } from './ui/card';
 
 const roleCards = [
   {
+    href: '/login',
+    title: 'Login',
+    description: 'Use your email and password to open your dashboard instantly.',
+    icon: ArrowRight,
+  },
+  {
     href: '/join/student',
     title: 'Join as Student',
     description: 'Discover only approved internships, apply in one tap, and track your journey like a game.',
@@ -24,6 +30,12 @@ const roleCards = [
     title: 'Join as Industry',
     description: 'Request partnerships, publish internships in under 30 seconds, and accept students instantly.',
     icon: Factory,
+  },
+  {
+    href: '/external-student/apply',
+    title: 'External Student',
+    description: 'Apply for internships offered by departments in registered colleges.',
+    icon: BadgeCheck,
   },
 ];
 
@@ -43,7 +55,7 @@ export function LandingPage() {
                 InternSuite helps students find approved internships fast, colleges approve MoUs in one click, and industries recruit without friction.
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {roleCards.map((card) => {
                 const Icon = card.icon;
                 return (
