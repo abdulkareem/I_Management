@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { dashboardPathFor, login } from '@/lib/auth';
+import { beginLogin, dashboardPathFor, loginWithPassword, verifyOtp } from '@/lib/auth';
 import { apiRequest } from '@/lib/api';
 
 const SUPER_ADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
@@ -23,19 +23,21 @@ export default function LoginPage() {
   async function handleEmailStep(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    if (email === SUPER_ADMIN_EMAIL) {
-      setLoading(true);
-      try {
-        await login({ email, password: '' });
+    setLoading(true);
+
+    try {
+      const response = await beginLogin(email);
+      if (response.data.requiresOtp || response.data.requiresPassword) {
         setShowPassword(true);
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : 'Unable to send OTP.');
-      } finally {
-        setLoading(false);
       }
-      return;
+      if (response.data.requiresOtp) {
+        setError('OTP sent to your email. Enter the code to continue.');
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to continue login.');
+    } finally {
+      setLoading(false);
     }
-    setShowPassword(true);
   }
 
   async function handlePasswordStep(event: FormEvent<HTMLFormElement>) {
@@ -43,12 +45,8 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await login({ email, password });
-      if ((response.data as any).requiresOtp) {
-        setError('OTP sent. Enter OTP as password.');
-        return;
-      }
-      router.push(dashboardPathFor((response.data as any).user.role));
+      const response = email === SUPER_ADMIN_EMAIL ? await verifyOtp(email, password) : await loginWithPassword(email, password);
+      router.push(dashboardPathFor(response.data.user.role));
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Login failed.';
       setError(message);
