@@ -12,5 +12,12 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/index.ts",
+    "src/app.ts",
+    "src/routes/index.ts",
+    "src/utils/prisma.ts",
+    "src/utils/logger.ts",
+    "src/middlewares/errorHandler.ts"
+  ]
 }
