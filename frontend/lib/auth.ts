@@ -22,10 +22,26 @@ export function clearSession() {
   window.localStorage.removeItem(SESSION_KEY);
 }
 
-export async function login(payload: { email: string; password: string }) {
-  const response = await apiRequest<SessionState>('/auth/login', {
+export async function beginLogin(email: string) {
+  return apiRequest<{ requiresOtp?: boolean; requiresPassword?: boolean }>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function verifyOtp(email: string, otp: string) {
+  const response = await apiRequest<SessionState>('/auth/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp }),
+  });
+  saveSession(response.data);
+  return response;
+}
+
+export async function loginWithPassword(email: string, password: string) {
+  const response = await apiRequest<SessionState>('/auth/login-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
   });
   saveSession(response.data);
   return response;

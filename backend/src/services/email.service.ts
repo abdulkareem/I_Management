@@ -13,7 +13,7 @@ export const emailService = {
     await this.sendEmail(params.to, subject, text);
   },
 
-  async sendEmail(to: string, subject: string, text: string) {
+  async sendEmail(to: string, subject: string, text: string, html?: string) {
     if (process.env.RESEND_API_KEY) {
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -26,6 +26,7 @@ export const emailService = {
           to: [to],
           subject,
           text,
+          html,
         }),
       });
       return;
