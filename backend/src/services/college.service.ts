@@ -1,5 +1,6 @@
 import { Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import { authRepository } from '../repositories/auth.repository.js';
 import { collegeRepository } from '../repositories/college.repository.js';
 import { getPagination } from '../utils/pagination.js';
@@ -11,7 +12,7 @@ export const collegeService = {
     emblemUrl?: string;
     emblemBinary?: string;
     createdBy: { name: string; email: string; password: string };
-    departments: Array<{ name: string; coordinator: { name: string; email: string; password: string; phone: string } }>;
+    departments: Array<{ name: string; coordinator: { name: string; email: string; password?: string; phone: string } }>;
   }) {
     return collegeRepository.createWorkspaceTransaction(async (tx) => {
       const creator = await tx.user.create({
@@ -32,11 +33,12 @@ export const collegeService = {
       });
 
       for (const department of payload.departments) {
+        const generatedCoordinatorPassword = department.coordinator.password ?? crypto.randomBytes(6).toString('base64url');
         const coordinatorUser = await tx.user.create({
           data: {
             name: department.coordinator.name,
             email: department.coordinator.email,
-            password: await bcrypt.hash(department.coordinator.password, 10),
+            password: await bcrypt.hash(generatedCoordinatorPassword, 10),
             role: Role.COORDINATOR,
           },
         });
