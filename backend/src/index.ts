@@ -406,7 +406,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
     if (actor instanceof Response) return actor;
 
-    const [colleges, industries, apps, internships] = await Promise.all([
+    const [colleges, industries, apps, internships, users, loginLogs, industryTypes] = await Promise.all([
       env.DB.prepare('SELECT id, name, coordinator_name, coordinator_email, mobile, status FROM colleges ORDER BY created_at DESC').all(),
       env.DB.prepare(
         `SELECT i.id, i.name, i.email, i.status, it.name AS category
@@ -416,6 +416,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       ).all(),
       env.DB.prepare('SELECT COUNT(*) AS count FROM internship_applications').first<{ count: number }>(),
       env.DB.prepare('SELECT COUNT(*) AS count FROM internships').first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM auth_identities').first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM approval_audit_log').first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM industry_types').first<{ count: number }>(),
     ]);
 
     return ok('Superadmin dashboard loaded', {
@@ -439,6 +442,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       analytics: {
         totalApplications: Number(apps?.count ?? 0),
         totalInternships: Number(internships?.count ?? 0),
+        totalUsers: Number(users?.count ?? 0),
+        totalLoginLogs: Number(loginLogs?.count ?? 0),
+        totalIndustryTypes: Number(industryTypes?.count ?? 0),
       },
     });
   }
