@@ -2,6 +2,7 @@ import 'express-async-errors';
 import cors from 'cors';
 import express from 'express';
 import { router } from './routes/index.js';
+import { adminAuthRoutes } from './routes/adminAuthRoutes.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { httpLogger } from './utils/logger.js';
 
@@ -26,5 +27,7 @@ app.get('/health', (_req: any, res: any) => {
   res.json({ success: true, service: 'internship-management-platform' });
 });
 
+app.use('/api/admin', adminAuthRoutes);
+console.log('Admin routes loaded');
 app.use('/api', router);
 app.use(errorHandler);
