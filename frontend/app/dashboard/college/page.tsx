@@ -65,7 +65,7 @@ export default function CollegeDashboardPage() {
   }
 
   return (
-    <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN']} title="College Dashboard" subtitle="Departments, industries, applications, and allocations are fully connected to D1.">
+    <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN', 'COLLEGE_COORDINATOR']} title="College Dashboard" subtitle="Departments, industries, applications, and allocations are fully connected to D1.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
