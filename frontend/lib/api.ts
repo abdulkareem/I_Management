@@ -8,8 +8,11 @@ export interface ApiEnvelope<T> {
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const requestUrl = `${API_BASE_URL}/api${normalizedPath}`;
 
-  const res = await fetch(`${API_BASE_URL}/api${normalizedPath}`, {
+  console.log('API URL:', API_BASE_URL, 'Request:', requestUrl);
+
+  const res = await fetch(requestUrl, {
     ...init,
     headers: {
       'Content-Type': 'application/json',

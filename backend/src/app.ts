@@ -8,10 +8,18 @@ import { httpLogger } from './utils/logger.js';
 
 export const app = express();
 
+const allowedOrigins = [
+  process.env.FRONTEND_APP_URL,
+  process.env.CLOUDFLARE_PAGES_URL,
+  process.env.APP_URL,
+  'http://localhost:3000',
+  'http://localhost:3001',
+].filter(Boolean) as string[];
+
 app.use(
   cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    origin: allowedOrigins.length ? allowedOrigins : '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );
@@ -28,6 +36,5 @@ app.get('/health', (_req: any, res: any) => {
 });
 
 app.use('/api/admin', adminAuthRoutes);
-console.log('Admin routes loaded');
 app.use('/api', router);
 app.use(errorHandler);
