@@ -1,237 +1,230 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
 
-type CollegeRow = { id: string; name: string; coordinatorName: string; email: string; phone: string; status: string; studentsCount: number };
-type IndustryRow = { id: string; name: string; category: string; email: string; phone: string; status: string };
-type StudentRow = { id: string; name: string; email: string; phone: string };
-type IndustryType = { id: string; name: string };
+type College = {
+  id: string;
+  name: string;
+  coordinator_name: string;
+  coordinator_email: string;
+  mobile: string;
+  status: string;
+  created_at: string;
+};
 
-type DashboardData = {
-  colleges: CollegeRow[];
-  industries: IndustryRow[];
-  analytics: {
-    totalApplications: number;
-    totalInternships: number;
-    totalUsers: number;
-    totalLoginLogs: number;
-    totalIndustryTypes: number;
-  };
+type Industry = {
+  id: string;
+  name: string;
+  email: string;
+  business_activity: string;
+  industry_type_name: string;
+  status: string;
+};
+
+type Department = {
+  id: string;
+  name: string;
+  coordinator_name: string;
+  coordinator_email: string;
+  college_name: string;
+  is_active: number;
+};
+
+type Student = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  college_name: string;
+  department_name: string;
+  program_name: string;
+  is_active: number;
 };
 
 export default function SuperAdminDashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [students, setStudents] = useState<StudentRow[]>([]);
-  const [types, setTypes] = useState<IndustryType[]>([]);
-  const [typeName, setTypeName] = useState('');
-  const [activeLabel, setActiveLabel] = useState('');
+  const [colleges, setColleges] = useState<College[]>([]);
+  const [industries, setIndustries] = useState<Industry[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const menuCards = [
-    {
-      key: 'manage-colleges',
-      label: 'Manage Colleges',
-      value: data?.colleges?.length ?? 0,
-      dbField: 'colleges.id',
-      sectionId: 'colleges-section',
-    },
-    {
-      key: 'manage-users',
-      label: 'Manage Users',
-      value: data?.analytics?.totalUsers ?? 0,
-      dbField: 'auth_identities.id',
-      sectionId: 'students-section',
-    },
-    {
-      key: 'analytics',
-      label: 'Analytics',
-      value: data?.analytics?.totalApplications ?? 0,
-      dbField: 'internship_applications.id',
-      sectionId: 'overview-section',
-    },
-    {
-      key: 'login-logs',
-      label: 'Login Logs',
-      value: data?.analytics?.totalLoginLogs ?? 0,
-      dbField: 'approval_audit_log.id',
-      sectionId: 'industry-types-section',
-    },
-  ] as const;
+  async function loadAll() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [collegesRes, industriesRes, departmentsRes, studentsRes] = await Promise.all([
+        fetchWithSession<College[]>('/api/admin/colleges'),
+        fetchWithSession<Industry[]>('/api/admin/industries'),
+        fetchWithSession<Department[]>('/api/admin/departments'),
+        fetchWithSession<Student[]>('/api/admin/students'),
+      ]);
 
-  function goToSection(sectionId: string) {
-    const section = document.getElementById(sectionId);
-    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
+      console.log('API response:', {
+        colleges: collegesRes.data,
+        industries: industriesRes.data,
+        departments: departmentsRes.data,
+        students: studentsRes.data,
+      });
 
-  async function loadDashboard() {
-    const [dashboardRes, typesRes] = await Promise.all([
-      fetchWithSession<DashboardData>('/super-admin/dashboard'),
-      fetchWithSession<IndustryType[]>('/industry-type/list'),
-    ]);
-    setData(dashboardRes.data);
-    setTypes(typesRes.data);
+      setColleges(collegesRes.data);
+      setIndustries(industriesRes.data);
+      setDepartments(departmentsRes.data);
+      setStudents(studentsRes.data);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to load superadmin data.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    loadDashboard().catch(() => {
-      setData(null);
-      setTypes([]);
-    });
+    loadAll();
   }, []);
 
-  async function updateCollege(id: string, payload: Record<string, unknown>) {
-    await fetchWithSession(`/super-admin/college/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-    await loadDashboard();
+  async function performAction(entity: 'college' | 'industry' | 'department' | 'student', id: string, action: 'approve' | 'reject' | 'delete') {
+    await fetchWithSession(`/api/admin/${entity}/${id}/${action}`, { method: 'POST' });
+    await loadAll();
   }
 
-  async function updateIndustry(id: string, payload: Record<string, unknown>) {
-    await fetchWithSession(`/super-admin/industry/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-    await loadDashboard();
-  }
-
-  async function deleteCollege(id: string) {
-    await fetchWithSession(`/super-admin/college/${id}`, { method: 'DELETE' });
-    await loadDashboard();
-  }
-
-  async function deleteIndustry(id: string) {
-    await fetchWithSession(`/super-admin/industry/${id}`, { method: 'DELETE' });
-    await loadDashboard();
-  }
-
-  async function openCollegeStudents(college: CollegeRow) {
-    const response = await fetchWithSession<StudentRow[]>(`/super-admin/college/${college.id}/students`);
-    setStudents(response.data);
-    setActiveLabel(`Students from ${college.name}`);
-  }
-
-  async function createType(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!typeName.trim()) return;
-    await fetchWithSession('/industry-type/create', { method: 'POST', body: JSON.stringify({ name: typeName }) });
-    setTypeName('');
-    await loadDashboard();
-  }
-
-  async function renameType(id: string, name: string) {
-    const nextName = prompt('Edit industry type', name);
-    if (!nextName || nextName === name) return;
-    await fetchWithSession(`/industry-type/${id}`, { method: 'PUT', body: JSON.stringify({ name: nextName }) });
-    await loadDashboard();
-  }
-
-  async function removeType(id: string) {
-    await fetchWithSession(`/industry-type/${id}`, { method: 'DELETE' });
-    await loadDashboard();
+  async function editEntity(entity: 'college' | 'industry' | 'department' | 'student', id: string, currentName: string) {
+    const name = prompt('Edit name', currentName);
+    if (!name || name.trim() === currentName) return;
+    await fetchWithSession(`/api/admin/${entity}/${id}/edit`, {
+      method: 'POST',
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    await loadAll();
   }
 
   return (
-    <RoleDashboardShell allowedRoles={['SUPER_ADMIN', 'ADMIN']} title="Super Admin Dashboard" subtitle="Approve, reject, edit, and delete colleges and industries with role-based access control.">
+    <RoleDashboardShell allowedRoles={['SUPER_ADMIN', 'ADMIN']} title="Super Admin Dashboard" subtitle="Manage all entities from D1 with full CRUD and approvals.">
       {() => (
         <>
+          {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          {loading ? <Card className="rounded-[28px] p-4">Loading dashboard data...</Card> : null}
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {menuCards.map((card) => (
-              <Card
-                key={card.key}
-                className="rounded-[28px] p-5 cursor-pointer border border-white/10 transition hover:border-cyan-200/60"
-                onClick={() => goToSection(card.sectionId)}
-              >
-                <p className="text-sm text-white/70">{card.label}</p>
-                <p className="mt-2 text-3xl font-semibold text-white">{card.value}</p>
-                <p className="mt-1 text-xs text-white/60">Source: {card.dbField}</p>
-              </Card>
-            ))}
+          <section className="grid gap-4 md:grid-cols-4">
+            <Card className="rounded-[28px] p-5">Colleges: {colleges.length}</Card>
+            <Card className="rounded-[28px] p-5">Industries: {industries.length}</Card>
+            <Card className="rounded-[28px] p-5">Departments: {departments.length}</Card>
+            <Card className="rounded-[28px] p-5">Students: {students.length}</Card>
           </section>
 
-          <section id="overview-section" className="grid gap-4 md:grid-cols-4">
-            <Card className="rounded-[28px] p-5">Colleges: {data?.colleges?.length ?? 0}</Card>
-            <Card className="rounded-[28px] p-5">Industries: {data?.industries?.length ?? 0}</Card>
-            <Card className="rounded-[28px] p-5">Applications: {data?.analytics?.totalApplications ?? 0}</Card>
-            <Card className="rounded-[28px] p-5">Industry Types: {data?.analytics?.totalIndustryTypes ?? 0}</Card>
-          </section>
+          <EntityTable
+            title="Colleges"
+            emptyLabel="No colleges found"
+            rows={colleges}
+            columns={[
+              { key: 'name', label: 'Name' },
+              { key: 'coordinator_name', label: 'Coordinator' },
+              { key: 'coordinator_email', label: 'Email' },
+              { key: 'mobile', label: 'Phone' },
+              { key: 'status', label: 'Status' },
+            ]}
+            onApprove={(id) => performAction('college', id, 'approve')}
+            onReject={(id) => performAction('college', id, 'reject')}
+            onDelete={(id) => performAction('college', id, 'delete')}
+            onEdit={(id, row) => editEntity('college', id, row.name)}
+          />
 
-          <Card id="industry-types-section" className="rounded-[28px] p-5">
-            <h2 className="text-xl font-semibold text-white">Manage Industry Types</h2>
-            <form className="mt-3 flex gap-2" onSubmit={createType}>
-              <input value={typeName} onChange={(event) => setTypeName(event.target.value)} placeholder="New category" />
-              <Button>Add</Button>
-            </form>
-            <div className="mt-4 space-y-2">
-              {types.map((type) => (
-                <div key={type.id} className="flex items-center justify-between rounded-[16px] border border-white/10 px-3 py-2">
-                  <span>{type.name}</span>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => renameType(type.id, type.name)}>Edit</Button>
-                    <Button variant="secondary" onClick={() => removeType(type.id)}>Delete</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
+          <EntityTable
+            title="Industries"
+            emptyLabel="No industries found"
+            rows={industries}
+            columns={[
+              { key: 'name', label: 'Name' },
+              { key: 'industry_type_name', label: 'Type' },
+              { key: 'email', label: 'Email' },
+              { key: 'business_activity', label: 'Business' },
+              { key: 'status', label: 'Status' },
+            ]}
+            onApprove={(id) => performAction('industry', id, 'approve')}
+            onReject={(id) => performAction('industry', id, 'reject')}
+            onDelete={(id) => performAction('industry', id, 'delete')}
+            onEdit={(id, row) => editEntity('industry', id, row.name)}
+          />
 
-          <Card id="colleges-section" className="rounded-[28px] p-5 overflow-x-auto">
-            <h2 className="mb-3 text-xl font-semibold text-white">Colleges</h2>
-            <table className="w-full text-sm">
-              <thead><tr><th>Name</th><th>Coordinator</th><th>Email</th><th>Phone</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody>
-                {data?.colleges.map((college) => (
-                  <tr key={college.id} className="border-t border-white/10 cursor-pointer" onClick={() => openCollegeStudents(college)}>
-                    <td>{college.name}</td><td>{college.coordinatorName}</td><td>{college.email}</td><td>{college.phone}</td><td>{college.status}</td>
-                    <td className="space-x-2 py-2" onClick={(event) => event.stopPropagation()}>
-                      <Button variant="secondary" onClick={() => updateCollege(college.id, { action: 'APPROVED' })}>Approve</Button>
-                      <Button variant="secondary" onClick={() => updateCollege(college.id, { action: 'REJECTED' })}>Reject</Button>
-                      <Button variant="secondary" onClick={() => {
-                        const name = prompt('College name', college.name);
-                        if (name) updateCollege(college.id, { name });
-                      }}>Edit</Button>
-                      <Button variant="secondary" onClick={() => deleteCollege(college.id)}>Delete</Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
+          <EntityTable
+            title="Departments"
+            emptyLabel="No departments found"
+            rows={departments}
+            columns={[
+              { key: 'name', label: 'Name' },
+              { key: 'coordinator_name', label: 'Coordinator' },
+              { key: 'coordinator_email', label: 'Email' },
+              { key: 'college_name', label: 'College' },
+              { key: 'is_active', label: 'Active' },
+            ]}
+            onApprove={(id) => performAction('department', id, 'approve')}
+            onReject={(id) => performAction('department', id, 'reject')}
+            onDelete={(id) => performAction('department', id, 'delete')}
+            onEdit={(id, row) => editEntity('department', id, row.name)}
+          />
 
-          <Card className="rounded-[28px] p-5 overflow-x-auto">
-            <h2 className="mb-3 text-xl font-semibold text-white">Industries</h2>
-            <table className="w-full text-sm">
-              <thead><tr><th>Name</th><th>Category</th><th>Email</th><th>Phone</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody>
-                {data?.industries.map((industry) => (
-                  <tr key={industry.id} className="border-t border-white/10">
-                    <td>{industry.name}</td><td>{industry.category}</td><td>{industry.email}</td><td>{industry.phone}</td><td>{industry.status}</td>
-                    <td className="space-x-2 py-2">
-                      <Button variant="secondary" onClick={() => updateIndustry(industry.id, { action: 'APPROVED' })}>Approve</Button>
-                      <Button variant="secondary" onClick={() => updateIndustry(industry.id, { action: 'REJECTED' })}>Reject</Button>
-                      <Button variant="secondary" onClick={() => {
-                        const name = prompt('Industry name', industry.name);
-                        if (name) updateIndustry(industry.id, { name });
-                      }}>Edit</Button>
-                      <Button variant="secondary" onClick={() => deleteIndustry(industry.id)}>Delete</Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-
-          <Card id="students-section" className="rounded-[28px] p-5 overflow-x-auto">
-            <h2 className="text-xl font-semibold text-white">{activeLabel || 'Students'}</h2>
-            <table className="mt-3 w-full text-sm">
-              <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th></tr></thead>
-              <tbody>
-                {students.map((student, index) => (
-                  <tr key={student.id} className="border-t border-white/10"><td>{index + 1}</td><td>{student.name}</td><td>{student.email}</td><td>{student.phone}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
+          <EntityTable
+            title="Students"
+            emptyLabel="No students found"
+            rows={students}
+            columns={[
+              { key: 'name', label: 'Name' },
+              { key: 'email', label: 'Email' },
+              { key: 'phone', label: 'Phone' },
+              { key: 'college_name', label: 'College' },
+              { key: 'department_name', label: 'Department' },
+            ]}
+            onApprove={(id) => performAction('student', id, 'approve')}
+            onReject={(id) => performAction('student', id, 'reject')}
+            onDelete={(id) => performAction('student', id, 'delete')}
+            onEdit={(id, row) => editEntity('student', id, row.name)}
+          />
         </>
       )}
     </RoleDashboardShell>
+  );
+}
+
+function EntityTable<T extends { id: string }>(props: {
+  title: string;
+  emptyLabel: string;
+  rows: T[];
+  columns: Array<{ key: keyof T; label: string }>;
+  onApprove: (id: string) => Promise<void>;
+  onReject: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onEdit: (id: string, row: T) => Promise<void>;
+}) {
+  return (
+    <Card className="rounded-[28px] p-5 overflow-x-auto">
+      <h2 className="mb-3 text-xl font-semibold text-white">{props.title}</h2>
+      {props.rows.length === 0 ? <p className="text-slate-300">{props.emptyLabel}</p> : null}
+      {props.rows.length > 0 ? (
+        <table className="w-full text-sm">
+          <thead>
+            <tr>
+              {props.columns.map((column) => <th key={String(column.key)}>{column.label}</th>)}
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {props.rows.map((row) => (
+              <tr key={row.id} className="border-t border-white/10">
+                {props.columns.map((column) => <td key={String(column.key)}>{String(row[column.key] ?? '')}</td>)}
+                <td className="space-x-2 py-2">
+                  <Button variant="secondary" onClick={() => props.onApprove(row.id)}>Approve</Button>
+                  <Button variant="secondary" onClick={() => props.onReject(row.id)}>Reject</Button>
+                  <Button variant="secondary" onClick={() => props.onEdit(row.id, row)}>Edit</Button>
+                  <Button variant="secondary" onClick={() => props.onDelete(row.id)}>Delete</Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+    </Card>
   );
 }

@@ -449,6 +449,68 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     });
   }
 
+  if (request.method === 'GET' && pathname === '/api/admin/colleges') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT id, name, address, university, mobile, coordinator_name, coordinator_email, status, is_active, created_at, updated_at
+       FROM colleges
+       ORDER BY created_at DESC`,
+    ).all();
+
+    return ok('Admin colleges fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/admin/industries') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT i.id, i.name, i.email, i.business_activity, i.status, i.is_active, i.created_at, i.updated_at,
+              it.name AS industry_type_name
+       FROM industries i
+       LEFT JOIN industry_types it ON it.id = i.industry_type_id
+       ORDER BY i.created_at DESC`,
+    ).all();
+
+    return ok('Admin industries fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/admin/students') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT s.id, s.name, s.email, s.phone, s.is_active, s.created_at,
+              c.name AS college_name,
+              d.name AS department_name,
+              p.name AS program_name
+       FROM students s
+       INNER JOIN colleges c ON c.id = s.college_id
+       INNER JOIN departments d ON d.id = s.department_id
+       INNER JOIN programs p ON p.id = s.program_id
+       ORDER BY s.created_at DESC`,
+    ).all();
+
+    return ok('Admin students fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/admin/departments') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT d.id, d.name, d.coordinator_name, d.coordinator_email, d.coordinator_mobile, d.is_active, d.created_at,
+              c.id AS college_id, c.name AS college_name
+       FROM departments d
+       INNER JOIN colleges c ON c.id = d.college_id
+       ORDER BY d.created_at DESC`,
+    ).all();
+
+    return ok('Admin departments fetched', rows.results ?? []);
+  }
+
   if (request.method === 'GET' && (pathname === '/api/dashboard/college' || pathname === '/college/dashboard')) {
     const actor = requireRole(request, ['COLLEGE']);
     if (actor instanceof Response) return actor;
@@ -501,14 +563,22 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
     if (actor instanceof Response) return actor;
 
-    const [programs, internships] = await Promise.all([
+    const [programs, internships, students] = await Promise.all([
       env.DB.prepare('SELECT id, name FROM programs WHERE department_id = ? ORDER BY name ASC').bind(actor.id).all(),
       env.DB.prepare('SELECT id, title, description, created_at FROM internships WHERE department_id = ? ORDER BY created_at DESC').bind(actor.id).all(),
+      env.DB.prepare(
+        `SELECT s.id, s.name, s.email, s.phone, p.name AS program_name
+         FROM students s
+         INNER JOIN programs p ON p.id = s.program_id
+         WHERE s.department_id = ?
+         ORDER BY s.created_at DESC`,
+      ).bind(actor.id).all(),
     ]);
 
     return ok('Department dashboard loaded', {
       programs: programs.results ?? [],
       internships: internships.results ?? [],
+      students: students.results ?? [],
     });
   }
 
@@ -545,8 +615,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       },
       stats: {
         internships: (internships.results ?? []).length,
+        liveOpportunities: (internships.results ?? []).length,
         pendingApplications: appRows.filter((a: any) => a.status === 'pending').length,
         acceptedApplications: appRows.filter((a: any) => a.status === 'accepted').length,
+        attendanceToday: 0,
       },
       applications: appRows.map((row: any) => ({
         id: row.id,
@@ -588,6 +660,70 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         { label: 'Applied to internship', done: false },
       ],
     });
+  }
+
+  const actionMatch = pathname.match(/^\/api\/admin\/(college|industry|student|department)\/([^/]+)\/(approve|reject|delete|edit)$/);
+  if (actionMatch) {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const [, entity, entityId, action] = actionMatch;
+    if (request.method !== 'POST') return errorResponse(405, 'Method not allowed');
+
+    if (action === 'delete') {
+      return deleteAdminEntity(env, entity, entityId);
+    }
+    if (action === 'approve') {
+      return approveAdminEntity(env, entity, entityId, actor.id);
+    }
+    if (action === 'reject') {
+      return rejectAdminEntity(env, entity, entityId, actor.id);
+    }
+    return editAdminEntity(request, env, entity, entityId);
+  }
+
+  const studentApplyMatch = pathname.match(/^\/api\/student\/applications\/([^/]+)$/);
+  if (studentApplyMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['STUDENT']);
+    if (actor instanceof Response) return actor;
+    const internshipId = studentApplyMatch[1];
+
+    const internship = await env.DB.prepare('SELECT id FROM internships WHERE id = ?').bind(internshipId).first();
+    if (!internship) return badRequest('Invalid internship id');
+
+    const duplicate = await env.DB.prepare('SELECT id FROM internship_applications WHERE student_id = ? AND internship_id = ?')
+      .bind(actor.id, internshipId)
+      .first();
+    if (duplicate) return conflict('Application already submitted for this internship');
+
+    await env.DB.prepare(
+      `INSERT INTO internship_applications (id, student_id, internship_id, status)
+       VALUES (?, ?, ?, 'pending')`,
+    )
+      .bind(crypto.randomUUID(), actor.id, internshipId)
+      .run();
+
+    return created('Student application submitted', { internshipId, status: 'pending' });
+  }
+
+  const industryAcceptMatch = pathname.match(/^\/api\/industry\/applications\/([^/]+)\/accept$/);
+  if (industryAcceptMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const applicationId = industryAcceptMatch[1];
+
+    const result = await env.DB.prepare(
+      `UPDATE internship_applications
+       SET status = 'accepted',
+           reviewed_by_industry_id = ?,
+           reviewed_at = datetime('now'),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(actor.id, applicationId)
+      .run();
+
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
+    return ok('Application accepted');
   }
 
   return errorResponse(404, 'Route not found');
@@ -642,6 +778,198 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
       { label: 'Selection completed', done: applicationRows.some((item: any) => item.status === 'accepted') },
     ],
   });
+}
+
+async function approveAdminEntity(env: EnvBindings, entity: string, entityId: string, actorAdminId: string): Promise<Response> {
+  if (entity === 'college') {
+    const result = await env.DB.prepare(
+      `UPDATE colleges
+       SET status = 'approved', is_active = 1, approved_by_admin_id = ?, approved_at = datetime('now'), rejection_reason = NULL, updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(actorAdminId, entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'College not found');
+    return ok('College approved');
+  }
+
+  if (entity === 'industry') {
+    const result = await env.DB.prepare(
+      `UPDATE industries
+       SET status = 'approved', is_active = 1, approved_by_admin_id = ?, approved_at = datetime('now'), rejection_reason = NULL, updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(actorAdminId, entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
+    return ok('Industry approved');
+  }
+
+  if (entity === 'department') {
+    const result = await env.DB.prepare(
+      `UPDATE departments
+       SET is_active = 1, updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Department not found');
+    return ok('Department approved');
+  }
+
+  if (entity === 'student') {
+    const result = await env.DB.prepare(
+      `UPDATE students
+       SET is_active = 1, updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Student not found');
+    return ok('Student approved');
+  }
+
+  return badRequest('Unsupported entity');
+}
+
+async function rejectAdminEntity(env: EnvBindings, entity: string, entityId: string, actorAdminId: string): Promise<Response> {
+  if (entity === 'college') {
+    const result = await env.DB.prepare(
+      `UPDATE colleges
+       SET status = 'rejected', is_active = 0, approved_by_admin_id = ?, approved_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(actorAdminId, entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'College not found');
+    return ok('College rejected');
+  }
+
+  if (entity === 'industry') {
+    const result = await env.DB.prepare(
+      `UPDATE industries
+       SET status = 'rejected', is_active = 0, approved_by_admin_id = ?, approved_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(actorAdminId, entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
+    return ok('Industry rejected');
+  }
+
+  if (entity === 'department') {
+    const result = await env.DB.prepare(
+      `UPDATE departments
+       SET is_active = 0, updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Department not found');
+    return ok('Department rejected');
+  }
+
+  if (entity === 'student') {
+    const result = await env.DB.prepare(
+      `UPDATE students
+       SET is_active = 0, updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Student not found');
+    return ok('Student rejected');
+  }
+
+  return badRequest('Unsupported entity');
+}
+
+async function deleteAdminEntity(env: EnvBindings, entity: string, entityId: string): Promise<Response> {
+  const table = entity === 'college'
+    ? 'colleges'
+    : entity === 'industry'
+      ? 'industries'
+      : entity === 'student'
+        ? 'students'
+        : entity === 'department'
+          ? 'departments'
+          : '';
+
+  if (!table) return badRequest('Unsupported entity');
+
+  const result = await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(entityId).run();
+  if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, `${entity} not found`);
+  return ok(`${entity} deleted`);
+}
+
+async function editAdminEntity(request: Request, env: EnvBindings, entity: string, entityId: string): Promise<Response> {
+  const body = await readBody(request);
+
+  if (entity === 'college') {
+    const result = await env.DB.prepare(
+      `UPDATE colleges
+       SET name = COALESCE(?, name),
+           coordinator_email = COALESCE(?, coordinator_email),
+           coordinator_name = COALESCE(?, coordinator_name),
+           mobile = COALESCE(?, mobile),
+           address = COALESCE(?, address),
+           university = COALESCE(?, university),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(optional(body, ['name']), optional(body, ['email', 'coordinator_email']), optional(body, ['coordinator_name']), optional(body, ['mobile']), optional(body, ['address']), optional(body, ['university']), entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'College not found');
+    return ok('College updated');
+  }
+
+  if (entity === 'industry') {
+    const result = await env.DB.prepare(
+      `UPDATE industries
+       SET name = COALESCE(?, name),
+           email = COALESCE(?, email),
+           business_activity = COALESCE(?, business_activity),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(optional(body, ['name']), optional(body, ['email']), optional(body, ['business_activity']), entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
+    return ok('Industry updated');
+  }
+
+  if (entity === 'department') {
+    const result = await env.DB.prepare(
+      `UPDATE departments
+       SET name = COALESCE(?, name),
+           coordinator_name = COALESCE(?, coordinator_name),
+           coordinator_email = COALESCE(?, coordinator_email),
+           coordinator_mobile = COALESCE(?, coordinator_mobile),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(optional(body, ['name']), optional(body, ['coordinator_name']), optional(body, ['coordinator_email']), optional(body, ['coordinator_mobile']), entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Department not found');
+    return ok('Department updated');
+  }
+
+  if (entity === 'student') {
+    const result = await env.DB.prepare(
+      `UPDATE students
+       SET name = COALESCE(?, name),
+           email = COALESCE(?, email),
+           phone = COALESCE(?, phone),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(optional(body, ['name']), optional(body, ['email']), optional(body, ['phone']), entityId)
+      .run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Student not found');
+    return ok('Student updated');
+  }
+
+  return badRequest('Unsupported entity');
 }
 
 async function passwordLogin(request: Request, env: EnvBindings, entity: 'college' | 'industry' | 'student') {

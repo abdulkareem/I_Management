@@ -10,14 +10,18 @@ import { fetchWithSession } from '@/lib/auth';
 export default function CollegeDashboardPage() {
   const [dashboard, setDashboard] = useState<CollegeDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   async function load() {
     const response = await fetchWithSession<CollegeDashboard>('/college/dashboard');
+    console.log('API response:', response.data);
     setDashboard(response.data);
   }
 
   useEffect(() => {
-    load().catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'));
+    load()
+      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
@@ -25,6 +29,7 @@ export default function CollegeDashboardPage() {
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          {loading ? <Card className="rounded-[28px] p-4">Loading college data...</Card> : null}
           <section className="grid gap-4 md:grid-cols-3">
             {['All Departments', 'Analytics', 'Industry Tie-ups'].map((item) => (
               <Card key={item} className="rounded-[28px] p-5">{item}</Card>
