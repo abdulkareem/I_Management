@@ -926,8 +926,16 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     query += ` ORDER BY a.created_at DESC`;
     console.log('QUERY:', query);
-    const stmt = env.DB.prepare(query);
-    const rows = params.length ? await stmt.bind(...params).all() : await stmt.all();
+    let rows;
+    try {
+      const stmt = env.DB.prepare(query);
+      rows = params.length ? await stmt.bind(...params).all() : await stmt.all();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('no such table: internship_allocations')) {
+        return ok('Allocated internships table not available yet', []);
+      }
+      throw error;
+    }
 
     return ok('Allocated internships fetched', rows.results ?? []);
   }
@@ -1370,6 +1378,17 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
   if (industry) {
     if (industry.status !== 'approved' || Number(industry.is_active) !== 1) return forbidden('Waiting for approval');
     return ok('Login successful', createSession({ id: industry.id, email, role: 'INDUSTRY' }));
+  }
+
+  const department = await env.DB.prepare('SELECT id, is_active, is_first_login FROM departments WHERE coordinator_email = ? AND password = ?')
+    .bind(email, password)
+    .first<{ id: string; is_active: number; is_first_login: number }>();
+  if (department) {
+    if (Number(department.is_active) !== 1) return forbidden('Department account inactive');
+    return ok('Login successful', {
+      ...createSession({ id: department.id, email, role: 'DEPARTMENT_COORDINATOR' }),
+      mustChangePassword: Number(department.is_first_login) === 1,
+    });
   }
 
   const student = await env.DB.prepare('SELECT id, is_active FROM students WHERE email = ? AND password = ?')
