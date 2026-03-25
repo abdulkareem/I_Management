@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import { router } from './routes/index.js';
 import { adminAuthRoutes } from './routes/adminAuthRoutes.js';
+import { collegeRoutes } from './routes/collegeRoutes.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { httpLogger } from './utils/logger.js';
 
@@ -36,5 +37,6 @@ app.get('/health', (_req: any, res: any) => {
 });
 
 app.use('/api/admin', adminAuthRoutes);
+app.use('/api/college', collegeRoutes);
 app.use('/api', router);
 app.use(errorHandler);

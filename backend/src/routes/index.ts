@@ -9,7 +9,6 @@ import { requireRole, verifyJWT, type AuthenticatedRequest } from '../middleware
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret';
-const SUPER_ADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
 
 const loginAttemptsStore = new Map<string, { count: number; lastAttemptAt: number }>();
 const industryTypes = new Map<string, { id: string; name: string }>();
@@ -197,9 +196,6 @@ router.post('/auth/login', async (req, res) => {
     }
 
     const normalizedEmail = String(email).toLowerCase();
-    if (normalizedEmail === SUPER_ADMIN_EMAIL) {
-      return res.status(400).json({ success: false, message: 'Use /api/admin/send-otp for admin login', data: null });
-    }
 
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (!user) {
@@ -358,12 +354,6 @@ router.put('/super-admin/industry/:id', verifyJWT, requireRole('SUPER_ADMIN'), a
 router.delete('/super-admin/industry/:id', verifyJWT, requireRole('SUPER_ADMIN'), async (req, res) => {
   await prisma.industry.delete({ where: { id: req.params.id } });
   return res.json(ok({ id: req.params.id }));
-});
-
-router.get('/college/dashboard', verifyJWT, requireRole('COLLEGE_ADMIN', 'COLLEGE'), async (req: AuthenticatedRequest, res) => {
-  const college = await prisma.college.findFirst({ where: { createdById: req.user!.userId } });
-  if (!college) return res.status(404).json({ success: false, message: 'College profile not found', data: null });
-  return res.json(ok({ college: { id: college.id, name: college.name, address: college.address ?? '' }, stats: { pendingMous: 0, approvedIndustries: 0, activeStudents: 0, applicationsSubmitted: 0 }, pendingMous: [], approvedIndustries: [], modules: ['Departments', 'Students'] }));
 });
 
 router.get('/industry/dashboard', verifyJWT, requireRole('INDUSTRY'), async (req: AuthenticatedRequest, res) => {

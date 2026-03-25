@@ -62,10 +62,10 @@ export const sendOtp = async (req: Request, res: Response) => {
     });
 
     await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
+      from: process.env.EMAIL_FROM ?? process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
       to: email,
-      subject: 'Admin OTP',
-      html: `<h2>Your OTP: ${otp}</h2><p>OTP expires in 5 minutes.</p>`,
+      subject: 'Aureliv Verification Code',
+      html: `<div style="font-family: Arial, sans-serif;"><h2>Aureliv Verification Code</h2><p>Your one-time password is:</p><h1>${otp}</h1><p>This OTP expires in 5 minutes.</p></div>`,
     });
 
     return res.json(ok({ otpSent: true, expiresInSeconds: 300, email: user.email }, 'OTP sent'));
