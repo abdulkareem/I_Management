@@ -105,11 +105,24 @@ export function fetchWithSession<T>(path: string, init?: RequestInit) {
 }
 
 export function dashboardPathFor(role: Role) {
-  if (role === 'STUDENT') return '/dashboard/student';
-  if (role === 'INDUSTRY') return '/dashboard/industry';
-  if (role === 'SUPER_ADMIN' || role === 'ADMIN') return '/dashboard/admin';
-  if (role === 'DEPARTMENT_COORDINATOR' || role === 'COORDINATOR') return '/dashboard/department';
-  if (role === 'COLLEGE_COORDINATOR') return '/dashboard/college';
-  if (role === 'EXTERNAL_STUDENT') return '/dashboard/external-student';
-  return '/dashboard/college';
+  switch (role) {
+    case 'STUDENT':
+      return '/dashboard/student';
+    case 'INDUSTRY':
+      return '/dashboard/industry';
+    case 'COLLEGE_COORDINATOR':
+    case 'COLLEGE_ADMIN':
+    case 'COLLEGE':
+      return '/dashboard/college';
+    case 'DEPARTMENT_COORDINATOR':
+    case 'COORDINATOR':
+      return '/dashboard/department';
+    case 'SUPER_ADMIN':
+    case 'ADMIN':
+      return '/dashboard/admin';
+    case 'EXTERNAL_STUDENT':
+      return '/dashboard/external-student';
+    default:
+      return '/dashboard';
+  }
 }

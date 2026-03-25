@@ -20,7 +20,7 @@ export const emailService = {
   async sendEmail(to: string, subject: string, text: string, html?: string) {
     if (resendClient) {
       await resendClient.emails.send({
-        from: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
+        from: process.env.EMAIL_FROM ?? process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
         to,
         subject,
         text,
