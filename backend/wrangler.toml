@@ -1,4 +1,4 @@
-name = "internsuite-api"
+name = "internmanagement"
 main = "src/index.ts"
 compatibility_date = "2026-03-25"
 
@@ -9,4 +9,4 @@ OTP_SECRET = "change-me"
 [[d1_databases]]
 binding = "DB"
 database_name = "internsuite-db"
-database_id = "replace-with-your-d1-id"
+database_id = "c97be9fd-09a6-4dc4-b2ab-593fad26516f"
