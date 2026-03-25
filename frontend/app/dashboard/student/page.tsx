@@ -11,11 +11,16 @@ import { fetchWithSession } from '@/lib/auth';
 export default function StudentDashboardPage() {
   const [dashboard, setDashboard] = useState<StudentDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchWithSession<StudentDashboard>('/student/dashboard')
-      .then((response) => setDashboard(response.data))
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'));
+      .then((response) => {
+        console.log('API response:', response.data);
+        setDashboard(response.data);
+      })
+      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'))
+      .finally(() => setLoading(false));
   }, []);
 
   async function apply(opportunityId: string) {
@@ -29,6 +34,7 @@ export default function StudentDashboardPage() {
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          {loading ? <Card className="rounded-[28px] p-4">Loading student data...</Card> : null}
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {['My Internships', 'Apply Internship', 'Upload Reports', 'Certificates'].map((item) => (
               <Card key={item} className="rounded-[28px] p-5">{item}</Card>
@@ -58,7 +64,7 @@ export default function StudentDashboardPage() {
                 <Badge className="bg-cyan-400/10 text-cyan-200">2-click experience</Badge>
               </div>
               <div className="mt-5 space-y-3">
-                {dashboard?.applications?.map((application) => (
+              {dashboard?.applications?.length ? dashboard.applications.map((application) => (
                   <div key={application.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -69,14 +75,14 @@ export default function StudentDashboardPage() {
                     </div>
                     {application.acceptanceUrl ? <a className="mt-3 inline-flex text-sm text-cyan-300" href={application.acceptanceUrl} target="_blank">Download offer letter</a> : null}
                   </div>
-                )) ?? <p className="text-slate-300">No applications yet.</p>}
+                )) : <p className="text-slate-300">No data found</p>}
               </div>
             </Card>
           </section>
           <section className="grid gap-4">
             <h2 className="text-2xl font-semibold text-white">Available internships</h2>
             <div className="grid gap-4 md:grid-cols-2">
-              {dashboard?.internships.map((internship) => (
+              {dashboard?.internships?.length ? dashboard.internships.map((internship) => (
                 <Card key={internship.id} className="rounded-[30px] p-6">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -90,7 +96,7 @@ export default function StudentDashboardPage() {
                     {internship.applied ? internship.status ?? 'Applied' : 'Apply in 1 click'}
                   </Button>
                 </Card>
-              )) ?? <Card className="rounded-[30px] p-6 text-slate-300">Loading opportunities…</Card>}
+              )) : <Card className="rounded-[30px] p-6 text-slate-300">No data found</Card>}
             </div>
           </section>
         </>
