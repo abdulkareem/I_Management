@@ -20,11 +20,15 @@ type SessionState = {
   };
 };
 
-const jsonHeaders = {
-  'Content-Type': 'application/json',
+const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+const jsonHeaders = {
+  ...corsHeaders,
+  'Content-Type': 'application/json',
 };
 
 export default {
@@ -33,13 +37,12 @@ export default {
       return await handleRequest(request, env);
     } catch (err) {
       console.error('GLOBAL_API_ERROR', err);
-      return new Response(
-        JSON.stringify({
-          error: 'SERVER_ERROR',
-          message: err instanceof Error ? err.message : 'Unknown error',
+      return response(
+        500,
+        fail('Unexpected server error.', {
+          error: err instanceof Error ? err.message : 'Unknown error',
           stack: err instanceof Error ? err.stack : undefined,
         }),
-        { status: 500, headers: jsonHeaders },
       );
     }
   },
@@ -49,9 +52,15 @@ async function handleRequest(request: Request, env: EnvBindings): Promise<Respon
   assertBindings(env);
 
   const url = new URL(request.url);
+  console.log('PATH:', url.pathname);
+  console.log('METHOD:', request.method);
 
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: jsonHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
+  if (request.method === 'GET' && url.pathname === '/test') {
+    return response(200, success('Test route is reachable.', { success: true }));
   }
 
   if (request.method === 'GET' && url.pathname === '/api/health') {
@@ -116,6 +125,10 @@ async function handleRequest(request: Request, env: EnvBindings): Promise<Respon
 
     if (!email) {
       return badRequest('email is required.', body);
+    }
+
+    if (!env.RESEND_API_KEY) {
+      return response(500, fail('RESEND_API_KEY is not configured on the Worker environment.', { email }));
     }
 
     try {
@@ -329,7 +342,6 @@ async function handleRequest(request: Request, env: EnvBindings): Promise<Respon
 
 function assertBindings(env: EnvBindings) {
   if (!env.DB) throw new Error('DB NOT BOUND');
-  if (!env.RESEND_API_KEY) throw new Error('RESEND_API_KEY missing');
 }
 
 async function parseJsonBody(request: Request): Promise<JsonMap> {

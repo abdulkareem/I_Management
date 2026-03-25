@@ -10,6 +10,9 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const requestUrl = `${API_BASE_URL}${normalizedPath}`;
 
+  console.log('API URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
+  console.log('Request URL:', requestUrl);
+
   const res = await fetch(requestUrl, {
     ...init,
     headers: {
@@ -19,7 +22,16 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
     cache: 'no-store',
   });
 
-  const body = (await res.json().catch(() => null)) as ApiEnvelope<T> | null;
+  const rawResponse = await res.text();
+  console.log('Raw response:', rawResponse);
+
+  let body: ApiEnvelope<T> | null = null;
+  try {
+    body = rawResponse ? (JSON.parse(rawResponse) as ApiEnvelope<T>) : null;
+  } catch (parseError) {
+    console.error('Failed to parse API JSON response.', parseError);
+  }
+
   const fallbackMessage = `API request failed (${res.status})`;
 
   if (!res.ok || !body || body.success === false) {
