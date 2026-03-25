@@ -14,7 +14,13 @@ type IndustryType = { id: string; name: string };
 type DashboardData = {
   colleges: CollegeRow[];
   industries: IndustryRow[];
-  analytics: { totalApplications: number; totalInternships: number };
+  analytics: {
+    totalApplications: number;
+    totalInternships: number;
+    totalUsers: number;
+    totalLoginLogs: number;
+    totalIndustryTypes: number;
+  };
 };
 
 export default function SuperAdminDashboardPage() {
@@ -23,6 +29,42 @@ export default function SuperAdminDashboardPage() {
   const [types, setTypes] = useState<IndustryType[]>([]);
   const [typeName, setTypeName] = useState('');
   const [activeLabel, setActiveLabel] = useState('');
+
+  const menuCards = [
+    {
+      key: 'manage-colleges',
+      label: 'Manage Colleges',
+      value: data?.colleges?.length ?? 0,
+      dbField: 'colleges.id',
+      sectionId: 'colleges-section',
+    },
+    {
+      key: 'manage-users',
+      label: 'Manage Users',
+      value: data?.analytics?.totalUsers ?? 0,
+      dbField: 'auth_identities.id',
+      sectionId: 'students-section',
+    },
+    {
+      key: 'analytics',
+      label: 'Analytics',
+      value: data?.analytics?.totalApplications ?? 0,
+      dbField: 'internship_applications.id',
+      sectionId: 'overview-section',
+    },
+    {
+      key: 'login-logs',
+      label: 'Login Logs',
+      value: data?.analytics?.totalLoginLogs ?? 0,
+      dbField: 'approval_audit_log.id',
+      sectionId: 'industry-types-section',
+    },
+  ] as const;
+
+  function goToSection(sectionId: string) {
+    const section = document.getElementById(sectionId);
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   async function loadDashboard() {
     const [dashboardRes, typesRes] = await Promise.all([
@@ -92,23 +134,27 @@ export default function SuperAdminDashboardPage() {
         <>
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {[
-              'Manage Colleges',
-              'Manage Users',
-              'Analytics',
-              'Login Logs',
-            ].map((item) => (
-              <Card key={item} className="rounded-[28px] p-5">{item}</Card>
+            {menuCards.map((card) => (
+              <Card
+                key={card.key}
+                className="rounded-[28px] p-5 cursor-pointer border border-white/10 transition hover:border-cyan-200/60"
+                onClick={() => goToSection(card.sectionId)}
+              >
+                <p className="text-sm text-white/70">{card.label}</p>
+                <p className="mt-2 text-3xl font-semibold text-white">{card.value}</p>
+                <p className="mt-1 text-xs text-white/60">Source: {card.dbField}</p>
+              </Card>
             ))}
           </section>
 
-          <section className="grid gap-4 md:grid-cols-3">
+          <section id="overview-section" className="grid gap-4 md:grid-cols-4">
             <Card className="rounded-[28px] p-5">Colleges: {data?.colleges?.length ?? 0}</Card>
             <Card className="rounded-[28px] p-5">Industries: {data?.industries?.length ?? 0}</Card>
             <Card className="rounded-[28px] p-5">Applications: {data?.analytics?.totalApplications ?? 0}</Card>
+            <Card className="rounded-[28px] p-5">Industry Types: {data?.analytics?.totalIndustryTypes ?? 0}</Card>
           </section>
 
-          <Card className="rounded-[28px] p-5">
+          <Card id="industry-types-section" className="rounded-[28px] p-5">
             <h2 className="text-xl font-semibold text-white">Manage Industry Types</h2>
             <form className="mt-3 flex gap-2" onSubmit={createType}>
               <input value={typeName} onChange={(event) => setTypeName(event.target.value)} placeholder="New category" />
@@ -127,7 +173,7 @@ export default function SuperAdminDashboardPage() {
             </div>
           </Card>
 
-          <Card className="rounded-[28px] p-5 overflow-x-auto">
+          <Card id="colleges-section" className="rounded-[28px] p-5 overflow-x-auto">
             <h2 className="mb-3 text-xl font-semibold text-white">Colleges</h2>
             <table className="w-full text-sm">
               <thead><tr><th>Name</th><th>Coordinator</th><th>Email</th><th>Phone</th><th>Status</th><th>Actions</th></tr></thead>
@@ -173,7 +219,7 @@ export default function SuperAdminDashboardPage() {
             </table>
           </Card>
 
-          <Card className="rounded-[28px] p-5 overflow-x-auto">
+          <Card id="students-section" className="rounded-[28px] p-5 overflow-x-auto">
             <h2 className="text-xl font-semibold text-white">{activeLabel || 'Students'}</h2>
             <table className="mt-3 w-full text-sm">
               <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th></tr></thead>
