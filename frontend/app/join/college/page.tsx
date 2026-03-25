@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { API_BASE_URL } from '@/lib/config';
 
 export default function CollegeJoinPage() {
   const router = useRouter();
@@ -36,7 +35,13 @@ export default function CollegeJoinPage() {
         password: form.get('password'),
       };
 
-      const res = await fetch(`${API_BASE_URL}/api/college/register`, {
+      console.log('API URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
+
+      if (!process.env.NEXT_PUBLIC_API_BASE_URL) {
+        throw new Error('NEXT_PUBLIC_API_BASE_URL is undefined. Configure it in Cloudflare Pages and redeploy.');
+      }
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/college/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -44,11 +49,14 @@ export default function CollegeJoinPage() {
         body: JSON.stringify(formData),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      console.log('Raw response:', text);
+
+      const data = text ? (JSON.parse(text) as { message?: string }) : {};
 
       if (!res.ok) {
         console.error('Backend error:', data);
-        throw new Error((data as { message?: string })?.message || 'Unknown error');
+        throw new Error(data.message || 'Unknown error');
       }
 
       console.log('Success:', data);
