@@ -43,6 +43,9 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+const DEFAULT_SUPERADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
+const DEFAULT_SUPERADMIN_ID = 'admin_super_psmo';
+
 export default {
   async fetch(request: Request, env: EnvBindings): Promise<Response> {
     const url = new URL(request.url);
@@ -297,7 +300,11 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const email = normalizeEmail(required(body, ['email']));
     if (!email) return badRequest('email is required');
 
-    const admin = await env.DB.prepare("SELECT id, role FROM admins WHERE email = ? AND role = 'superadmin' AND is_active = 1").bind(email).first();
+    await ensureDefaultSuperadmin(env, email);
+
+    const admin = await env.DB.prepare("SELECT id, role FROM admins WHERE lower(email) = lower(?) AND lower(role) = 'superadmin' AND is_active = 1")
+      .bind(email)
+      .first<{ id: string; role: string }>();
     if (!admin) return forbidden('Not authorized as superadmin');
 
     const otp = `${Math.floor(100000 + Math.random() * 900000)}`;
@@ -341,7 +348,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     await env.DB.prepare("UPDATE otp_codes SET verified = 1, verified_at = datetime('now') WHERE id = ?").bind(row.id).run();
 
-    const admin = await env.DB.prepare("SELECT id, email, role FROM admins WHERE email = ? AND role = 'superadmin' AND is_active = 1")
+    await ensureDefaultSuperadmin(env, email);
+
+    const admin = await env.DB.prepare("SELECT id, email, role FROM admins WHERE lower(email) = lower(?) AND lower(role) = 'superadmin' AND is_active = 1")
       .bind(email)
       .first<{ id: string; email: string; role: string }>();
 
@@ -735,9 +744,27 @@ async function upsertIdentity(
     .run();
 }
 
+async function ensureDefaultSuperadmin(env: EnvBindings, email: string): Promise<void> {
+  if (email !== DEFAULT_SUPERADMIN_EMAIL) return;
+
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO admins (id, email, role, is_active)
+     VALUES (?, ?, 'superadmin', 1)`,
+  )
+    .bind(DEFAULT_SUPERADMIN_ID, DEFAULT_SUPERADMIN_EMAIL)
+    .run();
+
+  await upsertIdentity(env, {
+    role: 'superadmin',
+    entityId: DEFAULT_SUPERADMIN_ID,
+    email: DEFAULT_SUPERADMIN_EMAIL,
+    isActive: 1,
+  });
+}
+
 async function sendOtpEmail(env: EnvBindings, to: string, otp: string): Promise<void> {
   const payload = {
-    from: env.RESEND_FROM_EMAIL || 'noreply@example.com',
+    from: env.RESEND_FROM_EMAIL || 'noreply@aureliv.in',
     to,
     subject: 'Your Superadmin OTP',
     html: `<p>Your OTP is <strong>${otp}</strong>. It expires in 5 minutes.</p>`,

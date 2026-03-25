@@ -6,6 +6,7 @@ compatibility_date = "2026-03-25"
 JWT_SECRET = "change-me"
 OTP_SECRET = "change-me"
 RESEND_API_KEY = ""
+RESEND_FROM_EMAIL = "noreply@aureliv.in"
 
 [[d1_databases]]
 binding = "DB"
