@@ -19,14 +19,12 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
     cache: 'no-store',
   });
 
-  const body = (await res.json().catch(() => ({
-    success: false,
-    message: 'Unexpected response',
-    data: {} as T,
-  }))) as ApiEnvelope<T>;
+  const body = (await res.json().catch(() => null)) as ApiEnvelope<T> | null;
+  const fallbackMessage = `API request failed (${res.status})`;
 
-  if (!res.ok || body.success === false) {
-    throw new Error(body.message ?? 'API failed');
+  if (!res.ok || !body || body.success === false) {
+    const message = body?.message ?? fallbackMessage;
+    throw new Error(message);
   }
 
   return body;
