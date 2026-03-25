@@ -20,6 +20,7 @@ const roleLabel: Record<Role, string> = {
   COLLEGE_ADMIN: 'College space',
   COORDINATOR: 'Department space',
   DEPARTMENT_COORDINATOR: 'Department space',
+  COLLEGE_COORDINATOR: 'College space',
 };
 
 const roleIcon: Record<Role, typeof GraduationCap> = {
@@ -32,9 +33,20 @@ const roleIcon: Record<Role, typeof GraduationCap> = {
   COLLEGE_ADMIN: Building2,
   COORDINATOR: Building2,
   DEPARTMENT_COORDINATOR: Building2,
+  COLLEGE_COORDINATOR: Building2,
 };
 
-export function RoleDashboardShell({ title, subtitle, children }: { title: string; subtitle: string; children: (session: SessionProfile) => ReactNode }) {
+export function RoleDashboardShell({
+  title,
+  subtitle,
+  allowedRoles,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  allowedRoles: Role[];
+  children: (session: SessionProfile) => ReactNode;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [session, setSession] = useState<SessionProfile | null>(null);
@@ -45,8 +57,14 @@ export function RoleDashboardShell({ title, subtitle, children }: { title: strin
       router.replace('/login');
       return;
     }
+
+    if (!allowedRoles.includes(current.user.role)) {
+      router.replace(dashboardPathFor(current.user.role));
+      return;
+    }
+
     setSession(current);
-  }, [router]);
+  }, [allowedRoles, router]);
 
   if (!session) {
     return <div className="flex min-h-screen items-center justify-center text-slate-300">Loading your internship space…</div>;

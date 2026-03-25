@@ -87,9 +87,21 @@ export default function SuperAdminDashboardPage() {
   }
 
   return (
-    <RoleDashboardShell title="Super Admin Dashboard" subtitle="Approve, reject, edit, and delete colleges and industries with role-based access control.">
+    <RoleDashboardShell allowedRoles={['SUPER_ADMIN', 'ADMIN']} title="Super Admin Dashboard" subtitle="Approve, reject, edit, and delete colleges and industries with role-based access control.">
       {() => (
         <>
+
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              'Manage Colleges',
+              'Manage Users',
+              'Analytics',
+              'Login Logs',
+            ].map((item) => (
+              <Card key={item} className="rounded-[28px] p-5">{item}</Card>
+            ))}
+          </section>
+
           <section className="grid gap-4 md:grid-cols-3">
             <Card className="rounded-[28px] p-5">Colleges: {data?.colleges?.length ?? 0}</Card>
             <Card className="rounded-[28px] p-5">Industries: {data?.industries?.length ?? 0}</Card>

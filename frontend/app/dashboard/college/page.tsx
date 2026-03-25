@@ -21,10 +21,16 @@ export default function CollegeDashboardPage() {
   }, []);
 
   return (
-    <RoleDashboardShell title="College Dashboard" subtitle="Approve MoUs, see which industries are unlocked, and watch student activity without digging through menus.">
+    <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN']} title="College Dashboard" subtitle="Approve MoUs, see which industries are unlocked, and watch student activity without digging through menus.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          <section className="grid gap-4 md:grid-cols-3">
+            {['All Departments', 'Analytics', 'Industry Tie-ups'].map((item) => (
+              <Card key={item} className="rounded-[28px] p-5">{item}</Card>
+            ))}
+          </section>
+
           <section className="grid gap-4 md:grid-cols-4">
             {[
               ['Pending MoUs', String(dashboard?.stats?.pendingMous ?? 0)],

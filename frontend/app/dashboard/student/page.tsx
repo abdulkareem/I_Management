@@ -25,10 +25,16 @@ export default function StudentDashboardPage() {
   }
 
   return (
-    <RoleDashboardShell title="Student Dashboard" subtitle="Find approved internships, tap once to apply, and keep your journey moving with visible progress.">
+    <RoleDashboardShell allowedRoles={['STUDENT']} title="Student Dashboard" subtitle="Find approved internships, tap once to apply, and keep your journey moving with visible progress.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {['My Internships', 'Apply Internship', 'Upload Reports', 'Certificates'].map((item) => (
+              <Card key={item} className="rounded-[28px] p-5">{item}</Card>
+            ))}
+          </section>
+
           <section className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
             <Card className="rounded-[30px] p-6">
               <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">Your Internship Journey</p>

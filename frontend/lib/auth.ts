@@ -76,6 +76,7 @@ export async function register(role: Role, payload: Record<string, unknown>) {
     INDUSTRY: '/industry/create',
     COORDINATOR: '/auth/register',
     DEPARTMENT_COORDINATOR: '/auth/register',
+    COLLEGE_COORDINATOR: '/auth/register',
     ADMIN: '/auth/register',
     SUPER_ADMIN: '/auth/register',
     EXTERNAL_STUDENT: '/external/apply',
@@ -108,6 +109,7 @@ export function dashboardPathFor(role: Role) {
   if (role === 'INDUSTRY') return '/dashboard/industry';
   if (role === 'SUPER_ADMIN' || role === 'ADMIN') return '/dashboard/admin';
   if (role === 'DEPARTMENT_COORDINATOR' || role === 'COORDINATOR') return '/dashboard/department';
+  if (role === 'COLLEGE_COORDINATOR') return '/dashboard/college';
   if (role === 'EXTERNAL_STUDENT') return '/dashboard/external-student';
   return '/dashboard/college';
 }

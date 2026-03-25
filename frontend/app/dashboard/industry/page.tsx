@@ -43,10 +43,16 @@ export default function IndustryDashboardPage() {
   }
 
   return (
-    <RoleDashboardShell title="Industry Dashboard" subtitle="Create internships in seconds, review applications in cards, and accept students with auto-generated offer letters.">
+    <RoleDashboardShell allowedRoles={['INDUSTRY']} title="Industry Dashboard" subtitle="Create internships in seconds, review applications in cards, and accept students with auto-generated offer letters.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          <section className="grid gap-4 md:grid-cols-3">
+            {['Post Internship', 'Manage Applications', 'Selected Students'].map((item) => (
+              <Card key={item} className="rounded-[28px] p-5">{item}</Card>
+            ))}
+          </section>
+
           <section className="grid gap-4 md:grid-cols-4">
             {[
               ['Live internships', String(dashboard?.stats.liveOpportunities ?? 0)],
