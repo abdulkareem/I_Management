@@ -529,7 +529,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         `SELECT i.id, i.name
          FROM college_industry_links l
          INNER JOIN industries i ON i.id = l.industry_id
-         WHERE l.college_id = ? AND l.status = 'approved'
+         WHERE l.college_id = ? AND l.status = 'active'
          ORDER BY i.name ASC`,
       ).bind(collegeId).all(),
       env.DB.prepare('SELECT COUNT(*) AS count FROM students WHERE college_id = ?').bind(collegeId).first<{ count: number }>(),
@@ -638,29 +638,300 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       return loadStudentDashboard(env, actor.id);
     }
 
-    const internships = await env.DB.prepare(
-      `SELECT ii.id, ii.title, ii.criteria, ind.name AS industry_name
-       FROM industry_internships ii
-       INNER JOIN industries ind ON ind.id = ii.industry_id
-       WHERE ind.status = 'approved' AND ind.is_active = 1`,
-    ).all();
+    const [internships, applications] = await Promise.all([
+      env.DB.prepare(
+        `SELECT i.id, i.title, i.description, ind.name AS industry_name,
+                ia.id AS application_id, ia.status AS application_status
+         FROM internships i
+         LEFT JOIN industry_internships ii ON ii.title = i.title
+         LEFT JOIN industries ind ON ind.id = ii.industry_id
+         LEFT JOIN internship_applications ia ON ia.internship_id = i.id AND ia.external_student_id = ?
+         ORDER BY i.created_at DESC`,
+      ).bind(actor.id).all(),
+      env.DB.prepare(
+        `SELECT ia.id, ia.status, i.title, COALESCE(ind.name, 'Industry') AS industry_name
+         FROM internship_applications ia
+         INNER JOIN internships i ON i.id = ia.internship_id
+         LEFT JOIN industry_internships ii ON ii.title = i.title
+         LEFT JOIN industries ind ON ind.id = ii.industry_id
+         WHERE ia.external_student_id = ?
+         ORDER BY ia.created_at DESC`,
+      ).bind(actor.id).all(),
+    ]);
+
+    const applicationRows = applications.results ?? [];
 
     return ok('External student dashboard loaded', {
       internships: (internships.results ?? []).map((row: any) => ({
         id: row.id,
         title: row.title,
-        description: row.criteria,
+        description: row.description,
         industryName: row.industry_name,
-        applied: false,
+        applied: Boolean(row.application_id),
+        status: row.application_status ? String(row.application_status).toUpperCase() : undefined,
       })),
-      applications: [],
-      journeyCompletion: 25,
+      applications: applicationRows.map((row: any) => ({
+        id: row.id,
+        internshipTitle: row.title,
+        industryName: row.industry_name,
+        status: String(row.status).toUpperCase(),
+      })),
+      journeyCompletion: applicationRows.length > 0 ? 60 : 25,
       journeySteps: [
         { label: 'Profile created', done: true },
-        { label: 'Applied to internship', done: false },
+        { label: 'Applied to internship', done: applicationRows.length > 0 },
       ],
     });
   }
+
+
+
+  if (request.method === 'POST' && pathname === '/api/department/create') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+
+    const body = await readBody(request);
+    console.log('BODY:', body);
+
+    const collegeId = required(body, ['college_id', 'collegeId']) || actor.id;
+    const name = required(body, ['name']);
+    const coordinatorName = required(body, ['coordinator_name', 'coordinatorName']);
+    const coordinatorEmail = normalizeEmail(required(body, ['coordinator_email', 'coordinatorEmail', 'email']));
+    const coordinatorMobile = optional(body, ['coordinator_mobile', 'coordinatorMobile']);
+
+    if (!collegeId || !name || !coordinatorName || !coordinatorEmail) {
+      return badRequest('college_id, name, coordinator_name, coordinator_email are required');
+    }
+
+    const password = generatePassword(10);
+
+    const exists = await env.DB.prepare('SELECT id FROM departments WHERE lower(coordinator_email) = lower(?)').bind(coordinatorEmail).first();
+    if (exists) return conflict('Department coordinator email already exists');
+
+    const departmentId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO departments (id, college_id, name, coordinator_name, coordinator_email, coordinator_mobile, password, is_first_login, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+    )
+      .bind(departmentId, collegeId, name, coordinatorName, coordinatorEmail, coordinatorMobile, password)
+      .run();
+
+    await upsertIdentity(env, { role: 'department', entityId: departmentId, email: coordinatorEmail, isActive: 1 });
+
+    await sendCredentialEmail(env, coordinatorEmail, name, password);
+
+    return created('Department created and credentials sent', { id: departmentId, passwordSent: true });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/list') {
+    const actor = requireRole(request, ['COLLEGE', 'SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+
+    const collegeId = toText(url.searchParams.get('college_id')) || toText(url.searchParams.get('collegeId')) || actor.id;
+    if (!collegeId) return badRequest('college_id is required');
+
+    const rows = await env.DB.prepare(
+      `SELECT id, college_id, name, coordinator_name, coordinator_email, coordinator_mobile, is_first_login, is_active, created_at
+       FROM departments
+       WHERE college_id = ?
+       ORDER BY created_at DESC`,
+    ).bind(collegeId).all();
+
+    return ok('Departments fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'PUT' && pathname === '/api/department/update') {
+    const actor = requireRole(request, ['COLLEGE', 'SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    console.log('BODY:', body);
+
+    const id = required(body, ['id']);
+    if (!id) return badRequest('id is required');
+
+    const result = await env.DB.prepare(
+      `UPDATE departments
+       SET name = COALESCE(?, name),
+           coordinator_name = COALESCE(?, coordinator_name),
+           coordinator_email = COALESCE(?, coordinator_email),
+           coordinator_mobile = COALESCE(?, coordinator_mobile),
+           is_active = COALESCE(?, is_active),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(optional(body, ['name']), optional(body, ['coordinator_name', 'coordinatorName']), optional(body, ['coordinator_email', 'coordinatorEmail']), optional(body, ['coordinator_mobile', 'coordinatorMobile']), toBooleanInt(optional(body, ['is_active', 'isActive'])), id)
+      .run();
+
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Department not found');
+    return ok('Department updated');
+  }
+
+  if (request.method === 'DELETE' && pathname === '/api/department/delete') {
+    const actor = requireRole(request, ['COLLEGE', 'SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+
+    const departmentId = toText(url.searchParams.get('id'));
+    if (!departmentId) return badRequest('id is required');
+
+    const result = await env.DB.prepare("UPDATE departments SET is_active = 0, updated_at = datetime('now') WHERE id = ?")
+      .bind(departmentId)
+      .run();
+
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Department not found');
+    return ok('Department deleted');
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/login') {
+    const body = await readBody(request);
+    console.log('BODY:', body);
+
+    const email = normalizeEmail(required(body, ['email', 'coordinator_email']));
+    const password = required(body, ['password']);
+    if (!email || !password) return badRequest('email and password are required');
+
+    const dept = await env.DB.prepare(
+      `SELECT id, coordinator_email, password, is_first_login, is_active
+       FROM departments WHERE lower(coordinator_email) = lower(?)`,
+    ).bind(email).first<{ id: string; coordinator_email: string; password: string; is_first_login: number; is_active: number }>();
+
+    if (!dept || dept.password !== password) return unauthorized('Invalid credentials');
+    if (Number(dept.is_active) !== 1) return forbidden('Department account inactive');
+
+    return ok('Department login successful', {
+      ...createSession({ id: dept.id, email: dept.coordinator_email, role: 'DEPARTMENT_COORDINATOR' }),
+      mustChangePassword: Number(dept.is_first_login) === 1,
+    });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/change-password') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const body = await readBody(request);
+    console.log('BODY:', body);
+
+    const currentPassword = required(body, ['current_password', 'currentPassword']);
+    const newPassword = required(body, ['new_password', 'newPassword']);
+    if (!currentPassword || !newPassword) return badRequest('current_password and new_password are required');
+
+    const row = await env.DB.prepare('SELECT id, password FROM departments WHERE id = ?').bind(actor.id).first<{ id: string; password: string }>();
+    if (!row || row.password !== currentPassword) return unauthorized('Current password is incorrect');
+
+    await env.DB.prepare("UPDATE departments SET password = ?, is_first_login = 0, updated_at = datetime('now') WHERE id = ?")
+      .bind(newPassword, actor.id)
+      .run();
+
+    return ok('Password changed successfully');
+  }
+
+  if (request.method === 'GET' && pathname === '/api/college/industries') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT l.id AS link_id, l.status, l.created_at,
+              i.id AS industry_id, i.name, i.email, i.business_activity
+       FROM college_industry_links l
+       INNER JOIN industries i ON i.id = l.industry_id
+       WHERE l.college_id = ?
+       ORDER BY l.created_at DESC`,
+    ).bind(actor.id).all();
+
+    return ok('College industries fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'DELETE' && pathname === '/api/college/industries') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+
+    const linkId = toText(url.searchParams.get('link_id')) || toText(url.searchParams.get('id'));
+    if (!linkId) return badRequest('link_id is required');
+
+    const result = await env.DB.prepare(
+      `UPDATE college_industry_links
+       SET status = 'removed', updated_at = datetime('now')
+       WHERE id = ? AND college_id = ?`,
+    ).bind(linkId, actor.id).run();
+
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Link not found');
+    return ok('Industry removed from college list');
+  }
+
+  if (request.method === 'GET' && pathname === '/api/applications/internal') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT ia.id, ia.status, ia.created_at,
+              s.id AS student_id, s.name AS student_name, s.email AS student_email,
+              i.title AS internship_title,
+              d.name AS department_name
+       FROM internship_applications ia
+       INNER JOIN students s ON s.id = ia.student_id
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN departments d ON d.id = s.department_id
+       WHERE s.college_id = ?
+       ORDER BY ia.created_at DESC`,
+    ).bind(actor.id).all();
+
+    return ok('Internal applications fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/applications/external') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT ia.id, ia.status, ia.created_at,
+              es.id AS external_student_id, es.name AS student_name, es.email AS student_email,
+              i.title AS internship_title,
+              c.name AS college_name
+       FROM internship_applications ia
+       INNER JOIN external_students es ON es.id = ia.external_student_id
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN departments d ON d.id = i.department_id
+       INNER JOIN colleges c ON c.id = d.college_id
+       WHERE c.id = ?
+       ORDER BY ia.created_at DESC`,
+    ).bind(actor.id).all();
+
+    return ok('External applications fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/internships/allocated') {
+    const actor = requireRole(request, ['COLLEGE', 'INDUSTRY', 'DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    let query = `SELECT a.id, a.project_details, a.status, a.created_at,
+                        COALESCE(s.name, es.name) AS student_name,
+                        ind.name AS industry_name,
+                        i.title AS internship_title
+                 FROM internship_allocations a
+                 LEFT JOIN students s ON s.id = a.student_id
+                 LEFT JOIN external_students es ON es.id = a.external_student_id
+                 INNER JOIN industries ind ON ind.id = a.industry_id
+                 INNER JOIN internships i ON i.id = a.internship_id`;
+    const params: string[] = [];
+
+    if (actor.role === 'COLLEGE') {
+      query += ` LEFT JOIN departments d ON d.id = i.department_id WHERE d.college_id = ?`;
+      params.push(actor.id);
+    } else if (actor.role === 'INDUSTRY') {
+      query += ` WHERE a.industry_id = ?`;
+      params.push(actor.id);
+    } else {
+      query += ` WHERE i.department_id = ?`;
+      params.push(actor.id);
+    }
+
+    query += ` ORDER BY a.created_at DESC`;
+    console.log('QUERY:', query);
+    const stmt = env.DB.prepare(query);
+    const rows = params.length ? await stmt.bind(...params).all() : await stmt.all();
+
+    return ok('Allocated internships fetched', rows.results ?? []);
+  }
+
 
   const actionMatch = pathname.match(/^\/api\/admin\/(college|industry|student|department)\/([^/]+)\/(approve|reject|delete|edit)$/);
   if (actionMatch) {
@@ -679,6 +950,32 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       return rejectAdminEntity(env, entity, entityId, actor.id);
     }
     return editAdminEntity(request, env, entity, entityId);
+  }
+
+
+
+  const externalApplyMatch = pathname.match(/^\/api\/external\/applications\/([^/]+)$/);
+  if (externalApplyMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['EXTERNAL_STUDENT']);
+    if (actor instanceof Response) return actor;
+    const internshipId = externalApplyMatch[1];
+
+    const internship = await env.DB.prepare('SELECT id FROM internships WHERE id = ?').bind(internshipId).first();
+    if (!internship) return badRequest('Invalid internship id');
+
+    const duplicate = await env.DB.prepare('SELECT id FROM internship_applications WHERE external_student_id = ? AND internship_id = ?')
+      .bind(actor.id, internshipId)
+      .first();
+    if (duplicate) return conflict('Application already submitted for this internship');
+
+    await env.DB.prepare(
+      `INSERT INTO internship_applications (id, external_student_id, internship_id, status)
+       VALUES (?, ?, ?, 'pending')`,
+    )
+      .bind(crypto.randomUUID(), actor.id, internshipId)
+      .run();
+
+    return created('External student application submitted', { internshipId, status: 'pending' });
   }
 
   const studentApplyMatch = pathname.match(/^\/api\/student\/applications\/([^/]+)$/);
@@ -705,6 +1002,27 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return created('Student application submitted', { internshipId, status: 'pending' });
   }
 
+  const industryRejectMatch = pathname.match(/^\/api\/industry\/applications\/([^/]+)\/reject$/);
+  if (industryRejectMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const applicationId = industryRejectMatch[1];
+
+    const result = await env.DB.prepare(
+      `UPDATE internship_applications
+       SET status = 'rejected',
+           reviewed_by_industry_id = ?,
+           reviewed_at = datetime('now'),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(actor.id, applicationId)
+      .run();
+
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
+    return ok('Application rejected');
+  }
+
   const industryAcceptMatch = pathname.match(/^\/api\/industry\/applications\/([^/]+)\/accept$/);
   if (industryAcceptMatch && request.method === 'POST') {
     const actor = requireRole(request, ['INDUSTRY']);
@@ -723,6 +1041,18 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       .run();
 
     if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
+
+    const application = await env.DB.prepare('SELECT student_id, external_student_id, internship_id FROM internship_applications WHERE id = ?').bind(applicationId).first<{ student_id: string | null; external_student_id: string | null; internship_id: string }>();
+    if (application) {
+      const internship = await env.DB.prepare(`SELECT ii.industry_id FROM internships i LEFT JOIN industry_internships ii ON ii.title = i.title WHERE i.id = ? LIMIT 1`).bind(application.internship_id).first<{ industry_id: string | null }>();
+      await env.DB.prepare(
+        `INSERT INTO internship_allocations (id, student_id, external_student_id, industry_id, internship_id, project_details, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'allocated')`,
+      )
+        .bind(crypto.randomUUID(), application.student_id, application.external_student_id, internship?.industry_id ?? actor.id, application.internship_id, 'Allocated from accepted application')
+        .run();
+    }
+
     return ok('Application accepted');
   }
 
@@ -1116,6 +1446,46 @@ async function sendOtpEmail(env: EnvBindings, to: string, otp: string): Promise<
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Resend failed: ${res.status} ${text}`);
+  }
+}
+
+
+
+function generatePassword(length = 10): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#$!';
+  let out = '';
+  for (let i = 0; i < length; i += 1) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+function toBooleanInt(value: string | null): number | null {
+  if (value === null) return null;
+  if (['1', 'true', 'yes'].includes(value.toLowerCase())) return 1;
+  if (['0', 'false', 'no'].includes(value.toLowerCase())) return 0;
+  return null;
+}
+
+async function sendCredentialEmail(env: EnvBindings, to: string, departmentName: string, password: string): Promise<void> {
+  if (!env.RESEND_API_KEY) return;
+  const payload = {
+    from: env.RESEND_FROM_EMAIL || 'noreply@aureliv.in',
+    to,
+    subject: `Department Account Created - ${departmentName}`,
+    html: `<p>Your department account is ready.</p><p>Email: <strong>${to}</strong><br/>Password: <strong>${password}</strong></p><p>Please change password on first login.</p>`,
+  };
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error('DB_ERROR:', text);
   }
 }
 

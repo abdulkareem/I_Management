@@ -27,6 +27,11 @@ export default function IndustryDashboardPage() {
     await load();
   }
 
+  async function rejectApplication(applicationId: string) {
+    await fetchWithSession(`/industry/applications/${applicationId}/reject`, { method: 'POST' });
+    await load();
+  }
+
   return (
     <RoleDashboardShell allowedRoles={['INDUSTRY']} title="Industry Dashboard" subtitle="Applications and opportunities are loaded from D1-backed APIs.">
       {() => (
@@ -50,9 +55,10 @@ export default function IndustryDashboardPage() {
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <Badge>{application.status}</Badge>
                     {application.status !== 'ACCEPTED' ? (
-                      <Button variant="secondary" onClick={() => acceptApplication(application.id)}>
-                        Accept
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="secondary" onClick={() => acceptApplication(application.id)}>Accept</Button>
+                        <Button variant="secondary" onClick={() => rejectApplication(application.id)}>Reject</Button>
+                      </div>
                     ) : null}
                   </div>
                 </div>
