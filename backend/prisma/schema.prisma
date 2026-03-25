@@ -8,11 +8,17 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  role      Role
-  createdAt DateTime @default(now())
+  id              String   @id @default(cuid())
+  name            String
+  email           String   @unique
+  password        String
+  phone           String   @unique
+  universityRegNo String   @unique
+  collegeId       String
+  otp             String?
+  otpExpiry       DateTime?
+  role            Role     @default(STUDENT)
+  createdAt       DateTime @default(now())
 
   colleges         College[]
   industries       Industry[]
