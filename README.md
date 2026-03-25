@@ -18,6 +18,7 @@ packages/
 
 ### API Worker (`backend`)
 - `DB` (D1 binding)
+- `RESEND_API_KEY` (required for admin OTP emails)
 
 ## D1 binding (`backend/wrangler.toml`)
 
@@ -38,6 +39,8 @@ database_id = "<your-database-id>"
 - `POST /api/college/register`
 - `POST /api/student/register`
 - `POST /api/industry/register`
+- `POST /api/admin/send-otp`
+- `POST /api/admin/verify-otp`
 
 All responses use:
 
