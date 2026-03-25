@@ -7,10 +7,10 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "prisma generate && tsc",
-    "start": "node dist/index.js",
+    "build": "prisma generate",
+    "start": "tsx src/index.ts",
     "dev": "nodemon --watch src --ext ts --exec tsx src/index.ts",
-    "postinstall": "prisma generate && prisma db push",
+    "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "npm run typecheck",
@@ -29,7 +29,8 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "zod": "^3.24.2",
-    "resend": "^4.1.2"
+    "resend": "^4.1.2",
+    "tsx": "^4.19.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -39,7 +40,6 @@
     "@types/node": "^22.10.2",
     "nodemon": "^3.1.10",
     "prisma": "6.19.2",
-    "tsx": "^4.19.3",
     "typescript": "^5.7.2"
   }
 }
