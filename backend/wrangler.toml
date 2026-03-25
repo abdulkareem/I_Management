@@ -10,4 +10,5 @@ RESEND_API_KEY = ""
 [[d1_databases]]
 binding = "DB"
 database_name = "internmanagementdata"
-database_id = "c97be9fd-09a6-4dc4-b2ab-593fad26516f" 
+database_id = "c97be9fd-09a6-4dc4-b2ab-593fad26516f"
+migrations_dir = "migrations"
