@@ -206,7 +206,7 @@ router.post('/auth/login', async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not registered', data: { redirect: '/register' } });
     }
 
-    const isPasswordCorrect = await bcrypt.compare(String(password), user.password);
+    const isPasswordCorrect = user.password ? await bcrypt.compare(String(password), user.password) : false;
     if (!isPasswordCorrect) {
       const attempts = trackAttempt(normalizedEmail);
       if (attempts >= 3) return res.status(401).json({ success: false, message: 'Invalid credentials. 3 attempts reached. Please reset password.', data: null });
@@ -312,13 +312,43 @@ router.post('/admin/send-otp', async (req, res) => {
   try {
     const { email } = req.body ?? {};
     if (!email) return res.status(400).json({ success: false, message: 'email is required', data: null });
+
     const normalizedEmail = String(email).toLowerCase();
-    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-    if (!user || user.role !== 'SUPER_ADMIN') return res.status(404).json({ success: false, message: 'Admin not found', data: null });
+    if (normalizedEmail !== SUPER_ADMIN_EMAIL) {
+      return res.status(403).json({ success: false, message: 'Not authorized as super admin', data: null });
+    }
+
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    await prisma.user.update({ where: { id: user.id }, data: { otp: code, otpExpiry: new Date(Date.now() + 5 * 60_000) } });
-    await emailService.sendEmail(normalizedEmail, 'Your Admin Login Code', `Your OTP: ${code}`, `<h2>Your OTP: ${code}</h2>`);
-    return res.json(ok({ otpSent: true }, 'OTP sent'));
+    const otpExpiry = new Date(Date.now() + 5 * 60_000);
+
+    await prisma.user.upsert({
+      where: { email: normalizedEmail },
+      update: {
+        role: Role.SUPER_ADMIN,
+        otp: code,
+        otpExpiry,
+      },
+      create: {
+        email: normalizedEmail,
+        name: 'Super Admin',
+        role: Role.SUPER_ADMIN,
+        password: await bcrypt.hash(crypto.randomUUID(), 10),
+        phone: `SUPERADMIN-${Date.now()}`,
+        universityRegNo: `SUPERADMIN-${crypto.randomUUID()}`,
+        collegeId: 'N/A',
+        otp: code,
+        otpExpiry,
+      },
+    });
+
+    await emailService.sendEmail(
+      normalizedEmail,
+      'Super Admin Login OTP',
+      `Your OTP is ${code}. Valid for 5 minutes.`,
+      `<h2>Your OTP is: ${code}</h2><p>Valid for 5 minutes</p>`,
+    );
+
+    return res.json(ok({ otpSent: true }, 'OTP sent successfully'));
   } catch (error) {
     console.error('ERROR:', error);
     return res.status(500).json({ success: false, message: 'Internal server error', data: { error: error instanceof Error ? error.message : 'Unknown error' } });
@@ -329,14 +359,30 @@ router.post('/admin/verify-otp', async (req, res) => {
   try {
     const { email, otp } = req.body ?? {};
     if (!email || !otp) return res.status(400).json({ success: false, message: 'email and otp are required', data: null });
+
     const normalizedEmail = String(email).toLowerCase();
-    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-    if (!user || user.role !== 'SUPER_ADMIN') return res.status(404).json({ success: false, message: 'Admin not found', data: null });
-    if (!user.otp || user.otp !== String(otp) || !user.otpExpiry || user.otpExpiry.getTime() < Date.now()) {
-      return res.status(400).json({ success: false, message: 'Invalid or expired OTP', data: null });
+    if (normalizedEmail !== SUPER_ADMIN_EMAIL) {
+      return res.status(403).json({ success: false, message: 'Not authorized as super admin', data: null });
     }
+
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (!user || user.role !== Role.SUPER_ADMIN) return res.status(400).json({ success: false, message: 'Invalid OTP', data: null });
+    if (!user.otp || user.otp !== String(otp)) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP', data: null });
+    }
+    if (!user.otpExpiry || user.otpExpiry.getTime() < Date.now()) {
+      return res.status(400).json({ success: false, message: 'OTP expired', data: null });
+    }
+
     await prisma.user.update({ where: { id: user.id }, data: { otp: null, otpExpiry: null } });
-    return res.json(ok({ token: signToken(user.id, user.role), user: { id: user.id, name: user.name, email: user.email, role: user.role } }));
+
+    return res.json(
+      ok({
+        token: signToken(user.id, Role.SUPER_ADMIN),
+        redirect: '/admin/dashboard',
+        user: { id: user.id, name: user.name, email: user.email, role: Role.SUPER_ADMIN },
+      }, 'Login successful'),
+    );
   } catch (error) {
     console.error('ERROR:', error);
     return res.status(500).json({ success: false, message: 'Internal server error', data: { error: error instanceof Error ? error.message : 'Unknown error' } });

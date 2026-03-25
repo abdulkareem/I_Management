@@ -30,7 +30,7 @@ export default function AdminLoginPage() {
     setError(null);
     try {
       const response = await verifyAdminOtp(email, otp);
-      router.push(dashboardPathFor(response.data.user.role));
+      router.push(response.data.redirect ?? dashboardPathFor(response.data.user.role));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to verify OTP');
     }
