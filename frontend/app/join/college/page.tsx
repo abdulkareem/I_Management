@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { apiRequest } from '@/lib/api';
+import { API_BASE_URL } from '@/lib/config';
 
 export default function CollegeJoinPage() {
   const router = useRouter();
@@ -26,21 +26,36 @@ export default function CollegeJoinPage() {
     }
 
     try {
-      await apiRequest<{ success: boolean }>('/api/college/register', {
+      const formData = {
+        collegeName: form.get('collegeName'),
+        address: form.get('address'),
+        university: form.get('university'),
+        mobile: form.get('mobile'),
+        coordinatorName: form.get('coordinatorName'),
+        email: form.get('email'),
+        password: form.get('password'),
+      };
+
+      const res = await fetch(`${API_BASE_URL}/api/college/register`, {
         method: 'POST',
-        body: JSON.stringify({
-          collegeName: form.get('collegeName'),
-          address: form.get('address'),
-          university: form.get('university'),
-          mobile: form.get('mobile'),
-          coordinatorName: form.get('coordinatorName'),
-          email: form.get('email'),
-          password: form.get('password'),
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
       });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error('Backend error:', data);
+        throw new Error((data as { message?: string })?.message || 'Unknown error');
+      }
+
+      console.log('Success:', data);
       router.push('/login');
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to register college.');
+    } catch (err) {
+      console.error('Frontend error:', err);
+      setError(err instanceof Error ? err.message : 'Unable to register college.');
     } finally {
       setLoading(false);
     }
