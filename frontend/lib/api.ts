@@ -27,6 +27,11 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
     data: null,
   }))) as ApiEnvelope<T>;
 
+  if (res.status === 404) {
+    console.error('Service unavailable for URL:', requestUrl);
+    throw new Error('Service unavailable');
+  }
+
   if (!res.ok || body.success === false) {
     throw new Error(body.message ?? 'API failed');
   }
