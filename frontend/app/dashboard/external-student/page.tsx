@@ -1,15 +1,44 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import type { StudentDashboard } from '@/lib/types';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { DataTable } from '@/components/data-table';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
+import { fetchWithSession } from '@/lib/auth';
 
 export default function ExternalStudentDashboardPage() {
+  const [dashboard, setDashboard] = useState<StudentDashboard | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    const res = await fetchWithSession<StudentDashboard>('/student/dashboard');
+    setDashboard(res.data);
+  }
+
+  useEffect(() => {
+    load().catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'));
+  }, []);
+
+  async function apply(internshipId: string) {
+    await fetchWithSession(`/api/external/applications/${internshipId}`, { method: 'POST' });
+    await load();
+  }
+
   return (
-    <RoleDashboardShell allowedRoles={['EXTERNAL_STUDENT']} title="External Student Dashboard" subtitle="Apply and track your internship applications.">
+    <RoleDashboardShell allowedRoles={['EXTERNAL_STUDENT']} title="External Student Dashboard" subtitle="Apply to internships and track live status.">
       {() => (
-        <Card className="rounded-[32px] p-6 text-slate-300">
-          Use the public internship listings to submit and monitor applications.
-        </Card>
+        <>
+          {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          <DataTable
+            title="Available Internships"
+            rows={(dashboard?.internships ?? []).map((i) => ({ ...i, id: i.id, action: i.applied ? (i.status ?? 'Applied') : 'Apply' }))}
+            columns={[{ key: 'title', label: 'Title' }, { key: 'industryName', label: 'Industry' }, { key: 'description', label: 'Description' }, { key: 'action', label: 'State' }]}
+            actions={(row) => <Button disabled={row.applied} onClick={() => apply(row.id)}>{row.applied ? row.status ?? 'Applied' : 'Apply'}</Button>}
+          />
+          <DataTable title="My Applications" rows={(dashboard?.applications ?? []).map((a) => ({ ...a, id: a.id }))} columns={[{ key: 'internshipTitle', label: 'Internship' }, { key: 'industryName', label: 'Industry' }, { key: 'status', label: 'Status' }]} />
+        </>
       )}
     </RoleDashboardShell>
   );
