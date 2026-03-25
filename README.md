@@ -1,73 +1,48 @@
-# InternSuite Single-Workspace Platform
+# InternSuite Cloudflare SaaS Monorepo
 
-InternSuite is a production-ready full-stack PWA built as two standalone npm apps:
-
-- `backend/` – Fastify + Prisma API for Railway.
-- `frontend/` – Next.js PWA for Cloudflare.
-
-There are no workspace dependencies, no pnpm workspace files, and no shared package indirection.
-
-## Folder Structure
+## Structure
 
 ```text
-backend/
-  prisma/
-  src/
-frontend/
-  app/
-  components/
-  lib/
-  public/
+apps/
+  api/   # Cloudflare Worker (Hono + D1)
+  web/   # Next.js frontend deployed on Cloudflare Pages
+packages/
+  db/    # D1 SQL migrations
+  types/ # shared types
+  utils/ # shared helpers
 ```
 
-## Local Development
+## Required env vars
 
-```bash
-npm install --prefix backend
-npm install --prefix frontend
-npm run dev --prefix backend
-npm run dev --prefix frontend
-```
+### Frontend (`apps/web`)
+- `NEXT_PUBLIC_API_BASE_URL`
 
-## Production Deployment
-
-### Railway Backend
-
-```bash
-npm install --prefix backend
-npm run prisma:generate --prefix backend
-npm run build --prefix backend
-npm run prisma:migrate:deploy --prefix backend
-npm run start --prefix backend
-```
-
-Required environment variables:
-
-- `DATABASE_URL`
+### API Worker (`apps/api`)
+- `DB` (D1 binding)
 - `JWT_SECRET`
-- `APP_URL`
-- `PUBLIC_ASSET_BASE_URL`
-- `RESEND_API_KEY` (optional)
-- `RESEND_FROM_EMAIL` (optional)
+- `OTP_SECRET`
 
-### Cloudflare Frontend
+## API Routes
 
-```bash
-npm install --prefix frontend
-npm run build --prefix frontend
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/admin/send-otp`
+- `POST /api/admin/verify-otp`
+
+All responses use:
+
+```json
+{
+  "success": true,
+  "message": "string",
+  "data": {}
+}
 ```
 
-Suggested Cloudflare settings:
+## Deploy
 
-- Framework preset: `Next.js`
-- Root directory: repository root
-- Build command: `npm run pages:build` (the checked-in `wrangler.toml` uses this automatically)
-- Build output directory: `frontend/out`
-- Node version: `18+`
-
-## Product Experience
-
-- **Student-first mobile UX** with one-tap internship applications and status tracking.
-- **College dashboard** for MoU approvals and student monitoring.
-- **Industry dashboard** for opportunity publishing, candidate review, and attendance management.
-- **PWA installability** via manifest, service worker, offline route, and Android-friendly metadata.
+1. Create D1 DB and run migration in `packages/db/migrations/0001_init.sql`.
+2. Configure `apps/api/wrangler.toml` with database id.
+3. Deploy API worker: `npm run deploy:api`.
+4. Set `NEXT_PUBLIC_API_BASE_URL` in Pages.
+5. Deploy web: `npm run deploy:web`.
