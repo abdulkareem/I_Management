@@ -1,82 +1,91 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { CollegeDashboard } from '@/lib/types';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { DataTable } from '@/components/data-table';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
 
-export default function CollegeDashboardPage() {
-  const [dashboard, setDashboard] = useState<CollegeDashboard | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+type Department = { id: string; name: string; coordinator_name: string; coordinator_email: string; coordinator_mobile?: string; is_active: number; is_first_login: number };
+type IndustryLink = { link_id: string; name: string; email: string; business_activity: string; status: string };
+type Application = { id: string; student_name: string; student_email: string; internship_title: string; status: string; created_at: string };
+type Allocation = { id: string; student_name: string; industry_name: string; internship_title: string; status: string; project_details?: string };
 
-  async function load() {
-    const response = await fetchWithSession<CollegeDashboard>('/college/dashboard');
-    console.log('API response:', response.data);
-    setDashboard(response.data);
+export default function CollegeDashboardPage() {
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [industries, setIndustries] = useState<IndustryLink[]>([]);
+  const [internalApps, setInternalApps] = useState<Application[]>([]);
+  const [externalApps, setExternalApps] = useState<Application[]>([]);
+  const [allocations, setAllocations] = useState<Allocation[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadAll() {
+    const [d, i, ia, ea, al] = await Promise.all([
+      fetchWithSession<Department[]>('/api/department/list'),
+      fetchWithSession<IndustryLink[]>('/api/college/industries'),
+      fetchWithSession<Application[]>('/api/applications/internal'),
+      fetchWithSession<Application[]>('/api/applications/external'),
+      fetchWithSession<Allocation[]>('/api/internships/allocated'),
+    ]);
+    setDepartments(d.data);
+    setIndustries(i.data);
+    setInternalApps(ia.data);
+    setExternalApps(ea.data);
+    setAllocations(al.data);
   }
 
   useEffect(() => {
-    load()
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'))
-      .finally(() => setLoading(false));
+    loadAll().catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'));
   }, []);
 
+  async function addDepartment() {
+    const name = prompt('Department name');
+    const coordinator_name = prompt('Coordinator name');
+    const coordinator_email = prompt('Coordinator email');
+    if (!name || !coordinator_name || !coordinator_email) return;
+    await fetchWithSession('/api/department/create', { method: 'POST', body: JSON.stringify({ name, coordinator_name, coordinator_email }) });
+    await loadAll();
+  }
+
+  async function editDepartment(row: Department) {
+    const name = prompt('Department name', row.name) ?? row.name;
+    await fetchWithSession('/api/department/update', { method: 'PUT', body: JSON.stringify({ id: row.id, name }) });
+    await loadAll();
+  }
+
+  async function deleteDepartment(id: string) {
+    await fetchWithSession(`/api/department/delete?id=${id}`, { method: 'DELETE' });
+    await loadAll();
+  }
+
+  async function removeIndustry(linkId: string) {
+    await fetchWithSession(`/api/college/industries?link_id=${linkId}`, { method: 'DELETE' });
+    await loadAll();
+  }
+
   return (
-    <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN']} title="College Dashboard" subtitle="Approve MoUs, see which industries are unlocked, and watch student activity without digging through menus.">
+    <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN']} title="College Dashboard" subtitle="Departments, industries, applications, and allocations are fully connected to D1.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
-          {loading ? <Card className="rounded-[28px] p-4">Loading college data...</Card> : null}
-          <section className="grid gap-4 md:grid-cols-3">
-            {['All Departments', 'Analytics', 'Industry Tie-ups'].map((item) => (
-              <Card key={item} className="rounded-[28px] p-5">{item}</Card>
-            ))}
-          </section>
 
-          <section className="grid gap-4 md:grid-cols-4">
-            {[
-              ['Pending MoUs', String(dashboard?.stats?.pendingMous ?? 0)],
-              ['Approved industries', String(dashboard?.stats?.approvedIndustries ?? 0)],
-              ['Active students', String(dashboard?.stats?.activeStudents ?? 0)],
-              ['Applications', String(dashboard?.stats?.applicationsSubmitted ?? 0)],
-            ].map(([label, value]) => (
-              <Card key={label} className="rounded-[28px] p-5">
-                <p className="text-sm uppercase tracking-[0.24em] text-slate-400">{label}</p>
-                <p className="mt-3 text-3xl font-semibold text-white">{value}</p>
-              </Card>
-            ))}
-          </section>
-          <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-            <Card className="rounded-[30px] p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">MoU inbox</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Pending partnership requests</h2>
-                </div>
-                <Badge className="bg-amber-400/10 text-amber-200">1-tap approval</Badge>
-              </div>
-              <div className="mt-5 space-y-3">
-                {dashboard?.pendingMous?.map((mou) => (
-                  <div key={mou.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
-                    <p className="font-semibold text-white">{mou.industryName}</p>
-                    <p className="mt-1 text-sm text-slate-300">{mou.industryDescription}</p>
-                  </div>
-                )) ?? <p className="text-slate-300">No pending requests.</p>}
-              </div>
-            </Card>
-            <Card className="rounded-[30px] p-6">
-              <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">Unlocked network</p>
-              <h2 className="mt-2 text-2xl font-semibold text-white">Approved industries</h2>
-              <div className="mt-5 space-y-3">
-                {dashboard?.approvedIndustries?.map((industry) => (
-                  <div key={industry.id} className="rounded-[24px] border border-white/10 bg-white/5 px-4 py-3 text-white">{industry.name}</div>
-                )) ?? <p className="text-slate-300">No industries approved yet.</p>}
-              </div>
-            </Card>
-          </section>
+          <Card className="rounded-[28px] p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">Department Module</h2>
+              <Button onClick={addDepartment}>Create Department</Button>
+            </div>
+          </Card>
+
+          <DataTable title="Departments" rows={departments} columns={[{ key: 'name', label: 'Department' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'is_first_login', label: 'First Login' }, { key: 'is_active', label: 'Active' }]} actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => editDepartment(row)}>Edit</Button><Button variant="secondary" onClick={() => deleteDepartment(row.id)}>Delete</Button></div>} />
+
+          <DataTable title="Linked Industries" rows={industries.map((r) => ({ ...r, id: r.link_id }))} columns={[{ key: 'name', label: 'Industry' }, { key: 'email', label: 'Email' }, { key: 'business_activity', label: 'Business' }, { key: 'status', label: 'Status' }]} actions={(row) => <Button variant="secondary" onClick={() => removeIndustry(row.id)}>Remove</Button>} />
+
+          <DataTable title="Internal Applications" rows={internalApps} columns={[{ key: 'student_name', label: 'Student' }, { key: 'student_email', label: 'Email' }, { key: 'internship_title', label: 'Internship' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Applied At' }]} />
+
+          <DataTable title="External Applications" rows={externalApps} columns={[{ key: 'student_name', label: 'Student' }, { key: 'student_email', label: 'Email' }, { key: 'internship_title', label: 'Internship' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Applied At' }]} />
+
+          <DataTable title="Internship Allocations" rows={allocations} columns={[{ key: 'student_name', label: 'Student' }, { key: 'industry_name', label: 'Industry' }, { key: 'internship_title', label: 'Internship' }, { key: 'project_details', label: 'Project' }, { key: 'status', label: 'Status' }]} />
         </>
       )}
     </RoleDashboardShell>
