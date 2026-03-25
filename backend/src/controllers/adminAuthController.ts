@@ -1,9 +1,8 @@
 import type { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { Resend } from 'resend';
 import { prisma } from '../utils/prisma.js';
+import { emailService } from '../services/email.service.js';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const SUPER_ADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
 
 function ok<T>(data: T, message?: string) {
@@ -34,10 +33,6 @@ export const sendOtp = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Not authorized', data: null });
     }
 
-    if (!process.env.RESEND_API_KEY) {
-      return res.status(500).json({ success: false, message: 'Email provider is not configured', data: null });
-    }
-
     const otp = createOtp();
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
@@ -61,12 +56,7 @@ export const sendOtp = async (req: Request, res: Response) => {
       },
     });
 
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM ?? process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
-      to: email,
-      subject: 'Aureliv Verification Code',
-      html: `<div style="font-family: Arial, sans-serif;"><h2>Aureliv Verification Code</h2><p>Your one-time password is:</p><h1>${otp}</h1><p>This OTP expires in 5 minutes.</p></div>`,
-    });
+    await emailService.sendOtpEmail({ to: email, otp, purpose: 'LOGIN' });
 
     return res.json(ok({ otpSent: true, expiresInSeconds: 300, email: user.email }, 'OTP sent'));
   } catch (err) {

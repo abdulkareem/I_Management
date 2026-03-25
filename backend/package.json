@@ -17,7 +17,6 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev --name init_internship_platform",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:db:push": "prisma db push",
     "prisma:validate": "prisma validate"
   },
   "dependencies": {
@@ -29,7 +28,6 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "zod": "^3.24.2",
-    "resend": "^4.1.2",
     "tsx": "^4.19.3"
   },
   "devDependencies": {

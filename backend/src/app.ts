@@ -27,6 +27,10 @@ app.use(
 
 app.use(express.json({ limit: '1mb' }));
 app.use(httpLogger);
+app.use((req, _res, next) => {
+  console.log('Route hit:', req.originalUrl);
+  next();
+});
 
 app.get('/', (_req: any, res: any) => {
   res.send('Backend is live');
@@ -38,5 +42,9 @@ app.get('/health', (_req: any, res: any) => {
 
 app.use('/api/admin', adminAuthRoutes);
 app.use('/api/college', collegeRoutes);
+app.use('/api/auth', router);
+app.use('/api/student', router);
+app.use('/api/industry', router);
+app.use('/api/department', router);
 app.use('/api', router);
 app.use(errorHandler);
