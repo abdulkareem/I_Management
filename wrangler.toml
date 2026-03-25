@@ -1,6 +1,6 @@
 name = "internsuite"
 compatibility_date = "2026-03-25"
-pages_build_output_dir = "apps/web/out"
+pages_build_output_dir = "frontend/out"
 
 [build]
 command = "npm run pages:build"

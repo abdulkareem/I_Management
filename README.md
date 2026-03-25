@@ -3,9 +3,8 @@
 ## Structure
 
 ```text
-apps/
-  api/   # Cloudflare Worker (Hono + D1)
-  web/   # Next.js frontend deployed on Cloudflare Pages
+backend/   # Cloudflare Worker (Hono + D1)
+frontend/  # Next.js frontend deployed on Cloudflare Pages
 packages/
   db/    # D1 SQL migrations
   types/ # shared types
@@ -14,10 +13,10 @@ packages/
 
 ## Required env vars
 
-### Frontend (`apps/web`)
+### Frontend (`frontend`)
 - `NEXT_PUBLIC_API_BASE_URL`
 
-### API Worker (`apps/api`)
+### API Worker (`backend`)
 - `DB` (D1 binding)
 - `JWT_SECRET`
 - `OTP_SECRET`
@@ -42,7 +41,7 @@ All responses use:
 ## Deploy
 
 1. Create D1 DB and run migration in `packages/db/migrations/0001_init.sql`.
-2. Configure `apps/api/wrangler.toml` with database id.
+2. Configure `backend/wrangler.toml` with database id.
 3. Deploy API worker: `npm run deploy:api`.
 4. Set `NEXT_PUBLIC_API_BASE_URL` in Pages.
 5. Deploy web: `npm run deploy:web`.
