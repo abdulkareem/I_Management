@@ -16,6 +16,7 @@
     "lint": "npm run lint --workspace @internsuite/api && npm run lint --workspace @internsuite/web",
     "db:migrate": "wrangler d1 execute internsuite-db --file ./packages/db/migrations/0001_init.sql --remote",
     "deploy:api": "npm run deploy --workspace @internsuite/api",
-    "deploy:web": "npm run deploy --workspace @internsuite/web"
+    "deploy:web": "npm run deploy --workspace @internsuite/web",
+    "pages:build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/web"
   }
 }
