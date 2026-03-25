@@ -39,7 +39,7 @@ export async function sendAdminOtp(email: string) {
 }
 
 export async function verifyAdminOtp(email: string, otp: string) {
-  const response = await apiRequest<SessionState>('/admin/verify-otp', {
+  const response = await apiRequest<SessionState & { redirect?: string }>('/admin/verify-otp', {
     method: 'POST',
     body: JSON.stringify({ email, otp }),
   });
