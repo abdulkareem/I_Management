@@ -901,6 +901,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   if (request.method === 'GET' && pathname === '/api/internships/allocated') {
     const actor = requireRole(request, ['COLLEGE', 'INDUSTRY', 'DEPARTMENT_COORDINATOR']);
     if (actor instanceof Response) return actor;
+    await ensureInternshipAllocationsTable(env);
 
     let query = `SELECT a.id, a.project_details, a.status, a.created_at,
                         COALESCE(s.name, es.name) AS student_name,
@@ -1044,6 +1045,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const application = await env.DB.prepare('SELECT student_id, external_student_id, internship_id FROM internship_applications WHERE id = ?').bind(applicationId).first<{ student_id: string | null; external_student_id: string | null; internship_id: string }>();
     if (application) {
+      await ensureInternshipAllocationsTable(env);
       const internship = await env.DB.prepare(`SELECT ii.industry_id FROM internships i LEFT JOIN industry_internships ii ON ii.title = i.title WHERE i.id = ? LIMIT 1`).bind(application.internship_id).first<{ industry_id: string | null }>();
       await env.DB.prepare(
         `INSERT INTO internship_allocations (id, student_id, external_student_id, industry_id, internship_id, project_details, status)
@@ -1372,6 +1374,17 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     return ok('Login successful', createSession({ id: industry.id, email, role: 'INDUSTRY' }));
   }
 
+  const department = await env.DB.prepare('SELECT id, is_active, is_first_login FROM departments WHERE coordinator_email = ? AND password = ?')
+    .bind(email, password)
+    .first<{ id: string; is_active: number; is_first_login: number }>();
+  if (department) {
+    if (Number(department.is_active) !== 1) return forbidden('Department account inactive');
+    return ok('Login successful', {
+      ...createSession({ id: department.id, email, role: 'DEPARTMENT_COORDINATOR' }),
+      mustChangePassword: Number(department.is_first_login) === 1,
+    });
+  }
+
   const student = await env.DB.prepare('SELECT id, is_active FROM students WHERE email = ? AND password = ?')
     .bind(email, password)
     .first<{ id: string; is_active: number }>();
@@ -1487,6 +1500,35 @@ async function sendCredentialEmail(env: EnvBindings, to: string, departmentName:
     const text = await res.text();
     console.error('DB_ERROR:', text);
   }
+}
+
+async function ensureInternshipAllocationsTable(env: EnvBindings): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_allocations (
+      id TEXT PRIMARY KEY,
+      student_id TEXT,
+      external_student_id TEXT,
+      industry_id TEXT NOT NULL,
+      internship_id TEXT NOT NULL,
+      project_details TEXT,
+      status TEXT NOT NULL DEFAULT 'allocated' CHECK (status IN ('allocated','active','completed','cancelled')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+      FOREIGN KEY (external_student_id) REFERENCES external_students(id) ON DELETE CASCADE,
+      FOREIGN KEY (industry_id) REFERENCES industries(id) ON DELETE CASCADE,
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      CHECK (
+        (student_id IS NOT NULL AND external_student_id IS NULL) OR
+        (student_id IS NULL AND external_student_id IS NOT NULL)
+      )
+    )`,
+  ).run();
+
+  await Promise.all([
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_allocations_student ON internship_allocations(student_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_allocations_external_student ON internship_allocations(external_student_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_allocations_industry ON internship_allocations(industry_id)').run(),
+  ]);
 }
 
 function requireRole(request: Request, allowedRoles: AuthSession['user']['role'][]) {

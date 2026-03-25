@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
-import { fetchWithSession } from '@/lib/auth';
+import { fetchWithSession, loadSession } from '@/lib/auth';
 
 type DepartmentDashboardData = {
   programs: Array<{ id: string; name: string }>;
@@ -12,17 +13,24 @@ type DepartmentDashboardData = {
 };
 
 export default function DepartmentDashboardPage() {
+  const router = useRouter();
   const [data, setData] = useState<DepartmentDashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const session = loadSession();
+    if (session?.mustChangePassword) {
+      router.replace('/dashboard/department/change-password');
+      return;
+    }
+
     fetchWithSession<DepartmentDashboardData>('/department/dashboard')
       .then((response) => {
         console.log('API response:', response.data);
         setData(response.data);
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'));
-  }, []);
+  }, [router]);
 
   return (
     <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title="Department Dashboard" subtitle="Programs, internships, and students are loaded live from D1.">

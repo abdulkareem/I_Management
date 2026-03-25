@@ -20,6 +20,7 @@ export interface SessionUser {
 export interface SessionProfile {
   token: string;
   user: SessionUser;
+  mustChangePassword?: boolean;
 }
 
 export interface StudentDashboard {
