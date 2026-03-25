@@ -22,15 +22,24 @@ export function clearSession() {
   window.localStorage.removeItem(SESSION_KEY);
 }
 
-export async function beginLogin(email: string) {
-  return apiRequest<{ requireOtp?: boolean; requirePassword?: boolean }>('/auth/login', {
+export async function loginWithPassword(email: string, password: string) {
+  const response = await apiRequest<SessionState>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  saveSession(response.data);
+  return response;
+}
+
+export async function sendAdminOtp(email: string) {
+  return apiRequest<{ otpSent: boolean }>('/admin/send-otp', {
     method: 'POST',
     body: JSON.stringify({ email }),
   });
 }
 
-export async function verifyOtp(email: string, otp: string) {
-  const response = await apiRequest<SessionState>('/auth/verify-otp', {
+export async function verifyAdminOtp(email: string, otp: string) {
+  const response = await apiRequest<SessionState>('/admin/verify-otp', {
     method: 'POST',
     body: JSON.stringify({ email, otp }),
   });
@@ -38,13 +47,25 @@ export async function verifyOtp(email: string, otp: string) {
   return response;
 }
 
-export async function loginWithPassword(email: string, password: string) {
-  const response = await apiRequest<SessionState>('/auth/login-password', {
+export async function forgotPassword(identifier: string) {
+  return apiRequest<{ otpSent: boolean }>('/auth/forgot-password', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: identifier, phone: identifier, universityRegNo: identifier }),
   });
-  saveSession(response.data);
-  return response;
+}
+
+export async function resetPassword(identifier: string, otp: string, newPassword: string) {
+  return apiRequest<{ passwordUpdated: boolean }>('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ identifier, otp, newPassword }),
+  });
+}
+
+export async function forgotUserId(payload: { phone?: string; universityRegNo?: string }) {
+  return apiRequest<{ email: string; maskedEmail: string }>('/auth/forgot-userid', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function register(role: Role, payload: Record<string, unknown>) {
