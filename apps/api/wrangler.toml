@@ -1,0 +1,12 @@
+name = "internsuite-api"
+main = "src/index.ts"
+compatibility_date = "2026-03-25"
+
+[vars]
+JWT_SECRET = "change-me"
+OTP_SECRET = "change-me"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "internsuite-db"
+database_id = "replace-with-your-d1-id"

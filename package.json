@@ -1,21 +1,21 @@
 {
   "name": "internsuite-platform",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
-    "build": "npm run build --prefix backend && npm run build --prefix frontend",
-    "dev": "sh -c 'npm run dev --prefix backend & npm run dev --prefix frontend'",
-    "start": "npm run start --prefix backend",
-    "lint": "npm run lint --prefix backend && npm run lint --prefix frontend",
-    "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",
-    "test": "npm run test --prefix backend",
-    "frontend:build": "npm run build --prefix frontend",
-    "backend:build": "npm run build --prefix backend",
-    "prisma:generate": "npm run prisma:generate --prefix backend",
-    "prisma:migrate:deploy": "npm run prisma:migrate:deploy --prefix backend",
-    "pages:build": "npm install --prefix frontend --progress=false && npm run build --prefix frontend"
+    "dev": "npm run dev --workspace @internsuite/api & npm run dev --workspace @internsuite/web",
+    "build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/api && npm run build --workspace @internsuite/web",
+    "typecheck": "npm run typecheck --workspace @internsuite/api && npm run typecheck --workspace @internsuite/web",
+    "lint": "npm run lint --workspace @internsuite/api && npm run lint --workspace @internsuite/web",
+    "db:migrate": "wrangler d1 execute internsuite-db --file ./packages/db/migrations/0001_init.sql --remote",
+    "deploy:api": "npm run deploy --workspace @internsuite/api",
+    "deploy:web": "npm run deploy --workspace @internsuite/web"
   }
 }
