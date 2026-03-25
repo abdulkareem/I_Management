@@ -5,7 +5,7 @@
     "buildCommand": "npm install --prefix backend && npm run build --prefix backend"
   },
   "deploy": {
-    "startCommand": "npm run prisma:db:push --prefix backend && npm run start --prefix backend",
+    "startCommand": "npm run start --prefix backend",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

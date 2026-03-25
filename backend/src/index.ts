@@ -21,6 +21,7 @@ function getSafeDatabaseUrl(url: string): string {
 }
 
 async function startServer() {
+  console.log('DATABASE_URL:', DATABASE_URL ? 'Loaded' : 'Missing');
   console.log(`[startup] DATABASE_URL: ${getSafeDatabaseUrl(DATABASE_URL)}`);
 
   await prisma.$connect();

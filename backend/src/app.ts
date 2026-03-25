@@ -32,7 +32,7 @@ app.get('/', (_req: any, res: any) => {
 });
 
 app.get('/health', (_req: any, res: any) => {
-  res.json({ success: true, service: 'internship-management-platform' });
+  res.send('Server running');
 });
 
 app.use('/api/admin', adminAuthRoutes);
