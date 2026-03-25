@@ -92,6 +92,7 @@ export function fetchWithSession<T>(path: string, init?: RequestInit) {
 }
 
 export function dashboardPathFor(role: Role) {
+  if (role === 'SUPER_ADMIN' || role === 'ADMIN') return '/superadmin/dashboard';
   if (role === 'STUDENT' || role === 'EXTERNAL_STUDENT') return '/dashboard/student';
   return '/dashboard/admin';
 }
