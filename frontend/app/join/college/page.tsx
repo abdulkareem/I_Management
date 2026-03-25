@@ -6,33 +6,43 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { register } from '@/lib/auth';
+import { apiRequest } from '@/lib/api';
 
 export default function CollegeJoinPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setLoading(true);
+
     const form = new FormData(event.currentTarget);
     if (form.get('password') !== form.get('confirmPassword')) {
       setError('Password and confirm password must match.');
+      setLoading(false);
       return;
     }
+
     try {
-      await register('COLLEGE_ADMIN', {
-        collegeName: form.get('collegeName'),
-        address: form.get('address'),
-        email: form.get('coordinatorEmail'),
-        phone: form.get('mobile'),
-        university: form.get('university'),
-        loginEmail: form.get('coordinatorEmail'),
-        password: form.get('password'),
+      await apiRequest<{ success: boolean }>('/api/college/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          collegeName: form.get('collegeName'),
+          address: form.get('address'),
+          university: form.get('university'),
+          mobile: form.get('mobile'),
+          coordinatorName: form.get('coordinatorName'),
+          email: form.get('email'),
+          password: form.get('password'),
+        }),
       });
       router.push('/login');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to register college.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -50,11 +60,11 @@ export default function CollegeJoinPage() {
           <div className="space-y-2"><label htmlFor="university">University</label><input id="university" name="university" required /></div>
           <div className="space-y-2"><label htmlFor="mobile">Mobile</label><input id="mobile" name="mobile" required /></div>
           <div className="space-y-2"><label htmlFor="coordinatorName">Coordinator Name</label><input id="coordinatorName" name="coordinatorName" required /></div>
-          <div className="space-y-2"><label htmlFor="coordinatorEmail">Coordinator Email</label><input id="coordinatorEmail" name="coordinatorEmail" type="email" required /></div>
+          <div className="space-y-2"><label htmlFor="email">Coordinator Email</label><input id="email" name="email" type="email" required /></div>
           <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>
           <div className="space-y-2"><label htmlFor="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" required /></div>
           {error ? <p className="md:col-span-2 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
-          <Button className="md:col-span-2">Submit for approval</Button>
+          <Button className="md:col-span-2" disabled={loading}>{loading ? 'Submitting...' : 'Submit for approval'}</Button>
         </form>
       </Card>
     </main>

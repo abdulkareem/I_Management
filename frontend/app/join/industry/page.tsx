@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { register } from '@/lib/auth';
 import { apiRequest } from '@/lib/api';
 
 type IndustryType = { id: string; name: string };
@@ -15,9 +14,10 @@ export default function IndustryJoinPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [types, setTypes] = useState<IndustryType[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    apiRequest<IndustryType[]>('/industry-type/list')
+    apiRequest<IndustryType[]>('/api/industry-types')
       .then((response) => setTypes(response.data))
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load industry categories.'));
   }, []);
@@ -25,24 +25,29 @@ export default function IndustryJoinPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setLoading(true);
     const form = new FormData(event.currentTarget);
     if (form.get('password') !== form.get('confirmPassword')) {
       setError('Password and confirm password must match.');
+      setLoading(false);
       return;
     }
     try {
-      await register('INDUSTRY', {
-        name: form.get('industryName'),
-        internshipSupervisorName: form.get('supervisorName'),
-        email: form.get('email'),
-        password: form.get('password'),
-        registrationNumber: form.get('registrationNumber'),
-        registrationYear: form.get('registrationYear'),
-        industryType: form.get('industryType'),
+      await apiRequest<{ success: boolean }>('/api/industry/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          companyName: form.get('companyName'),
+          email: form.get('email'),
+          password: form.get('password'),
+          businessActivity: form.get('businessActivity'),
+          industryTypeId: form.get('industryTypeId'),
+        }),
       });
       router.push('/login');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to register industry profile.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -54,21 +59,20 @@ export default function IndustryJoinPage() {
         </Link>
         <h1 className="text-3xl font-semibold text-white">Industry Registration</h1>
         <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
-          <div className="space-y-2"><label htmlFor="industryName">Industry Name</label><input id="industryName" name="industryName" required /></div>
-          <div className="space-y-2"><label htmlFor="supervisorName">Internship Supervisor Name</label><input id="supervisorName" name="supervisorName" required /></div>
+          <div className="space-y-2"><label htmlFor="companyName">Company Name</label><input id="companyName" name="companyName" required /></div>
           <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
+          <div className="space-y-2 md:col-span-2"><label htmlFor="businessActivity">Business Activity</label><textarea id="businessActivity" name="businessActivity" required rows={4} /></div>
           <div className="space-y-2">
-            <label htmlFor="industryType">Industry Type</label>
-            <select id="industryType" name="industryType" required>
-              {types.map((type) => <option key={type.id} value={type.name}>{type.name}</option>)}
+            <label htmlFor="industryTypeId">Industry Type</label>
+            <select id="industryTypeId" name="industryTypeId" required defaultValue="">
+              <option value="" disabled>Select industry type</option>
+              {types.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
             </select>
           </div>
-          <div className="space-y-2"><label htmlFor="registrationNumber">Registration Number</label><input id="registrationNumber" name="registrationNumber" required /></div>
-          <div className="space-y-2"><label htmlFor="registrationYear">Registration Year</label><input id="registrationYear" name="registrationYear" required /></div>
           <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>
           <div className="space-y-2"><label htmlFor="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" required /></div>
           {error ? <p className="md:col-span-2 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
-          <Button className="md:col-span-2">Create industry profile</Button>
+          <Button className="md:col-span-2" disabled={loading}>{loading ? 'Creating profile...' : 'Create industry profile'}</Button>
         </form>
       </Card>
     </main>

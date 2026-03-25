@@ -1,196 +1,232 @@
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { HTTPException } from 'hono/http-exception';
-import { SignJWT } from 'jose';
-
 interface EnvBindings {
   DB: D1Database;
-  JWT_SECRET: string;
-  OTP_SECRET: string;
 }
 
-type ApiResponse<T> = {
+type ApiEnvelope<T> = {
   success: boolean;
   message: string;
   data: T;
 };
 
-type UserRow = {
-  id: string;
-  name: string;
-  email: string;
-  password: string;
-  role: string;
-  created_at: string;
+type JsonMap = Record<string, unknown>;
+
+const jsonHeaders = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
 };
 
-const app = new Hono<{ Bindings: EnvBindings }>();
+export default {
+  async fetch(request: Request, env: EnvBindings): Promise<Response> {
+    const url = new URL(request.url);
 
-app.use('/api/*', cors());
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: jsonHeaders });
+    }
 
-app.get('/api/health', (c) => c.json(ok('API is healthy', { time: new Date().toISOString() })));
+    try {
+      if (request.method === 'GET' && url.pathname === '/api/health') {
+        return ok('API is healthy', { time: new Date().toISOString() });
+      }
 
-app.post('/api/auth/register', async (c) => {
-  const body = await c.req.json<{ name?: string; email?: string; password?: string; role?: string }>().catch(() => ({}));
-  const name = (body.name ?? '').trim();
-  const email = normalizeEmail(body.email);
-  const password = (body.password ?? '').trim();
-  const role = (body.role ?? 'STUDENT').trim().toUpperCase();
+      if (request.method === 'GET' && url.pathname === '/api/colleges') {
+        const rows = await env.DB.prepare('SELECT id, collegeName FROM colleges ORDER BY collegeName ASC').all<{ id: string; collegeName: string }>();
+        return ok('Colleges fetched successfully.', rows.results ?? []);
+      }
 
-  if (!name || !email || !password) {
-    throw new HTTPException(400, { message: 'Name, email, and password are required.' });
+      if (request.method === 'GET' && url.pathname === '/api/departments') {
+        const collegeId = (url.searchParams.get('collegeId') ?? '').trim();
+        if (!collegeId) {
+          return badRequest('collegeId is required.', { collegeId });
+        }
+
+        const rows = await env.DB.prepare('SELECT id, name, collegeId FROM departments WHERE collegeId = ? ORDER BY name ASC')
+          .bind(collegeId)
+          .all<{ id: string; name: string; collegeId: string }>();
+
+        return ok('Departments fetched successfully.', rows.results ?? []);
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/courses') {
+        const departmentId = (url.searchParams.get('departmentId') ?? '').trim();
+        if (!departmentId) {
+          return badRequest('departmentId is required.', { departmentId });
+        }
+
+        const rows = await env.DB.prepare('SELECT id, name, departmentId FROM courses WHERE departmentId = ? ORDER BY name ASC')
+          .bind(departmentId)
+          .all<{ id: string; name: string; departmentId: string }>();
+
+        return ok('Courses fetched successfully.', rows.results ?? []);
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/industry-types') {
+        const rows = await env.DB.prepare('SELECT id, name FROM industry_types ORDER BY name ASC').all<{ id: string; name: string }>();
+        return ok('Industry types fetched successfully.', rows.results ?? []);
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/college/register') {
+        const body = await parseJsonBody(request);
+        console.log('BODY:/api/college/register', body);
+
+        const collegeName = asString(body.collegeName);
+        const address = asString(body.address);
+        const university = asString(body.university);
+        const mobile = asString(body.mobile);
+        const coordinatorName = asString(body.coordinatorName);
+        const email = normalizeEmail(body.email);
+        const password = asString(body.password);
+
+        if (!collegeName || !email || !password) {
+          return badRequest('Missing required fields', body);
+        }
+
+        const existing = await env.DB.prepare('SELECT id FROM colleges WHERE email = ?').bind(email).first<{ id: string }>();
+        if (existing) {
+          return conflict('College already exists for this email.', { email });
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO colleges (id, collegeName, address, university, mobile, coordinatorName, email, password, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+          .bind(crypto.randomUUID(), collegeName, address, university, mobile, coordinatorName, email, password, 'PENDING')
+          .run();
+
+        return ok('College registration submitted.', { success: true });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/student/register') {
+        const body = await parseJsonBody(request);
+        console.log('BODY:/api/student/register', body);
+
+        const studentName = asString(body.studentName);
+        const email = normalizeEmail(body.email);
+        const password = asString(body.password);
+        const universityRegNumber = asString(body.universityRegNumber);
+        const programme = asString(body.programme);
+        const collegeId = asString(body.collegeId);
+        const departmentId = asString(body.departmentId);
+        const courseId = asString(body.courseId);
+
+        if (!studentName || !email || !password || !universityRegNumber || !programme || !collegeId || !departmentId || !courseId) {
+          return badRequest('Missing required fields', body);
+        }
+
+        const [existingEmail, college, department, course] = await Promise.all([
+          env.DB.prepare('SELECT id FROM students WHERE email = ?').bind(email).first<{ id: string }>(),
+          env.DB.prepare('SELECT id FROM colleges WHERE id = ?').bind(collegeId).first<{ id: string }>(),
+          env.DB.prepare('SELECT id, collegeId FROM departments WHERE id = ?').bind(departmentId).first<{ id: string; collegeId: string }>(),
+          env.DB.prepare('SELECT id, departmentId FROM courses WHERE id = ?').bind(courseId).first<{ id: string; departmentId: string }>(),
+        ]);
+
+        if (existingEmail) {
+          return conflict('Student already exists for this email.', { email });
+        }
+        if (!college) {
+          return badRequest('Invalid collegeId.', { collegeId });
+        }
+        if (!department || department.collegeId !== collegeId) {
+          return badRequest('Invalid departmentId for selected college.', { collegeId, departmentId });
+        }
+        if (!course || course.departmentId !== departmentId) {
+          return badRequest('Invalid courseId for selected department.', { departmentId, courseId });
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO students (id, studentName, email, password, universityRegNumber, programme, collegeId, departmentId, courseId)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+          .bind(crypto.randomUUID(), studentName, email, password, universityRegNumber, programme, collegeId, departmentId, courseId)
+          .run();
+
+        return ok('Student registered successfully.', { success: true });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/industry/register') {
+        const body = await parseJsonBody(request);
+        console.log('BODY:/api/industry/register', body);
+
+        const companyName = asString(body.companyName);
+        const email = normalizeEmail(body.email);
+        const password = asString(body.password);
+        const businessActivity = asString(body.businessActivity);
+        const industryTypeId = asString(body.industryTypeId);
+
+        if (!companyName || !email || !password || !businessActivity || !industryTypeId) {
+          return badRequest('Missing required fields', body);
+        }
+
+        const [existingEmail, industryType] = await Promise.all([
+          env.DB.prepare('SELECT id FROM industries WHERE email = ?').bind(email).first<{ id: string }>(),
+          env.DB.prepare('SELECT id FROM industry_types WHERE id = ?').bind(industryTypeId).first<{ id: string }>(),
+        ]);
+
+        if (existingEmail) {
+          return conflict('Industry already exists for this email.', { email });
+        }
+
+        if (!industryType) {
+          return badRequest('Invalid industryTypeId.', { industryTypeId });
+        }
+
+        await env.DB.prepare(`
+          INSERT INTO industries (id, companyName, email, password, businessActivity, industryTypeId)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `)
+          .bind(crypto.randomUUID(), companyName, email, password, businessActivity, industryTypeId)
+          .run();
+
+        return ok('Industry registered successfully.', { success: true });
+      }
+
+      return response(404, fail('Route not found.', { path: url.pathname }));
+    } catch (error) {
+      console.error('API_ERROR', error);
+      return response(500, fail('Internal server error.', { error: error instanceof Error ? error.message : 'Unknown error' }));
+    }
+  },
+};
+
+async function parseJsonBody(request: Request): Promise<JsonMap> {
+  const contentType = request.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    return {};
   }
 
-  const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<{ id: string }>();
-  if (existing) {
-    throw new HTTPException(409, { message: 'User already exists.' });
-  }
+  const body = (await request.json().catch(() => ({}))) as JsonMap;
+  return body ?? {};
+}
 
-  const id = crypto.randomUUID();
-  const passwordHash = await hashPassword(password, c.env.OTP_SECRET);
+function asString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
 
-  await c.env.DB.prepare(
-    'INSERT INTO users (id, name, email, password, role, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-  )
-    .bind(id, name, email, passwordHash, role, new Date().toISOString())
-    .run();
+function normalizeEmail(value: unknown) {
+  return asString(value).toLowerCase();
+}
 
-  const user = { id, name, email, role };
-  const token = await signToken(user, c.env.JWT_SECRET);
+function ok<T>(message: string, data: T) {
+  return response(200, success(message, data));
+}
 
-  return c.json(ok('User registered successfully.', { token, user }), 201);
-});
+function badRequest(message: string, received: JsonMap | Record<string, string>) {
+  return response(400, fail(message, { received }));
+}
 
-app.post('/api/auth/login', async (c) => {
-  const body = await c.req.json<{ email?: string; password?: string }>().catch(() => ({}));
-  const email = normalizeEmail(body.email);
-  const password = (body.password ?? '').trim();
+function conflict(message: string, received: JsonMap | Record<string, string>) {
+  return response(409, fail(message, { received }));
+}
 
-  if (!email || !password) {
-    throw new HTTPException(400, { message: 'Email and password required.' });
-  }
+function response(status: number, body: ApiEnvelope<unknown>) {
+  return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
+}
 
-  const user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<UserRow>();
-
-  if (!user) {
-    return c.json(fail('Email not found. Please register first.', { shouldRegister: true }), 404);
-  }
-
-  const valid = await verifyPassword(password, c.env.OTP_SECRET, user.password);
-  if (!valid) {
-    throw new HTTPException(401, { message: 'Invalid email or password.' });
-  }
-
-  const sessionUser = toSessionUser(user);
-  const token = await signToken(sessionUser, c.env.JWT_SECRET);
-  return c.json(ok('Login successful.', { token, user: sessionUser }));
-});
-
-app.post('/api/admin/send-otp', async (c) => {
-  const body = await c.req.json<{ email?: string }>().catch(() => ({}));
-  const email = normalizeEmail(body.email);
-
-  if (!email) {
-    throw new HTTPException(400, { message: 'Email is required.' });
-  }
-
-  const user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<UserRow>();
-  if (!user || !['ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
-    throw new HTTPException(403, { message: 'Admin account not found for this email.' });
-  }
-
-  const otp = generateOtp();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-
-  await c.env.DB.prepare('DELETE FROM otp_codes WHERE email = ?').bind(email).run();
-  await c.env.DB.prepare('INSERT INTO otp_codes (id, email, otp, expires_at) VALUES (?, ?, ?, ?)')
-    .bind(crypto.randomUUID(), email, otp, expiresAt)
-    .run();
-
-  console.log(`[OTP-SIMULATION] Send ${otp} to ${email}`);
-
-  return c.json(ok('OTP sent successfully.', { otpSent: true, expiresAt }));
-});
-
-app.post('/api/admin/verify-otp', async (c) => {
-  const body = await c.req.json<{ email?: string; otp?: string }>().catch(() => ({}));
-  const email = normalizeEmail(body.email);
-  const otp = (body.otp ?? '').trim();
-
-  if (!email || !otp) {
-    throw new HTTPException(400, { message: 'Email and OTP are required.' });
-  }
-
-  const otpRow = await c.env.DB.prepare('SELECT * FROM otp_codes WHERE email = ? AND otp = ?')
-    .bind(email, otp)
-    .first<{ id: string; expires_at: string }>();
-
-  if (!otpRow) {
-    throw new HTTPException(401, { message: 'Invalid OTP.' });
-  }
-
-  if (new Date(otpRow.expires_at).getTime() < Date.now()) {
-    await c.env.DB.prepare('DELETE FROM otp_codes WHERE id = ?').bind(otpRow.id).run();
-    throw new HTTPException(401, { message: 'OTP expired.' });
-  }
-
-  const user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<UserRow>();
-  if (!user) {
-    throw new HTTPException(404, { message: 'Admin account not found.' });
-  }
-
-  await c.env.DB.prepare('DELETE FROM otp_codes WHERE id = ?').bind(otpRow.id).run();
-
-  const sessionUser = toSessionUser(user);
-  const token = await signToken(sessionUser, c.env.JWT_SECRET);
-
-  return c.json(ok('OTP verified successfully.', { token, user: sessionUser }));
-});
-
-app.onError((err, c) => {
-  const status = err instanceof HTTPException ? err.status : 500;
-  const message = err instanceof HTTPException ? err.message : 'Internal server error.';
-  return c.json(fail(message, {}), status);
-});
-
-function ok<T>(message: string, data: T): ApiResponse<T> {
+function success<T>(message: string, data: T): ApiEnvelope<T> {
   return { success: true, message, data };
 }
 
-function fail<T>(message: string, data: T): ApiResponse<T> {
+function fail<T>(message: string, data: T): ApiEnvelope<T> {
   return { success: false, message, data };
 }
-
-function normalizeEmail(email?: string) {
-  return (email ?? '').trim().toLowerCase();
-}
-
-function toSessionUser(user: UserRow) {
-  return { id: user.id, name: user.name, email: user.email, role: user.role };
-}
-
-function generateOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-async function hashPassword(password: string, secret: string) {
-  const bytes = new TextEncoder().encode(`${password}:${secret}`);
-  const hash = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(hash)].map((x) => x.toString(16).padStart(2, '0')).join('');
-}
-
-async function verifyPassword(password: string, secret: string, expectedHash: string) {
-  const actual = await hashPassword(password, secret);
-  return actual === expectedHash;
-}
-
-async function signToken(user: { id: string; email: string; role: string; name?: string }, jwtSecret: string) {
-  const secret = new TextEncoder().encode(jwtSecret);
-  return new SignJWT(user)
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(secret);
-}
-
-export default app;

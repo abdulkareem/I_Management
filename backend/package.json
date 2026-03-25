@@ -10,10 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {
-    "hono": "^4.8.3",
-    "jose": "^6.1.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@cloudflare/workers-types": "*",
     "typescript": "^5.8.2",

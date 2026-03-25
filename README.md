@@ -3,30 +3,41 @@
 ## Structure
 
 ```text
-backend/   # Cloudflare Worker (Hono + D1)
+backend/   # Cloudflare Worker API + D1 bindings
 frontend/  # Next.js frontend deployed on Cloudflare Pages
 packages/
-  db/    # D1 SQL migrations
-  types/ # shared types
-  utils/ # shared helpers
+  db/      # D1 SQL migrations
+  types/   # shared types
+  utils/   # shared helpers
 ```
 
 ## Required env vars
 
 ### Frontend (`frontend`)
-- `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_API_BASE_URL` (must point to your Worker URL)
 
 ### API Worker (`backend`)
 - `DB` (D1 binding)
-- `JWT_SECRET`
-- `OTP_SECRET`
+
+## D1 binding (`backend/wrangler.toml`)
+
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "internsuite-db"
+database_id = "<your-database-id>"
+```
 
 ## API Routes
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/admin/send-otp`
-- `POST /api/admin/verify-otp`
+- `GET /api/health`
+- `GET /api/colleges`
+- `GET /api/departments?collegeId=...`
+- `GET /api/courses?departmentId=...`
+- `GET /api/industry-types`
+- `POST /api/college/register`
+- `POST /api/student/register`
+- `POST /api/industry/register`
 
 All responses use:
 
@@ -40,8 +51,8 @@ All responses use:
 
 ## Deploy
 
-1. Create D1 DB and run migration in `packages/db/migrations/0001_init.sql`.
+1. Run D1 migrations in `packages/db/migrations`.
 2. Configure `backend/wrangler.toml` with database id.
 3. Deploy API worker: `npm run deploy:api`.
-4. Set `NEXT_PUBLIC_API_BASE_URL` in Pages.
+4. Set `NEXT_PUBLIC_API_BASE_URL` in Pages project to Worker URL.
 5. Deploy web: `npm run deploy:web`.
