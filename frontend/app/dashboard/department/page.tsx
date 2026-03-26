@@ -53,6 +53,25 @@ export default function DepartmentDashboardPage() {
               </div>
             )) : <p className="text-slate-300">No data found</p>}
           </Card>
+
+          <section className="grid gap-4 md:grid-cols-2">
+            <Card className="rounded-[28px] p-5">
+              <h2 className="mb-2 text-xl">Programs</h2>
+              {data?.programs.length ? data.programs.map((program) => (
+                <div key={program.id} className="border-t border-white/10 py-2">{program.name}</div>
+              )) : <p className="text-slate-300">No data found</p>}
+            </Card>
+
+            <Card className="rounded-[28px] p-5">
+              <h2 className="mb-2 text-xl">Internships</h2>
+              {data?.internships.length ? data.internships.map((internship) => (
+                <div key={internship.id} className="border-t border-white/10 py-2">
+                  <p className="font-medium">{internship.title}</p>
+                  <p className="text-xs text-slate-300">{internship.created_at}</p>
+                </div>
+              )) : <p className="text-slate-300">No data found</p>}
+            </Card>
+          </section>
         </>
       )}
     </RoleDashboardShell>
