@@ -695,7 +695,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
          LEFT JOIN students s ON s.id = ia.student_id
          LEFT JOIN external_students es ON es.id = ia.external_student_id
          LEFT JOIN colleges c ON c.id = s.college_id
-         WHERE ia.reviewed_by_industry_id = ? OR ia.reviewed_by_industry_id IS NULL
+         WHERE i.industry_id = ?
          ORDER BY ia.created_at DESC`,
       ).bind(actor.id).all(),
     ]);
@@ -917,6 +917,99 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       .run();
 
     return ok('Password changed successfully');
+  }
+
+  if (request.method === 'GET' && pathname === '/api/industry/colleges') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT DISTINCT c.id, c.name
+       FROM college_industry_links l
+       INNER JOIN colleges c ON c.id = l.college_id
+       WHERE l.industry_id = ? AND l.status = 'active'
+       ORDER BY c.name ASC`,
+    ).bind(actor.id).all();
+
+    return ok('Industry colleges fetched', rows.results ?? []);
+  }
+
+  const industryCollegeDepartmentsMatch = pathname.match(/^\/api\/industry\/colleges\/([^/]+)\/departments$/);
+  if (industryCollegeDepartmentsMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+
+    const collegeId = industryCollegeDepartmentsMatch[1];
+    const allowed = await env.DB.prepare(
+      `SELECT id FROM college_industry_links
+       WHERE industry_id = ? AND college_id = ? AND status = 'active'`,
+    ).bind(actor.id, collegeId).first<{ id: string }>();
+    if (!allowed) return forbidden('This college is not linked with your industry');
+
+    const rows = await env.DB.prepare(
+      `SELECT id, name
+       FROM departments
+       WHERE college_id = ? AND is_active = 1
+       ORDER BY name ASC`,
+    ).bind(collegeId).all();
+
+    return ok('College departments fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/industry/connect-request') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const collegeId = required(body, ['college_id', 'collegeId']);
+    const departmentId = required(body, ['department_id', 'departmentId']);
+    const internshipTitle = required(body, ['internship_title', 'internshipTitle']);
+    const natureOfWork = required(body, ['nature_of_work', 'natureOfWork']);
+    const preference = toText(optional(body, ['gender_preference', 'genderPreference'])).toUpperCase() || 'BOTH';
+    const durationLabel = toText(optional(body, ['duration_label', 'durationLabel'])) || null;
+    const internshipCategory = toText(optional(body, ['internship_category', 'internshipCategory'])).toUpperCase() || 'FREE';
+    const stipendAmount = optional(body, ['stipend_amount', 'stipendAmount']) ? Number(optional(body, ['stipend_amount', 'stipendAmount'])) : null;
+    const stipendDuration = toText(optional(body, ['stipend_duration', 'stipendDuration'])) || null;
+    const fee = optional(body, ['fee']) ? Number(optional(body, ['fee'])) : null;
+    const hourDuration = optional(body, ['hour_duration', 'hourDuration']) ? Number(optional(body, ['hour_duration', 'hourDuration'])) : null;
+    const vacancy = Number(required(body, ['vacancy', 'vacancies']));
+
+    if (!collegeId || !departmentId || !internshipTitle || !natureOfWork) {
+      return badRequest('college_id, department_id, internship_title and nature_of_work are required');
+    }
+    if (!['GIRLS', 'BOYS', 'BOTH'].includes(preference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
+    if (!['FREE', 'PAID', 'STIPEND'].includes(internshipCategory)) return badRequest('internship_category must be FREE, PAID or STIPEND');
+    if (Number.isNaN(vacancy) || vacancy <= 0) return badRequest('vacancy must be a positive number');
+
+    const linked = await env.DB.prepare(
+      `SELECT id FROM college_industry_links
+       WHERE industry_id = ? AND college_id = ? AND status = 'active'`,
+    ).bind(actor.id, collegeId).first<{ id: string }>();
+    if (!linked) return forbidden('This college is not linked with your industry');
+
+    const department = await env.DB.prepare(
+      `SELECT id FROM departments
+       WHERE id = ? AND college_id = ?`,
+    ).bind(departmentId, collegeId).first<{ id: string }>();
+    if (!department) return badRequest('Invalid department for selected college');
+
+    const details: string[] = [
+      `Nature of work: ${natureOfWork}`,
+      `Preference: ${preference}`,
+      `Duration: ${durationLabel ?? '-'}`,
+      `Internship type: ${internshipCategory}`,
+      `Vacancy: ${vacancy}`,
+    ];
+    if (internshipCategory === 'PAID' && fee && fee > 0) details.push(`Fee: ${fee}`);
+    if (internshipCategory === 'STIPEND') details.push(`Stipend: ${stipendAmount ?? 0} per ${stipendDuration ?? '-'}`);
+    if (hourDuration && hourDuration > 0) details.push(`Hours: ${hourDuration}`);
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO industry_requests (id, department_id, industry_id, internship_title, description, status)
+       VALUES (?, ?, ?, ?, ?, 'PENDING')`,
+    ).bind(id, departmentId, actor.id, internshipTitle, details.join(' | ')).run();
+
+    return created('Industry connect request submitted', { id });
   }
 
   if (request.method === 'GET' && pathname === '/api/college/industries') {
@@ -1181,9 +1274,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            reviewed_by_industry_id = ?,
            reviewed_at = datetime('now'),
            updated_at = datetime('now')
-       WHERE id = ?`,
+       WHERE id = ?
+         AND internship_id IN (SELECT id FROM internships WHERE industry_id = ?)`,
     )
-      .bind(actor.id, applicationId)
+      .bind(actor.id, applicationId, actor.id)
       .run();
 
     if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
@@ -1202,9 +1296,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            reviewed_by_industry_id = ?,
            reviewed_at = datetime('now'),
            updated_at = datetime('now')
-       WHERE id = ?`,
+       WHERE id = ?
+         AND internship_id IN (SELECT id FROM internships WHERE industry_id = ?)`,
     )
-      .bind(actor.id, applicationId)
+      .bind(actor.id, applicationId, actor.id)
       .run();
 
     if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
@@ -1439,6 +1534,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               COALESCE(es.email, s.email) AS student_email,
               COALESCE(es.name, s.name) AS student_name,
               i.title AS internship_title,
+              i.industry_id,
               i.is_paid,
               i.fee,
               i.vacancy,
@@ -1455,9 +1551,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     await env.DB.prepare(
       `UPDATE internship_applications
-       SET status = 'accepted', updated_at = datetime('now')
+       SET status = 'accepted',
+           reviewed_by_industry_id = COALESCE(?, reviewed_by_industry_id),
+           reviewed_at = datetime('now'),
+           updated_at = datetime('now')
        WHERE id = ?`,
-    ).bind(applicationId).run();
+    ).bind(app.industry_id ?? null, applicationId).run();
     await env.DB.prepare(
       `UPDATE internships
        SET vacancy = CASE
