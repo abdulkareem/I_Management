@@ -11,6 +11,7 @@ import type { DepartmentDashboard } from '@/lib/types';
 
 type Industry = { id: string; name: string };
 type ProgramOutcome = { id: string; type: 'PO' | 'PSO'; value: string };
+type OutcomeDefinition = { id: string; code: string; description: string };
 type DepartmentProgram = { id: string; name: string; program_outcomes: string | null; program_specific_outcomes: string | null };
 type IndustryListing = { id: string; title: string; criteria?: string | null; vacancy?: number | null };
 type IndustryDetails = { id: string; name: string; business_activity: string; category: string; listings: IndustryListing[] };
@@ -31,19 +32,23 @@ export default function DepartmentDashboardPage() {
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [editingOutcomeId, setEditingOutcomeId] = useState<string | null>(null);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
-  const [expandedCard, setExpandedCard] = useState<'external' | 'programmes' | 'ideas' | null>('external');
+  const [expandedCard, setExpandedCard] = useState<'external' | 'programmes' | 'ideas' | 'outcomes' | null>('external');
   const [drafts, setDrafts] = useState<Record<string, any>>({});
   const [internshipType, setInternshipType] = useState<InternshipType>('FREE');
   const [stipendFrequency, setStipendFrequency] = useState<StipendFrequency>('MONTH');
+  const [internshipCos, setInternshipCos] = useState<OutcomeDefinition[]>([]);
+  const [internshipPos, setInternshipPos] = useState<OutcomeDefinition[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes] = await Promise.all([
+    const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes] = await Promise.all([
       fetchWithSession<DepartmentDashboard['internships']>('/api/department/internships'),
       fetchWithSession<DepartmentDashboard['applications']>('/api/department/applications'),
       fetchWithSession<DepartmentDashboard['industryRequests']>('/api/department/industry-requests'),
       fetchWithSession<Industry[]>('/api/department/industries'),
       fetchWithSession<DepartmentProgram[]>('/api/department/programs'),
+      fetchWithSession<OutcomeDefinition[]>('/api/department/internship-cos'),
+      fetchWithSession<OutcomeDefinition[]>('/api/department/internship-pos'),
     ]);
 
     const loadedPrograms = (programsRes.data ?? []).map((item: any) => ({
@@ -64,6 +69,8 @@ export default function DepartmentDashboardPage() {
     setDashboard({ internships: internshipsRes.data, applications: applicationsRes.data, industryRequests: requestsRes.data });
     setIndustries((industriesRes.data ?? []).map((item: any) => ({ id: item.id, name: item.name })));
     setPrograms(loadedPrograms);
+    setInternshipCos(cosRes.data ?? []);
+    setInternshipPos(posRes.data ?? []);
   }
 
   useEffect(() => {
@@ -146,8 +153,8 @@ export default function DepartmentDashboardPage() {
   async function createIndustryRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const mappedCo = form.getAll('mappedCo').join(', ');
     const mappedPo = form.getAll('mappedPo').join(', ');
-    const mappedPso = form.getAll('mappedPso').join(', ');
     setError(null);
 
     try {
@@ -158,8 +165,8 @@ export default function DepartmentDashboardPage() {
           internshipTitle: form.get('internshipTitle'),
           description: form.get('description'),
           programId: form.get('programId') || null,
+          mappedCo: mappedCo || null,
           mappedPo: mappedPo || null,
-          mappedPso: mappedPso || null,
         }),
       });
       event.currentTarget.reset();
@@ -179,8 +186,8 @@ export default function DepartmentDashboardPage() {
         internshipTitle: draft.internship_title,
         description: draft.description,
         programId: draft.program_id || null,
+        mappedCo: draft.mapped_co || null,
         mappedPo: draft.mapped_po || null,
-        mappedPso: draft.mapped_pso || null,
       }),
     });
     setEditingIdeaId(null);
@@ -233,6 +240,15 @@ export default function DepartmentDashboardPage() {
     await load();
   }
 
+  async function addInternshipOutcome(type: 'CO' | 'PO') {
+    const code = window.prompt(`Enter ${type} code (eg. ${type}1)`);
+    const description = window.prompt(`Enter ${type} description`);
+    if (!code || !description) return;
+    const endpoint = type === 'CO' ? '/api/department/internship-cos' : '/api/department/internship-pos';
+    await fetchWithSession(endpoint, { method: 'POST', body: JSON.stringify({ code, description }) });
+    await load();
+  }
+
   async function acceptApplication(id: string) {
     await fetchWithSession(`/api/department/applications/${id}/accept`, { method: 'POST' });
     await load();
@@ -245,6 +261,33 @@ export default function DepartmentDashboardPage() {
 
   async function completeApplication(id: string) {
     await fetchWithSession(`/api/department/applications/${id}/complete`, { method: 'POST' });
+    await load();
+  }
+
+  async function enterEvaluation(applicationId: string) {
+    const attendanceMarks = Number(window.prompt('Attendance marks (0-9)', '0') ?? '0');
+    const workRegisterMarks = Number(window.prompt('Work register marks (0-6)', '0') ?? '0');
+    const presentationMarks = Number(window.prompt('Presentation marks (0-14)', '0') ?? '0');
+    const vivaMarks = Number(window.prompt('Viva marks (0-14)', '0') ?? '0');
+    const reportMarks = Number(window.prompt('Report marks (0-7)', '0') ?? '0');
+    await fetchWithSession(`/api/department/applications/${applicationId}/evaluation`, {
+      method: 'POST',
+      body: JSON.stringify({ attendanceMarks, workRegisterMarks, presentationMarks, vivaMarks, reportMarks }),
+    });
+    await load();
+  }
+
+  async function enterOutcomeAssessment(applicationId: string) {
+    const outcomeType = (window.prompt('Outcome type: CO or PO', 'CO') ?? 'CO').toUpperCase();
+    const outcomeId = window.prompt('Enter outcome code (example: CO1 or PO2)', '');
+    const studentScore = Number(window.prompt('Student score (0-5)', '0') ?? '0');
+    const supervisorScore = Number(window.prompt('Internship Provider Organization supervisor score (0-5)', '0') ?? '0');
+    const coordinatorScore = Number(window.prompt('Department coordinator score (0-5)', '0') ?? '0');
+    if (!outcomeId) return;
+    await fetchWithSession(`/api/department/applications/${applicationId}/outcome-assessment`, {
+      method: 'POST',
+      body: JSON.stringify({ outcomeId, outcomeType, studentScore, supervisorScore, coordinatorScore }),
+    });
     await load();
   }
 
@@ -270,7 +313,7 @@ export default function DepartmentDashboardPage() {
             <Link href="/forgot-password" className="rounded-full border border-white/20 px-4 py-2 text-sm text-white">Reset Password</Link>
           </div>
 
-          <section className="grid gap-4 md:grid-cols-3">
+          <section className="grid gap-4 md:grid-cols-4">
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'external' ? null : 'external')}>
                 Create Internship for External Students
@@ -293,7 +336,6 @@ export default function DepartmentDashboardPage() {
                     </select>
                   ) : null}
                   <input name="hourDuration" type="number" min={0} placeholder="Duration in hours (e.g. 60 or 120)" />
-                  <input name="vacancy" type="number" min={0} defaultValue={0} placeholder="Number of vacancies" />
                   <Button>Create Internship</Button>
                 </form>
               ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and create internships for external students.</p>}
@@ -311,19 +353,19 @@ export default function DepartmentDashboardPage() {
             </Card>
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'ideas' ? null : 'ideas')}>
-                Suggest Industry Internship Idea
+                Suggest Internship Provider Organization (IPO) Internship Idea
               </button>
               {expandedCard === 'ideas' ? (
                 <form className="mt-3 grid gap-3" onSubmit={createIndustryRequest}>
                   <select name="industryId" value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)} required>
-                    <option value="">Select registered industry</option>
+                    <option value="">Select registered Internship Provider Organization (IPO)</option>
                     {industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}</option>)}
                   </select>
                   {industryDetails ? (
                     <div className="rounded-lg border border-white/10 p-2 text-sm text-slate-300">
                       <p>Activity: {industryDetails.business_activity}</p>
                       <p>Category: {industryDetails.category || '-'}</p>
-                      <p className="mt-1 font-semibold">Internship listings & vacancies:</p>
+                      <p className="mt-1 font-semibold">Internship Provider Organization (IPO) listings & vacancies:</p>
                       {industryDetails.listings.map((listing) => (
                         <p key={listing.id}>• {listing.title} ({listing.vacancy ?? 0} vacancy)</p>
                       ))}
@@ -338,22 +380,35 @@ export default function DepartmentDashboardPage() {
                   {selectedProgramForIdea ? (
                     <div className="grid gap-2 md:grid-cols-2">
                       <div>
-                        <p className="text-sm font-semibold">Map PO</p>
-                        {selectedProgramOutcomes.filter((entry) => entry.type === 'PO').map((entry) => (
-                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPo" value={entry.value} />{entry.value}</label>
+                        <p className="text-sm font-semibold">Map Internship CO</p>
+                        {internshipCos.map((entry) => (
+                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedCo" value={entry.code} />{entry.code}</label>
                         ))}
                       </div>
                       <div>
-                        <p className="text-sm font-semibold">Map PSO</p>
-                        {selectedProgramOutcomes.filter((entry) => entry.type === 'PSO').map((entry) => (
-                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPso" value={entry.value} />{entry.value}</label>
+                        <p className="text-sm font-semibold">Map Internship PO</p>
+                        {internshipPos.map((entry) => (
+                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPo" value={entry.code} />{entry.code}</label>
                         ))}
                       </div>
                     </div>
                   ) : null}
                   <Button>Submit Idea</Button>
                 </form>
-              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and propose internships to industry partners.</p>}
+              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and propose internships to Internship Provider Organizations (IPOs).</p>}
+            </Card>
+            <Card className="rounded-[20px] p-4">
+              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'outcomes' ? null : 'outcomes')}>
+                Internship Outcomes Setup
+              </button>
+              {expandedCard === 'outcomes' ? (
+                <div className="mt-3 grid gap-2">
+                  <Button onClick={() => addInternshipOutcome('CO')}>Add Internship CO (CO1–CO6)</Button>
+                  <Button onClick={() => addInternshipOutcome('PO')}>Add Internship PO (PO1–PO10)</Button>
+                  <p className="text-xs text-slate-300">COs: {internshipCos.map((entry) => entry.code).join(', ') || '-'}</p>
+                  <p className="text-xs text-slate-300">POs: {internshipPos.map((entry) => entry.code).join(', ') || '-'}</p>
+                </div>
+              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and add CO/PO definitions.</p>}
             </Card>
           </section>
 
@@ -431,7 +486,7 @@ export default function DepartmentDashboardPage() {
             </Card>
 
             <Card className="rounded-[20px] p-5">
-              <h2 className="mb-3 text-xl font-semibold">Suggested Internship Ideas</h2>
+              <h2 className="mb-3 text-xl font-semibold">Suggested Internship Provider Organization (IPO) Ideas</h2>
               {dashboard?.industryRequests?.map((item: any) => (
                 <div key={item.id} className="mb-2 rounded-lg border border-white/10 p-2">
                   {editingIdeaId === item.id ? (
@@ -446,7 +501,7 @@ export default function DepartmentDashboardPage() {
                         <p className="text-xs text-slate-300">Programme: {item.program_name || '-'} • {item.status}</p>
                       </button>
                       {selectedIdeaId === item.id ? (
-                        <p className="mt-1 text-xs text-slate-300">PO Mapping: {item.mapped_po || '-'} • PSO Mapping: {item.mapped_pso || '-'}</p>
+                        <p className="mt-1 text-xs text-slate-300">CO Mapping: {item.mapped_co || '-'} • PO Mapping: {item.mapped_po || '-'}</p>
                       ) : null}
                     </>
                   )}
@@ -485,6 +540,8 @@ export default function DepartmentDashboardPage() {
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
                           {app.status !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
                           <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
+                          <Button variant="secondary" onClick={() => enterEvaluation(app.id)} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => enterOutcomeAssessment(app.id)} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
                         </div>
                       </td>
                     </tr>
@@ -519,6 +576,8 @@ export default function DepartmentDashboardPage() {
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
                           {app.status !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
                           <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
+                          <Button variant="secondary" onClick={() => enterEvaluation(app.id)} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => enterOutcomeAssessment(app.id)} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
                         </div>
                       </td>
                     </tr>

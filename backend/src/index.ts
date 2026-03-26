@@ -81,6 +81,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     || pathname.startsWith('/api/applications')
     || pathname.startsWith('/api/industry-requests')
     || pathname.startsWith('/api/internships')
+    || pathname.startsWith('/api/outcome')
     || pathname.startsWith('/api/dashboard/student')
     || pathname === '/student/dashboard'
     || pathname.startsWith('/api/student/applications')
@@ -1619,6 +1620,114 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Internship marked as completed');
   }
 
+  const applicationEvaluationMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/evaluation$/);
+  if (applicationEvaluationMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const app = await env.DB.prepare(
+      `SELECT ia.id, ia.student_id, ia.external_student_id, ia.completed_at, ia.internship_id
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ia.id = ? AND i.department_id = ?`,
+    ).bind(applicationEvaluationMatch[1], actor.id).first<any>();
+    if (!app) return errorResponse(404, 'Application not found');
+    if (!app.completed_at) return badRequest('Evaluation is allowed only after Mark Completed');
+
+    const attendanceMarks = Number(required(body, ['attendance_marks', 'attendanceMarks']));
+    const workRegisterMarks = Number(required(body, ['work_register_marks', 'workRegisterMarks']));
+    const presentationMarks = Number(required(body, ['presentation_marks', 'presentationMarks']));
+    const vivaMarks = Number(required(body, ['viva_marks', 'vivaMarks']));
+    const reportMarks = Number(required(body, ['report_marks', 'reportMarks']));
+    if ([attendanceMarks, workRegisterMarks, presentationMarks, vivaMarks, reportMarks].some((mark) => Number.isNaN(mark))) return badRequest('All marks are required');
+    if (attendanceMarks < 0 || attendanceMarks > 9 || workRegisterMarks < 0 || workRegisterMarks > 6 || presentationMarks < 0 || presentationMarks > 14 || vivaMarks < 0 || vivaMarks > 14 || reportMarks < 0 || reportMarks > 7) {
+      return badRequest('Marks out of allowed range');
+    }
+    const existing = await env.DB.prepare('SELECT id FROM internship_evaluations WHERE application_id = ?').bind(app.id).first<{ id: string }>();
+    if (existing) return conflict('Evaluation already submitted for this application');
+
+    const ccaTotal = attendanceMarks + workRegisterMarks;
+    const eseTotal = presentationMarks + vivaMarks + reportMarks;
+    const finalTotal = ccaTotal + eseTotal;
+
+    await env.DB.prepare(
+      `INSERT INTO internship_evaluations (
+        id, application_id, student_id, external_student_id, internship_id, attendance_marks, work_register_marks,
+        presentation_marks, viva_marks, report_marks, cca_total, ese_total, final_total
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      app.id,
+      app.student_id ?? null,
+      app.external_student_id ?? null,
+      app.internship_id,
+      attendanceMarks,
+      workRegisterMarks,
+      presentationMarks,
+      vivaMarks,
+      reportMarks,
+      ccaTotal,
+      eseTotal,
+      finalTotal,
+    ).run();
+
+    return created('Evaluation recorded', { ccaTotal, eseTotal, finalTotal });
+  }
+
+  const outcomeEntryMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/outcome-assessment$/);
+  if (outcomeEntryMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const app = await env.DB.prepare(
+      `SELECT ia.id, ia.student_id, ia.external_student_id, ia.completed_at, ia.internship_id
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ia.id = ? AND i.department_id = ?`,
+    ).bind(outcomeEntryMatch[1], actor.id).first<any>();
+    if (!app) return errorResponse(404, 'Application not found');
+    if (!app.completed_at) return badRequest('Outcome assessment is allowed only after Mark Completed');
+
+    const outcomeId = required(body, ['outcome_id', 'outcomeId']);
+    const outcomeType = required(body, ['outcome_type', 'outcomeType']).toUpperCase();
+    const studentScore = Number(required(body, ['student_score', 'studentScore']));
+    const supervisorScore = Number(required(body, ['supervisor_score', 'supervisorScore']));
+    const coordinatorScore = Number(required(body, ['coordinator_score', 'coordinatorScore']));
+    if (!outcomeId || !['CO', 'PO'].includes(outcomeType)) return badRequest('Valid outcome_id and outcome_type (CO/PO) are required');
+    if ([studentScore, supervisorScore, coordinatorScore].some((score) => Number.isNaN(score) || score < 0 || score > 5)) return badRequest('Scores must be between 0 and 5');
+    const weightedScore = Number((studentScore * 0.2 + supervisorScore * 0.5 + coordinatorScore * 0.3).toFixed(2));
+    const percentage = Number(((weightedScore / 5) * 100).toFixed(2));
+    const calculationSteps = `Final Score = (${studentScore} × 0.2) + (${supervisorScore} × 0.5) + (${coordinatorScore} × 0.3) = ${weightedScore}; Percentage = (${weightedScore} / 5) × 100 = ${percentage}%`;
+
+    const existing = await env.DB.prepare(
+      `SELECT id FROM outcome_results
+       WHERE application_id = ? AND outcome_id = ? AND outcome_type = ?`,
+    ).bind(app.id, outcomeId, outcomeType).first<{ id: string }>();
+    if (existing) return conflict('Outcome assessment already submitted for this outcome');
+
+    await env.DB.prepare(
+      `INSERT INTO outcome_results (
+        id, application_id, student_id, external_student_id, internship_id, outcome_id, outcome_type, student_score,
+        supervisor_score, coordinator_score, weighted_score, percentage, calculation_steps
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      app.id,
+      app.student_id ?? null,
+      app.external_student_id ?? null,
+      app.internship_id,
+      outcomeId,
+      outcomeType,
+      studentScore,
+      supervisorScore,
+      coordinatorScore,
+      weightedScore,
+      percentage,
+      calculationSteps,
+    ).run();
+    return created('Outcome assessment recorded', { weightedScore, percentage, calculationSteps });
+  }
+
   if (request.method === 'GET' && pathname === '/api/department/industries') {
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
@@ -1687,6 +1796,58 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(id, actor.id, name, programOutcomes, programSpecificOutcomes).run();
 
     return created('Department program created', { id, name });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/internship-cos') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const rows = await env.DB.prepare(
+      `SELECT id, code, description
+       FROM internship_cos
+       WHERE department_id = ?
+       ORDER BY code ASC`,
+    ).bind(actor.id).all();
+    return ok('Internship COs fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/internship-cos') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const code = required(body, ['code']).toUpperCase();
+    const description = required(body, ['description']);
+    if (!code || !description) return badRequest('code and description are required');
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      'INSERT INTO internship_cos (id, code, description, department_id) VALUES (?, ?, ?, ?)',
+    ).bind(id, code, description, actor.id).run();
+    return created('Internship CO created', { id, code, description });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/internship-pos') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const rows = await env.DB.prepare(
+      `SELECT id, code, description
+       FROM internship_pos
+       WHERE department_id = ?
+       ORDER BY code ASC`,
+    ).bind(actor.id).all();
+    return ok('Internship POs fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/internship-pos') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const code = required(body, ['code']).toUpperCase();
+    const description = required(body, ['description']);
+    if (!code || !description) return badRequest('code and description are required');
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      'INSERT INTO internship_pos (id, code, description, department_id) VALUES (?, ?, ?, ?)',
+    ).bind(id, code, description, actor.id).run();
+    return created('Internship PO created', { id, code, description });
   }
 
   const deleteDepartmentProgramMatch = pathname.match(/^\/api\/department\/programs\/([^/]+)$/);
@@ -1829,6 +1990,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const internshipTitle = required(body, ['internship_title', 'internshipTitle']);
     const description = required(body, ['description']);
     const programId = optional(body, ['program_id', 'programId']);
+    const mappedCo = optional(body, ['mapped_co', 'mappedCo']);
     const mappedPo = optional(body, ['mapped_po', 'mappedPo']);
     const mappedPso = optional(body, ['mapped_pso', 'mappedPso']);
     if (!industryId || !internshipTitle || !description) return badRequest('industry_id, internship_title and description are required');
@@ -1840,9 +2002,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const id = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO industry_requests (id, department_id, industry_id, internship_title, description, program_id, mapped_po, mapped_pso, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
-    ).bind(id, actor.id, industryId, internshipTitle, description, programId, mappedPo, mappedPso).run();
+      `INSERT INTO industry_requests (id, department_id, industry_id, internship_title, description, program_id, mapped_co, mapped_po, mapped_pso, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+    ).bind(id, actor.id, industryId, internshipTitle, description, programId, mappedCo, mappedPo, mappedPso).run();
 
     return created('Industry request submitted', { id });
   }
@@ -1855,14 +2017,15 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const internshipTitle = required(body, ['internship_title', 'internshipTitle']);
     const description = required(body, ['description']);
     const programId = optional(body, ['program_id', 'programId']);
+    const mappedCo = optional(body, ['mapped_co', 'mappedCo']);
     const mappedPo = optional(body, ['mapped_po', 'mappedPo']);
     const mappedPso = optional(body, ['mapped_pso', 'mappedPso']);
     if (!internshipTitle || !description) return badRequest('internship_title and description are required');
     const result = await env.DB.prepare(
       `UPDATE industry_requests
-       SET internship_title = ?, description = ?, program_id = ?, mapped_po = ?, mapped_pso = ?, updated_at = datetime('now')
+       SET internship_title = ?, description = ?, program_id = ?, mapped_co = ?, mapped_po = ?, mapped_pso = ?, updated_at = datetime('now')
        WHERE id = ? AND department_id = ?`,
-    ).bind(internshipTitle, description, programId, mappedPo, mappedPso, departmentIndustryRequestByIdMatch[1], actor.id).run();
+    ).bind(internshipTitle, description, programId, mappedCo, mappedPo, mappedPso, departmentIndustryRequestByIdMatch[1], actor.id).run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry request not found');
     return ok('Industry request updated');
   }
@@ -1904,7 +2067,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const rows = await env.DB.prepare(
-      `SELECT ir.id, ir.internship_title, ir.description, ir.program_id, p.name AS program_name, ir.mapped_po, ir.mapped_pso, ir.status, ir.created_at,
+      `SELECT ir.id, ir.internship_title, ir.description, ir.program_id, p.name AS program_name, ir.mapped_co, ir.mapped_po, ir.mapped_pso, ir.status, ir.created_at,
               ind.id AS industry_id, ind.name AS industry_name
        FROM industry_requests ir
        LEFT JOIN programs p ON p.id = ir.program_id
@@ -2053,6 +2216,44 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       inserted.push(student.id);
     }
     return ok('Students mapped successfully', { mappedStudentIds: inserted });
+  }
+
+  const outcomeReportMatch = pathname.match(/^\/api\/outcome\/report\/([^/]+)$/);
+  if (outcomeReportMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR', 'STUDENT', 'EXTERNAL_STUDENT', 'ADMIN', 'SUPER_ADMIN']);
+    if (actor instanceof Response) return actor;
+    const studentId = outcomeReportMatch[1];
+
+    const rawRows = await env.DB.prepare(
+      `SELECT outcome_id, outcome_type, student_score, supervisor_score, coordinator_score, weighted_score, percentage, calculation_steps
+       FROM outcome_results
+       WHERE student_id = ? OR external_student_id = ?
+       ORDER BY outcome_type, outcome_id`,
+    ).bind(studentId, studentId).all<any>();
+    const rows = rawRows.results ?? [];
+    const coRows = rows.filter((row) => row.outcome_type === 'CO');
+    const poRows = rows.filter((row) => row.outcome_type === 'PO');
+    const coAvg = coRows.length ? Number((coRows.reduce((sum, row) => sum + Number(row.percentage), 0) / coRows.length).toFixed(2)) : 0;
+    const poAvg = poRows.length ? Number((poRows.reduce((sum, row) => sum + Number(row.percentage), 0) / poRows.length).toFixed(2)) : 0;
+
+    const percentages = rows.map((row) => Number(row.percentage));
+    const avg = percentages.length ? Number((percentages.reduce((sum, value) => sum + value, 0) / percentages.length).toFixed(2)) : 0;
+    const strengths = rows.filter((row) => Number(row.percentage) >= 75).map((row) => row.outcome_id);
+    const gaps = rows.filter((row) => Number(row.percentage) < 60).map((row) => row.outcome_id);
+
+    return ok('Outcome report fetched', {
+      raw_scores: rows.map((row) => ({ outcome_id: row.outcome_id, outcome_type: row.outcome_type, student_score: row.student_score, supervisor_score: row.supervisor_score, coordinator_score: row.coordinator_score })),
+      weighted_scores: rows.map((row) => ({ outcome_id: row.outcome_id, weighted_score: row.weighted_score })),
+      calculation_steps: rows.map((row) => ({ outcome_id: row.outcome_id, calculation: row.calculation_steps })),
+      percentages: {
+        outcome_wise: rows.map((row) => ({ outcome_id: row.outcome_id, percentage: row.percentage })),
+        co_achievement: coAvg,
+        po_achievement: poAvg,
+      },
+      classification: classifyPerformance(avg),
+      strengths,
+      gaps,
+    });
   }
 
   return errorResponse(404, 'Route not found');
@@ -2708,6 +2909,7 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
 
   const industryRequestColumns = new Set((await getTableColumns(env, 'industry_requests')).map((column) => column.name));
   if (!industryRequestColumns.has('program_id')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN program_id TEXT').run();
+  if (!industryRequestColumns.has('mapped_co')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN mapped_co TEXT').run();
 
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS department_outcome_mappings (
@@ -2733,6 +2935,101 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     )`,
   ).run();
 
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_cos (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,
+      description TEXT NOT NULL,
+      department_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+      UNIQUE (department_id, code)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_pos (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,
+      description TEXT NOT NULL,
+      department_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+      UNIQUE (department_id, code)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_outcome_map (
+      id TEXT PRIMARY KEY,
+      internship_id TEXT NOT NULL,
+      outcome_id TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('CO', 'PO')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_evaluations (
+      id TEXT PRIMARY KEY,
+      application_id TEXT NOT NULL UNIQUE,
+      student_id TEXT,
+      external_student_id TEXT,
+      internship_id TEXT NOT NULL,
+      attendance_marks REAL NOT NULL,
+      work_register_marks REAL NOT NULL,
+      presentation_marks REAL NOT NULL,
+      viva_marks REAL NOT NULL,
+      report_marks REAL NOT NULL,
+      cca_total REAL NOT NULL,
+      ese_total REAL NOT NULL,
+      final_total REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (application_id) REFERENCES internship_applications(id) ON DELETE CASCADE,
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS outcome_results (
+      id TEXT PRIMARY KEY,
+      application_id TEXT NOT NULL,
+      student_id TEXT,
+      external_student_id TEXT,
+      internship_id TEXT NOT NULL,
+      outcome_id TEXT NOT NULL,
+      outcome_type TEXT NOT NULL CHECK (outcome_type IN ('CO', 'PO')),
+      student_score REAL NOT NULL,
+      supervisor_score REAL NOT NULL,
+      coordinator_score REAL NOT NULL,
+      weighted_score REAL NOT NULL,
+      percentage REAL NOT NULL,
+      calculation_steps TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (application_id) REFERENCES internship_applications(id) ON DELETE CASCADE,
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      UNIQUE (application_id, outcome_id, outcome_type)
+    )`,
+  ).run();
+
+  await env.DB.prepare('DROP VIEW IF EXISTS internship_provider_organizations').run();
+  await env.DB.prepare(
+    `CREATE VIEW internship_provider_organizations AS
+     SELECT id, name, email, business_activity, industry_type_id, status, is_active, created_at, updated_at
+     FROM industries`,
+  ).run();
+  await env.DB.prepare('DROP VIEW IF EXISTS college_ipo_links').run();
+  await env.DB.prepare(
+    `CREATE VIEW college_ipo_links AS
+     SELECT id, college_id, industry_id AS ipo_id, status, requested_by, created_at, updated_at
+     FROM college_industry_links`,
+  ).run();
+
   const industryInternshipColumns = new Set((await getTableColumns(env, 'industry_internships')).map((column) => column.name));
   if (!industryInternshipColumns.has('vacancy')) await env.DB.prepare('ALTER TABLE industry_internships ADD COLUMN vacancy INTEGER').run();
 
@@ -2756,6 +3053,11 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_department_outcome_unique ON department_outcome_mappings(department_id, type, value)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_department_outcome_type ON department_outcome_mappings(department_id, type)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_program_outcome_entries_program ON program_outcome_entries(program_id, type)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_cos_department ON internship_cos(department_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_pos_department ON internship_pos(department_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_outcome_map_internship ON internship_outcome_map(internship_id, type)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_evaluations_application ON internship_evaluations(application_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_outcome_results_student ON outcome_results(student_id, external_student_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status, created_at)').run(),
   ]);
 }
@@ -2847,6 +3149,14 @@ function toBoolean(value: string): boolean | null {
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function classifyPerformance(percentage: number): string {
+  if (percentage < 50) return 'Beginner';
+  if (percentage <= 60) return 'Basic';
+  if (percentage <= 75) return 'Intermediate';
+  if (percentage <= 90) return 'Proficient';
+  return 'Advanced';
 }
 
 function jsonResponse<T>(status: number, body: ApiEnvelope<T>): Response {
