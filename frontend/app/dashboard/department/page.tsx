@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,8 @@ type ProgramOutcome = { id: string; type: 'PO' | 'PSO'; value: string };
 type DepartmentProgram = { id: string; name: string; program_outcomes: string | null; program_specific_outcomes: string | null };
 type IndustryListing = { id: string; title: string; criteria?: string | null; vacancy?: number | null };
 type IndustryDetails = { id: string; name: string; business_activity: string; category: string; listings: IndustryListing[] };
+type InternshipType = 'FREE' | 'PAID' | 'STIPEND';
+type StipendFrequency = 'DAY' | 'WEEK' | 'MONTH';
 
 export default function DepartmentDashboardPage() {
   const router = useRouter();
@@ -30,6 +33,8 @@ export default function DepartmentDashboardPage() {
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
   const [expandedCard, setExpandedCard] = useState<'external' | 'programmes' | 'ideas' | null>('external');
   const [drafts, setDrafts] = useState<Record<string, any>>({});
+  const [internshipType, setInternshipType] = useState<InternshipType>('FREE');
+  const [stipendFrequency, setStipendFrequency] = useState<StipendFrequency>('MONTH');
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -86,21 +91,29 @@ export default function DepartmentDashboardPage() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const fee = Number(form.get('fee') || 0);
+    const stipendAmount = Number(form.get('stipendAmount') || 0);
+    const hourDuration = Number(form.get('hourDuration') || 0);
     setError(null);
+
     try {
       await fetchWithSession('/api/department/internships', {
         method: 'POST',
         body: JSON.stringify({
           title: form.get('title'),
           description: form.get('description'),
-          fee: fee > 0 ? fee : null,
-          isPaid: fee > 0,
-          internshipCategory: fee > 0 ? 'PAID' : (form.get('internshipCategory') || 'FREE'),
+          fee: internshipType === 'PAID' ? fee : null,
+          isPaid: internshipType === 'PAID',
+          internshipCategory: internshipType,
           vacancy: Number(form.get('vacancy') || 0),
+          stipendAmount: internshipType === 'STIPEND' ? stipendAmount : null,
+          stipendDuration: internshipType === 'STIPEND' ? stipendFrequency : null,
+          minimumDays: hourDuration > 0 ? hourDuration : null,
           isExternal: true,
         }),
       });
       event.currentTarget.reset();
+      setInternshipType('FREE');
+      setStipendFrequency('MONTH');
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Failed to create internship');
@@ -116,8 +129,8 @@ export default function DepartmentDashboardPage() {
         title: draft.title,
         description: draft.description,
         fee: fee > 0 ? fee : null,
-        isPaid: fee > 0,
-        internshipCategory: fee > 0 ? 'PAID' : (draft.internship_category || 'FREE'),
+        isPaid: draft.internship_category === 'PAID',
+        internshipCategory: draft.internship_category || 'FREE',
         vacancy: Number(draft.vacancy ?? item.vacancy ?? 0),
       }),
     });
@@ -236,9 +249,13 @@ export default function DepartmentDashboardPage() {
   }
 
   const metrics = useMemo(() => ({ internships: dashboard?.internships.length ?? 0, pendingApplications: dashboard?.applications.filter((item) => item.status === 'pending').length ?? 0, industryIdeas: dashboard?.industryRequests.length ?? 0, programs: programs.length }), [dashboard, programs]);
+  const session = loadSession();
+  const dashboardTitle = `${session?.user?.email?.split('@')[0] ?? 'Department'} Dashboard`;
+  const internalApps = (dashboard?.applications ?? []).filter((item) => item.is_external !== 1 && item.status !== 'rejected');
+  const externalApps = (dashboard?.applications ?? []).filter((item) => item.is_external === 1 && item.status !== 'rejected');
 
   return (
-    <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title="Department Dashboard" subtitle="Manage programs, PO/PSO mapping, internships, ideas and student applications.">
+    <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title={dashboardTitle} subtitle="Manage programs, PO/PSO mapping, internships, ideas and student applications.">
       {() => (
         <>
           {error ? <Card className="rounded-[20px] p-4 text-rose-200">{error}</Card> : null}
@@ -249,6 +266,10 @@ export default function DepartmentDashboardPage() {
             <Card className="rounded-[20px] p-4">Programmes: {metrics.programs}</Card>
           </section>
 
+          <div className="flex justify-end">
+            <Link href="/forgot-password" className="rounded-full border border-white/20 px-4 py-2 text-sm text-white">Reset Password</Link>
+          </div>
+
           <section className="grid gap-4 md:grid-cols-3">
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'external' ? null : 'external')}>
@@ -258,11 +279,20 @@ export default function DepartmentDashboardPage() {
                 <form className="mt-3 grid gap-3" onSubmit={createInternship}>
                   <input name="title" placeholder="Internship title" required />
                   <textarea name="description" placeholder="Description" required />
-                  <select name="internshipCategory" defaultValue="FREE">
+                  <select name="internshipCategory" value={internshipType} onChange={(e) => setInternshipType(e.target.value as InternshipType)}>
                     <option value="FREE">Free Internship</option>
+                    <option value="PAID">Paid Internship</option>
                     <option value="STIPEND">Internship with Stipend</option>
                   </select>
-                  <input name="fee" type="number" min={0} placeholder="Fee (leave empty or 0 for free course)" />
+                  {internshipType !== 'FREE' ? <input name="fee" type="number" min={0} placeholder={internshipType === 'PAID' ? 'Fee amount' : 'Stipend amount'} required /> : null}
+                  {internshipType === 'STIPEND' ? (
+                    <select name="stipendDuration" value={stipendFrequency} onChange={(e) => setStipendFrequency(e.target.value as StipendFrequency)}>
+                      <option value="DAY">Per day</option>
+                      <option value="WEEK">Per week</option>
+                      <option value="MONTH">Per month</option>
+                    </select>
+                  ) : null}
+                  <input name="hourDuration" type="number" min={0} placeholder="Duration in hours (e.g. 60 or 120)" />
                   <input name="vacancy" type="number" min={0} defaultValue={0} placeholder="Number of vacancies" />
                   <Button>Create Internship</Button>
                 </form>
@@ -270,7 +300,7 @@ export default function DepartmentDashboardPage() {
             </Card>
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'programmes' ? null : 'programmes')}>
-                Department Programmes
+                Department Programmes (with PO/PSO)
               </button>
               {expandedCard === 'programmes' ? (
                 <form className="mt-3 grid gap-2" onSubmit={addProgram}>
@@ -286,7 +316,7 @@ export default function DepartmentDashboardPage() {
               {expandedCard === 'ideas' ? (
                 <form className="mt-3 grid gap-3" onSubmit={createIndustryRequest}>
                   <select name="industryId" value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)} required>
-                    <option value="">Select industry</option>
+                    <option value="">Select registered industry</option>
                     {industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}</option>)}
                   </select>
                   {industryDetails ? (
@@ -388,15 +418,7 @@ export default function DepartmentDashboardPage() {
                     <>
                       <p>{item.title}</p>
                       <p className="text-xs text-slate-300">{item.description}</p>
-                      <p className="text-xs text-slate-400">
-                        {item.is_paid ? `Paid • ₹${item.fee ?? 0}` : (item.internship_category === 'STIPEND' ? 'With Stipend' : 'Free')}
-                        {' • '}
-                        Category: {item.internship_category || (item.is_paid ? 'PAID' : 'FREE')}
-                        {' • '}
-                        Vacancy: {item.vacancy ?? 0}
-                        {' • '}
-                        {item.status}
-                      </p>
+                      <p className="text-xs text-slate-400">Category: {item.internship_category || 'FREE'} • Vacancy: {item.vacancy ?? 0} • {item.status}</p>
                     </>
                   )}
                   <div className="mt-2 flex gap-2">
@@ -440,35 +462,69 @@ export default function DepartmentDashboardPage() {
 
           <Card className="rounded-[20px] p-5">
             <h2 className="mb-3 text-xl font-semibold">Internal Applications Submitted by Students</h2>
-            <div className="space-y-2">
-              {dashboard?.applications?.filter((item) => item.is_external !== 1).map((app) => (
-                <div key={app.id} className="rounded-lg border border-white/10 p-3">
-                  <p className="font-medium">{app.student_name} • {app.internship_title}</p>
-                  <p className="text-xs text-slate-300">{app.student_email} • {app.status}</p>
-                  <div className="mt-2 flex gap-2">
-                    <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
-                    <Button variant="secondary" onClick={() => rejectApplication(app.id)} disabled={app.status === 'rejected'}>Reject</Button>
-                    <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-300">
+                    <th className="py-2 pr-3">Student</th>
+                    <th className="py-2 pr-3">Email</th>
+                    <th className="py-2 pr-3">Internship</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {internalApps.map((app) => (
+                    <tr key={app.id} className="border-t border-white/10">
+                      <td className="py-2 pr-3">{app.student_name}</td>
+                      <td className="py-2 pr-3">{app.student_email}</td>
+                      <td className="py-2 pr-3">{app.internship_title}</td>
+                      <td className="py-2 pr-3 uppercase">{app.status}</td>
+                      <td className="py-2 pr-3">
+                        <div className="flex gap-2">
+                          <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
+                          {app.status !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
+                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
 
           <Card className="rounded-[20px] p-5">
             <h2 className="mb-3 text-xl font-semibold">Applications Received from External Students</h2>
-            <div className="space-y-2">
-              {dashboard?.applications?.filter((item) => item.is_external === 1).map((app) => (
-                <div key={app.id} className="rounded-lg border border-white/10 p-3">
-                  <p className="font-medium">{app.student_name} • {app.internship_title}</p>
-                  <p className="text-xs text-slate-300">{app.student_email} • {app.status}</p>
-                  <div className="mt-2 flex gap-2">
-                    <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
-                    <Button variant="secondary" onClick={() => rejectApplication(app.id)} disabled={app.status === 'rejected'}>Reject</Button>
-                    <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-300">
+                    <th className="py-2 pr-3">Student</th>
+                    <th className="py-2 pr-3">Email</th>
+                    <th className="py-2 pr-3">Internship</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {externalApps.map((app) => (
+                    <tr key={app.id} className="border-t border-white/10">
+                      <td className="py-2 pr-3">{app.student_name}</td>
+                      <td className="py-2 pr-3">{app.student_email}</td>
+                      <td className="py-2 pr-3">{app.internship_title}</td>
+                      <td className="py-2 pr-3 uppercase">{app.status}</td>
+                      <td className="py-2 pr-3">
+                        <div className="flex gap-2">
+                          <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
+                          {app.status !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
+                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
         </>
