@@ -71,6 +71,10 @@ export default {
 async function routeRequest(request: Request, env: EnvBindings, url: URL): Promise<Response> {
   const { pathname } = url;
 
+  if (pathname.startsWith('/api/department') || pathname === '/api/college/login' || pathname === '/api/auth/login') {
+    await ensureDepartmentCompatibility(env);
+  }
+
   if (request.method === 'GET' && pathname === '/api/health') {
     return ok('API healthy', { now: new Date().toISOString() });
   }
@@ -1537,6 +1541,24 @@ async function ensureInternshipAllocationsTable(env: EnvBindings): Promise<void>
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_allocations_external_student ON internship_allocations(external_student_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_allocations_industry ON internship_allocations(industry_id)').run(),
   ]);
+}
+
+async function ensureDepartmentCompatibility(env: EnvBindings): Promise<void> {
+  const columns = await getTableColumns(env, 'departments');
+  const names = new Set(columns.map((column) => column.name));
+
+  if (!names.has('is_first_login')) {
+    await env.DB.prepare('ALTER TABLE departments ADD COLUMN is_first_login INTEGER NOT NULL DEFAULT 1').run();
+  }
+
+  if (!names.has('coordinator_mobile')) {
+    await env.DB.prepare('ALTER TABLE departments ADD COLUMN coordinator_mobile TEXT').run();
+  }
+}
+
+async function getTableColumns(env: EnvBindings, tableName: string): Promise<Array<{ name: string }>> {
+  const rows = await env.DB.prepare(`PRAGMA table_info(${tableName})`).all<{ name: string }>();
+  return rows.results ?? [];
 }
 
 function requireRole(request: Request, allowedRoles: AuthSession['user']['role'][]) {
