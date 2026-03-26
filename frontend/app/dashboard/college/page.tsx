@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { DataTable } from '@/components/data-table';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
@@ -17,6 +18,15 @@ export default function CollegeDashboardPage() {
   const [internalApps, setInternalApps] = useState<Application[]>([]);
   const [externalApps, setExternalApps] = useState<Application[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [showDepartmentForm, setShowDepartmentForm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [departmentForm, setDepartmentForm] = useState({
+    name: '',
+    coordinator_name: '',
+    coordinator_email: '',
+    coordinator_mobile: '',
+  });
 
   async function loadAll() {
     const [d, i, ia, ea] = await Promise.all([
@@ -36,12 +46,23 @@ export default function CollegeDashboardPage() {
   }, []);
 
   async function addDepartment() {
-    const name = prompt('Department name');
-    const coordinator_name = prompt('Coordinator name');
-    const coordinator_email = prompt('Coordinator email');
-    if (!name || !coordinator_name || !coordinator_email) return;
-    await fetchWithSession('/api/department/create', { method: 'POST', body: JSON.stringify({ name, coordinator_name, coordinator_email }) });
-    await loadAll();
+    setFormError(null);
+    if (!departmentForm.name || !departmentForm.coordinator_name || !departmentForm.coordinator_email) {
+      setFormError('Please fill department name, coordinator name, and coordinator email.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await fetchWithSession('/api/department/create', { method: 'POST', body: JSON.stringify(departmentForm) });
+      setDepartmentForm({ name: '', coordinator_name: '', coordinator_email: '', coordinator_mobile: '' });
+      setShowDepartmentForm(false);
+      await loadAll();
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : 'Unable to create department.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   async function editDepartment(row: Department) {
@@ -69,11 +90,27 @@ export default function CollegeDashboardPage() {
           <Card className="rounded-[28px] p-5">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold text-white">Department Module</h2>
-              <Button onClick={addDepartment}>Create Department</Button>
+              <Button onClick={() => setShowDepartmentForm((value) => !value)}>{showDepartmentForm ? 'Close Form' : 'Create Department'}</Button>
             </div>
           </Card>
 
-          <DataTable title="Departments" rows={departments} columns={[{ key: 'name', label: 'Department' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'is_first_login', label: 'First Login' }, { key: 'is_active', label: 'Active' }]} actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => editDepartment(row)}>Edit</Button><Button variant="secondary" onClick={() => deleteDepartment(row.id)}>Delete</Button></div>} />
+          {showDepartmentForm ? (
+            <Card className="rounded-[28px] p-5">
+              <h3 className="mb-4 text-lg font-semibold text-white">Create Department</h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input placeholder="Department name" value={departmentForm.name} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, name: event.target.value }))} />
+                <Input placeholder="Department coordinator name" value={departmentForm.coordinator_name} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, coordinator_name: event.target.value }))} />
+                <Input placeholder="Department coordinator email" type="email" value={departmentForm.coordinator_email} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, coordinator_email: event.target.value }))} />
+                <Input placeholder="Mobile number" value={departmentForm.coordinator_mobile} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, coordinator_mobile: event.target.value }))} />
+              </div>
+              {formError ? <p className="mt-3 text-sm text-rose-300">{formError}</p> : null}
+              <div className="mt-4">
+                <Button disabled={isSubmitting} onClick={addDepartment}>{isSubmitting ? 'Submitting...' : 'Submit'}</Button>
+              </div>
+            </Card>
+          ) : null}
+
+          <DataTable title="Departments" rows={departments} columns={[{ key: 'name', label: 'Department' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'coordinator_mobile', label: 'Mobile' }, { key: 'is_first_login', label: 'First Login' }, { key: 'is_active', label: 'Active' }]} actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => editDepartment(row)}>Edit</Button><Button variant="secondary" onClick={() => deleteDepartment(row.id)}>Delete</Button></div>} />
 
           <DataTable title="Linked Industries" rows={industries.map((r) => ({ ...r, id: r.link_id }))} columns={[{ key: 'name', label: 'Industry' }, { key: 'email', label: 'Email' }, { key: 'business_activity', label: 'Business' }, { key: 'status', label: 'Status' }]} actions={(row) => <Button variant="secondary" onClick={() => removeIndustry(row.id)}>Remove</Button>} />
 
