@@ -81,6 +81,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     || pathname.startsWith('/api/applications')
     || pathname.startsWith('/api/industry-requests')
     || pathname.startsWith('/api/internships')
+    || pathname.startsWith('/api/dashboard/student')
+    || pathname === '/student/dashboard'
+    || pathname.startsWith('/api/student/applications')
   ) {
     await ensureDepartmentDashboardSchema(env);
   }
@@ -139,6 +142,21 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   if (request.method === 'GET' && pathname === '/api/industry-types') {
     const rows = await env.DB.prepare('SELECT id, name FROM industry_types WHERE is_active = 1 ORDER BY name ASC').all();
     return ok('Industry types fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/industry-types') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const name = required(body, ['name']);
+    if (!name) return badRequest('name is required');
+
+    const existing = await env.DB.prepare('SELECT id FROM industry_types WHERE lower(name) = lower(?)').bind(name).first<{ id: string }>();
+    if (existing) return conflict('Industry type already exists');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO industry_types (id, name, is_active) VALUES (?, ?, 1)').bind(id, name.trim()).run();
+    return created('Industry type added', { id, name: name.trim() });
   }
 
   if (request.method === 'POST' && pathname === '/api/college/register') {
@@ -1024,13 +1042,18 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
     const internshipId = studentApplyMatch[1];
 
-    const internship = await env.DB.prepare('SELECT id FROM internships WHERE id = ?').bind(internshipId).first();
+    const internship = await env.DB.prepare('SELECT id, is_external FROM internships WHERE id = ?').bind(internshipId).first<{ id: string; is_external: number }>();
     if (!internship) return badRequest('Invalid internship id');
+    if (Number(internship.is_external) !== 1) return forbidden('University policy: apply only to external industry internships');
 
     const duplicate = await env.DB.prepare('SELECT id FROM internship_applications WHERE student_id = ? AND internship_id = ?')
       .bind(actor.id, internshipId)
       .first();
     if (duplicate) return conflict('Application already submitted for this internship');
+
+    const eligibility = await getStudentApplicationEligibility(env, actor.id);
+    if (eligibility.activeLock) return forbidden('Your accepted internship is in progress. Department must mark completion before new applications.');
+    if (eligibility.openApplications >= 3) return forbidden('You can only keep three active applications at a time.');
 
     await env.DB.prepare(
       `INSERT INTO internship_applications (id, student_id, internship_id, status)
@@ -1232,12 +1255,21 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const internship = await env.DB.prepare('SELECT id, is_external FROM internships WHERE id = ?').bind(internshipId).first<{ id: string; is_external: number }>();
     if (!internship) return badRequest('Invalid internship_id');
+    if (actor.role === 'STUDENT' && Number(internship.is_external) !== 1) {
+      return forbidden('University policy: apply only to external industry internships');
+    }
 
     const isExternal = actor.role === 'EXTERNAL_STUDENT' ? 1 : 0;
     const duplicate = actor.role === 'EXTERNAL_STUDENT'
       ? await env.DB.prepare('SELECT id FROM internship_applications WHERE external_student_id = ? AND internship_id = ?').bind(actor.id, internshipId).first()
       : await env.DB.prepare('SELECT id FROM internship_applications WHERE student_id = ? AND internship_id = ?').bind(actor.id, internshipId).first();
     if (duplicate) return conflict('Application already submitted for this internship');
+
+    if (actor.role === 'STUDENT') {
+      const eligibility = await getStudentApplicationEligibility(env, actor.id);
+      if (eligibility.activeLock) return forbidden('Your accepted internship is in progress. Department must mark completion before new applications.');
+      if (eligibility.openApplications >= 3) return forbidden('You can only keep three active applications at a time.');
+    }
 
     await env.DB.prepare(
       `INSERT INTO internship_applications (id, student_id, external_student_id, internship_id, status, is_external)
@@ -1262,7 +1294,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const statusFilter = toText(url.searchParams.get('status')).toLowerCase();
     const statusClause = ['pending', 'accepted', 'rejected'].includes(statusFilter) ? ' AND ia.status = ? ' : '';
     const stmt = env.DB.prepare(
-      `SELECT ia.id, ia.status, ia.created_at, ia.is_external,
+      `SELECT ia.id, ia.status, ia.created_at, ia.is_external, ia.completed_at,
               i.id AS internship_id, i.title AS internship_title, i.is_paid, i.fee,
               d.name AS department_name,
               COALESCE(es.name, s.name) AS student_name,
@@ -1355,6 +1387,25 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found for this department');
     return ok('Application rejected');
+  }
+
+  const completeDepartmentAppMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/complete$/);
+  if (completeDepartmentAppMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const result = await env.DB.prepare(
+      `UPDATE internship_applications
+       SET completed_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ?
+         AND status = 'accepted'
+         AND internship_id IN (SELECT id FROM internships WHERE department_id = ?)`,
+    )
+      .bind(completeDepartmentAppMatch[1], actor.id)
+      .run();
+
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Accepted application not found for this department');
+    return ok('Internship marked as completed');
   }
 
   if (request.method === 'GET' && pathname === '/api/department/industries') {
@@ -1730,8 +1781,22 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   return errorResponse(404, 'Route not found');
 }
 
+async function getStudentApplicationEligibility(env: EnvBindings, studentId: string): Promise<{ openApplications: number; activeLock: boolean }> {
+  const activeRows = await env.DB.prepare(
+    `SELECT ia.status, ia.completed_at
+     FROM internship_applications ia
+     WHERE ia.student_id = ?
+       AND ia.status IN ('pending', 'accepted')`,
+  ).bind(studentId).all<{ status: string; completed_at: string | null }>();
+
+  const rows = activeRows.results ?? [];
+  const openApplications = rows.filter((row) => !row.completed_at).length;
+  const activeLock = rows.some((row) => row.status === 'accepted' && !row.completed_at);
+  return { openApplications, activeLock };
+}
+
 async function loadStudentDashboard(env: EnvBindings, studentId: string): Promise<Response> {
-  const [internships, applications] = await Promise.all([
+  const [legacyInternships, applications, collegeInternships, externalInternships, eligibility] = await Promise.all([
     env.DB.prepare(
       `SELECT i.id, i.title, i.description, ind.name AS industry_name,
               ia.id AS application_id, ia.status AS application_status
@@ -1751,10 +1816,32 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        WHERE ia.student_id = ?
        ORDER BY ia.created_at DESC`,
     ).bind(studentId).all(),
+    env.DB.prepare(
+      `SELECT i.id, i.title, i.description, d.name AS department_name, c.name AS college_name
+       FROM internships i
+       INNER JOIN departments d ON d.id = i.department_id
+       INNER JOIN colleges c ON c.id = d.college_id
+       WHERE i.is_external = 0
+       ORDER BY i.created_at DESC`,
+    ).all(),
+    env.DB.prepare(
+      `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, d.name AS department_name, i.vacancy,
+              ia.id AS application_id, ia.status AS application_status
+       FROM internships i
+       INNER JOIN departments d ON d.id = i.department_id
+       LEFT JOIN industry_internships ii ON ii.title = i.title
+       LEFT JOIN industries ind ON ind.id = ii.industry_id
+       LEFT JOIN internship_applications ia ON ia.internship_id = i.id AND ia.student_id = ?
+       WHERE i.is_external = 1
+       ORDER BY i.created_at DESC`,
+    ).bind(studentId).all(),
+    getStudentApplicationEligibility(env, studentId),
   ]);
 
-  const internshipRows = internships.results ?? [];
+  const internshipRows = legacyInternships.results ?? [];
   const applicationRows = applications.results ?? [];
+  const collegeRows = collegeInternships.results ?? [];
+  const externalRows = externalInternships.results ?? [];
 
   return ok('Student dashboard loaded', {
     internships: internshipRows.map((row: any) => ({
@@ -1772,6 +1859,27 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
       status: String(row.status).toUpperCase(),
       acceptanceUrl: null,
     })),
+    collegeInternships: collegeRows.map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      departmentName: row.department_name,
+      collegeName: row.college_name,
+    })),
+    externalInternships: externalRows.map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      industryName: row.industry_name,
+      departmentName: row.department_name,
+      vacancy: row.vacancy,
+      applied: Boolean(row.application_id),
+      status: row.application_status ? String(row.application_status).toUpperCase() : undefined,
+    })),
+    activeApplicationLock: eligibility.activeLock,
+    maxSelectableApplications: 3,
+    canApplyForExternal: !eligibility.activeLock && eligibility.openApplications < 3,
+    policyNote: 'University rule: students cannot apply to internships hosted by their own institution.',
     journeyCompletion: applicationRows.length > 0 ? 60 : 20,
     journeySteps: [
       { label: 'Profile created', done: true },
@@ -2287,6 +2395,7 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
 
   const applicationColumns = new Set((await getTableColumns(env, 'internship_applications')).map((column) => column.name));
   if (!applicationColumns.has('is_external')) await env.DB.prepare('ALTER TABLE internship_applications ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();
+  if (!applicationColumns.has('completed_at')) await env.DB.prepare('ALTER TABLE internship_applications ADD COLUMN completed_at TEXT').run();
 
   const studentColumns = new Set((await getTableColumns(env, 'students')).map((column) => column.name));
   if (!studentColumns.has('is_external')) await env.DB.prepare('ALTER TABLE students ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();

@@ -16,6 +16,8 @@ export default function SuperAdminDashboardPage() {
   const [students, setStudents] = useState<Entity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedCard, setExpandedCard] = useState<'industry-types' | null>(null);
+  const [industryTypeName, setIndustryTypeName] = useState('');
 
   async function loadAll() {
     setLoading(true);
@@ -61,12 +63,33 @@ export default function SuperAdminDashboardPage() {
     </div>
   );
 
+  async function addIndustryType() {
+    if (!industryTypeName.trim()) return;
+    await fetchWithSession('/api/industry-types', {
+      method: 'POST',
+      body: JSON.stringify({ name: industryTypeName.trim() }),
+    });
+    setIndustryTypeName('');
+    await loadAll();
+  }
+
   return (
     <RoleDashboardShell allowedRoles={['SUPER_ADMIN', 'ADMIN']} title="Super Admin Dashboard" subtitle="Manage all entities from D1 with full CRUD and approvals.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
           {loading ? <Card className="rounded-[28px] p-4">Loading dashboard data...</Card> : null}
+          <Card className="rounded-[20px] p-4">
+            <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'industry-types' ? null : 'industry-types')}>
+              Add Industry Types
+            </button>
+            {expandedCard === 'industry-types' ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <input value={industryTypeName} onChange={(e) => setIndustryTypeName(e.target.value)} placeholder="Type name (e.g., Manufacturing)" />
+                <Button onClick={addIndustryType}>Save Industry Type</Button>
+              </div>
+            ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and add industry categories for registrations.</p>}
+          </Card>
           <DataTable title="Colleges" rows={colleges} columns={[{ key: 'name', label: 'Name' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'status', label: 'Status' }]} actions={actionButtons('college')} />
           <DataTable title="Industries" rows={industries} columns={[{ key: 'name', label: 'Name' }, { key: 'industry_type_name', label: 'Type' }, { key: 'email', label: 'Email' }, { key: 'status', label: 'Status' }]} actions={actionButtons('industry')} />
           <DataTable title="Departments" rows={departments} columns={[{ key: 'name', label: 'Name' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'college_name', label: 'College' }]} actions={actionButtons('department')} />

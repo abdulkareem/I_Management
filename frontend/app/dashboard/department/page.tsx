@@ -28,6 +28,7 @@ export default function DepartmentDashboardPage() {
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [editingOutcomeId, setEditingOutcomeId] = useState<string | null>(null);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
+  const [expandedCard, setExpandedCard] = useState<'external' | 'programmes' | 'ideas' | null>('external');
   const [drafts, setDrafts] = useState<Record<string, any>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -229,6 +230,11 @@ export default function DepartmentDashboardPage() {
     await load();
   }
 
+  async function completeApplication(id: string) {
+    await fetchWithSession(`/api/department/applications/${id}/complete`, { method: 'POST' });
+    await load();
+  }
+
   const metrics = useMemo(() => ({ internships: dashboard?.internships.length ?? 0, pendingApplications: dashboard?.applications.filter((item) => item.status === 'pending').length ?? 0, industryIdeas: dashboard?.industryRequests.length ?? 0, programs: programs.length }), [dashboard, programs]);
 
   return (
@@ -243,28 +249,81 @@ export default function DepartmentDashboardPage() {
             <Card className="rounded-[20px] p-4">Programmes: {metrics.programs}</Card>
           </section>
 
-          <section className="grid gap-4 lg:grid-cols-2">
-            <Card className="rounded-[20px] p-5">
-              <h2 className="mb-3 text-xl font-semibold">Create Internship for External Students</h2>
-              <form className="grid gap-3" onSubmit={createInternship}>
-                <input name="title" placeholder="Internship title" required />
-                <textarea name="description" placeholder="Description" required />
-                <select name="internshipCategory" defaultValue="FREE">
-                  <option value="FREE">Free Internship</option>
-                  <option value="STIPEND">Internship with Stipend</option>
-                </select>
-                <input name="fee" type="number" min={0} placeholder="Fee (leave empty or 0 for free course)" />
-                <input name="vacancy" type="number" min={0} defaultValue={0} placeholder="Number of vacancies" />
-                <Button>Create Internship</Button>
-              </form>
+          <section className="grid gap-4 md:grid-cols-3">
+            <Card className="rounded-[20px] p-4">
+              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'external' ? null : 'external')}>
+                Create Internship for External Students
+              </button>
+              {expandedCard === 'external' ? (
+                <form className="mt-3 grid gap-3" onSubmit={createInternship}>
+                  <input name="title" placeholder="Internship title" required />
+                  <textarea name="description" placeholder="Description" required />
+                  <select name="internshipCategory" defaultValue="FREE">
+                    <option value="FREE">Free Internship</option>
+                    <option value="STIPEND">Internship with Stipend</option>
+                  </select>
+                  <input name="fee" type="number" min={0} placeholder="Fee (leave empty or 0 for free course)" />
+                  <input name="vacancy" type="number" min={0} defaultValue={0} placeholder="Number of vacancies" />
+                  <Button>Create Internship</Button>
+                </form>
+              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and create internships for external students.</p>}
             </Card>
-
-            <Card className="rounded-[20px] p-5">
-              <h2 className="mb-3 text-xl font-semibold">Programme Menu</h2>
-              <form className="grid gap-2" onSubmit={addProgram}>
-                <input name="name" placeholder="Programme name (eg. BSc Physics)" required />
-                <Button>Add Programme</Button>
-              </form>
+            <Card className="rounded-[20px] p-4">
+              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'programmes' ? null : 'programmes')}>
+                Department Programmes
+              </button>
+              {expandedCard === 'programmes' ? (
+                <form className="mt-3 grid gap-2" onSubmit={addProgram}>
+                  <input name="name" placeholder="Programme name (eg. BSc Physics)" required />
+                  <Button>Add Programme</Button>
+                </form>
+              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and manage programme entries.</p>}
+            </Card>
+            <Card className="rounded-[20px] p-4">
+              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'ideas' ? null : 'ideas')}>
+                Suggest Industry Internship Idea
+              </button>
+              {expandedCard === 'ideas' ? (
+                <form className="mt-3 grid gap-3" onSubmit={createIndustryRequest}>
+                  <select name="industryId" value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)} required>
+                    <option value="">Select industry</option>
+                    {industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}</option>)}
+                  </select>
+                  {industryDetails ? (
+                    <div className="rounded-lg border border-white/10 p-2 text-sm text-slate-300">
+                      <p>Activity: {industryDetails.business_activity}</p>
+                      <p>Category: {industryDetails.category || '-'}</p>
+                      <p className="mt-1 font-semibold">Internship listings & vacancies:</p>
+                      {industryDetails.listings.map((listing) => (
+                        <p key={listing.id}>• {listing.title} ({listing.vacancy ?? 0} vacancy)</p>
+                      ))}
+                    </div>
+                  ) : null}
+                  <input name="internshipTitle" placeholder="Internship title" required />
+                  <textarea name="description" placeholder="Idea description" required />
+                  <select name="programId" value={selectedProgramForIdea} onChange={(e) => setSelectedProgramForIdea(e.target.value)}>
+                    <option value="">Select programme</option>
+                    {programs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                  {selectedProgramForIdea ? (
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div>
+                        <p className="text-sm font-semibold">Map PO</p>
+                        {selectedProgramOutcomes.filter((entry) => entry.type === 'PO').map((entry) => (
+                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPo" value={entry.value} />{entry.value}</label>
+                        ))}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">Map PSO</p>
+                        {selectedProgramOutcomes.filter((entry) => entry.type === 'PSO').map((entry) => (
+                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPso" value={entry.value} />{entry.value}</label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <Button>Submit Idea</Button>
+                </form>
+              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and propose internships to industry partners.</p>}
             </Card>
           </section>
 
@@ -306,49 +365,6 @@ export default function DepartmentDashboardPage() {
                 </div>
               ))}
             </div>
-          </Card>
-
-          <Card className="rounded-[20px] p-5">
-            <h2 className="mb-3 text-xl font-semibold">Suggest Industry Internship Idea</h2>
-            <form className="grid gap-3" onSubmit={createIndustryRequest}>
-              <select name="industryId" value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)} required>
-                <option value="">Select industry</option>
-                {industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}</option>)}
-              </select>
-              {industryDetails ? (
-                <div className="rounded-lg border border-white/10 p-2 text-sm text-slate-300">
-                  <p>Activity: {industryDetails.business_activity}</p>
-                  <p>Category: {industryDetails.category || '-'}</p>
-                  <p className="mt-1 font-semibold">Internship listings & vacancies:</p>
-                  {industryDetails.listings.map((listing) => (
-                    <p key={listing.id}>• {listing.title} ({listing.vacancy ?? 0} vacancy)</p>
-                  ))}
-                </div>
-              ) : null}
-              <input name="internshipTitle" placeholder="Internship title" required />
-              <textarea name="description" placeholder="Idea description" required />
-              <select name="programId" value={selectedProgramForIdea} onChange={(e) => setSelectedProgramForIdea(e.target.value)}>
-                <option value="">Select programme</option>
-                {programs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-              {selectedProgramForIdea ? (
-                <div className="grid gap-2 md:grid-cols-2">
-                  <div>
-                    <p className="text-sm font-semibold">Map PO</p>
-                    {selectedProgramOutcomes.filter((entry) => entry.type === 'PO').map((entry) => (
-                      <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPo" value={entry.value} />{entry.value}</label>
-                    ))}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">Map PSO</p>
-                    {selectedProgramOutcomes.filter((entry) => entry.type === 'PSO').map((entry) => (
-                      <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPso" value={entry.value} />{entry.value}</label>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              <Button>Submit Idea</Button>
-            </form>
           </Card>
 
           <section className="grid gap-4 lg:grid-cols-2">
@@ -432,6 +448,7 @@ export default function DepartmentDashboardPage() {
                   <div className="mt-2 flex gap-2">
                     <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
                     <Button variant="secondary" onClick={() => rejectApplication(app.id)} disabled={app.status === 'rejected'}>Reject</Button>
+                    <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
                   </div>
                 </div>
               ))}
@@ -448,6 +465,7 @@ export default function DepartmentDashboardPage() {
                   <div className="mt-2 flex gap-2">
                     <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
                     <Button variant="secondary" onClick={() => rejectApplication(app.id)} disabled={app.status === 'rejected'}>Reject</Button>
+                    <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
                   </div>
                 </div>
               ))}
