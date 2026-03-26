@@ -46,3 +46,9 @@ export interface IndustryDashboard {
   applications?: Array<{ id: string; studentName: string; collegeName: string; opportunityTitle: string; status: string }>;
   approvedColleges?: Array<{ id: string; name: string }>;
 }
+
+export interface DepartmentDashboard {
+  internships: Array<{ id: string; title: string; description: string; is_paid: number; fee?: number | null; is_external: number; status: string; created_at: string }>;
+  applications: Array<{ id: string; status: string; internship_title: string; student_name: string; student_email: string; is_external: number; created_at: string }>;
+  industryRequests: Array<{ id: string; internship_title: string; description: string; mapped_po?: string | null; mapped_pso?: string | null; status: string; industry_name: string }>;
+}

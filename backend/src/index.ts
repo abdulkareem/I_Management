@@ -2,6 +2,7 @@ interface EnvBindings {
   DB: D1Database;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
+  JWT_SECRET?: string;
 }
 
 type Role =
@@ -73,6 +74,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
   if (pathname.startsWith('/api/department') || pathname === '/api/college/login' || pathname === '/api/auth/login') {
     await ensureDepartmentCompatibility(env);
+  }
+  if (
+    pathname.startsWith('/api/department')
+    || pathname.startsWith('/api/applications')
+    || pathname.startsWith('/api/industry-requests')
+    || pathname.startsWith('/api/internships')
+  ) {
+    await ensureDepartmentDashboardSchema(env);
   }
 
   if (request.method === 'GET' && pathname === '/api/health') {
@@ -1070,6 +1079,296 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Application accepted');
   }
 
+  if (request.method === 'GET' && pathname === '/api/internships') {
+    const externalOnly = toText(url.searchParams.get('external')).toLowerCase() === 'true';
+    const query = externalOnly
+      ? `SELECT i.id, i.title, i.description, i.department_id, i.is_paid, i.fee, i.is_external, i.status, i.created_at, d.name AS department_name
+         FROM internships i
+         INNER JOIN departments d ON d.id = i.department_id
+         WHERE i.is_external = 1 AND i.status = 'OPEN'
+         ORDER BY i.created_at DESC`
+      : `SELECT i.id, i.title, i.description, i.department_id, i.is_paid, i.fee, i.is_external, i.status, i.created_at, d.name AS department_name
+         FROM internships i
+         INNER JOIN departments d ON d.id = i.department_id
+         ORDER BY i.created_at DESC`;
+
+    const rows = await env.DB.prepare(query).all();
+    return ok('Internships fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/internships') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const body = await readBody(request);
+    const title = required(body, ['title']);
+    const description = required(body, ['description']);
+    const isPaid = toBoolean(required(body, ['is_paid', 'isPaid'])) ?? false;
+    const isExternal = toBoolean(required(body, ['is_external', 'isExternal'])) ?? true;
+    const feeRaw = optional(body, ['fee']);
+    const fee = feeRaw ? Number(feeRaw) : null;
+
+    if (!title || !description) return badRequest('title and description are required');
+    if (isPaid && (!fee || Number.isNaN(fee) || fee <= 0)) return badRequest('Valid fee is required for paid internships');
+
+    const internshipId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO internships (id, title, description, department_id, is_paid, fee, is_external, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN')`,
+    )
+      .bind(internshipId, title, description, actor.id, isPaid ? 1 : 0, isPaid ? Math.round(fee ?? 0) : null, isExternal ? 1 : 0)
+      .run();
+
+    return created('Department internship created', { id: internshipId });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/internships') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT id, title, description, is_paid, fee, is_external, status, created_at
+       FROM internships
+       WHERE department_id = ?
+       ORDER BY created_at DESC`,
+    ).bind(actor.id).all();
+
+    return ok('Department internships fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/applications') {
+    const body = await readBody(request);
+    const internshipId = required(body, ['internship_id', 'internshipId']);
+    if (!internshipId) return badRequest('internship_id is required');
+
+    const actor = requireRole(request, ['STUDENT', 'EXTERNAL_STUDENT']);
+    if (actor instanceof Response) return actor;
+
+    const internship = await env.DB.prepare('SELECT id, is_external FROM internships WHERE id = ?').bind(internshipId).first<{ id: string; is_external: number }>();
+    if (!internship) return badRequest('Invalid internship_id');
+
+    const isExternal = actor.role === 'EXTERNAL_STUDENT' ? 1 : 0;
+    const duplicate = actor.role === 'EXTERNAL_STUDENT'
+      ? await env.DB.prepare('SELECT id FROM internship_applications WHERE external_student_id = ? AND internship_id = ?').bind(actor.id, internshipId).first()
+      : await env.DB.prepare('SELECT id FROM internship_applications WHERE student_id = ? AND internship_id = ?').bind(actor.id, internshipId).first();
+    if (duplicate) return conflict('Application already submitted for this internship');
+
+    await env.DB.prepare(
+      `INSERT INTO internship_applications (id, student_id, external_student_id, internship_id, status, is_external)
+       VALUES (?, ?, ?, ?, 'pending', ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        actor.role === 'STUDENT' ? actor.id : null,
+        actor.role === 'EXTERNAL_STUDENT' ? actor.id : null,
+        internshipId,
+        isExternal,
+      )
+      .run();
+
+    return created('Application submitted', { internshipId, status: 'pending' });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/applications') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const statusFilter = toText(url.searchParams.get('status')).toLowerCase();
+    const statusClause = ['pending', 'accepted', 'rejected'].includes(statusFilter) ? ' AND ia.status = ? ' : '';
+    const stmt = env.DB.prepare(
+      `SELECT ia.id, ia.status, ia.created_at, ia.is_external,
+              i.id AS internship_id, i.title AS internship_title, i.is_paid, i.fee,
+              d.name AS department_name,
+              COALESCE(es.name, s.name) AS student_name,
+              COALESCE(es.email, s.email) AS student_email
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN departments d ON d.id = i.department_id
+       LEFT JOIN external_students es ON es.id = ia.external_student_id
+       LEFT JOIN students s ON s.id = ia.student_id
+       WHERE i.department_id = ? ${statusClause}
+       ORDER BY ia.created_at DESC`,
+    );
+    const rows = statusClause
+      ? await stmt.bind(actor.id, statusFilter).all()
+      : await stmt.bind(actor.id).all();
+
+    return ok('Department applications fetched', rows.results ?? []);
+  }
+
+  const acceptDepartmentAppMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/accept$/);
+  if (acceptDepartmentAppMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const applicationId = acceptDepartmentAppMatch[1];
+
+    const app = await env.DB.prepare(
+      `SELECT ia.id,
+              ia.student_id,
+              ia.external_student_id,
+              COALESCE(es.email, s.email) AS student_email,
+              COALESCE(es.name, s.name) AS student_name,
+              i.title AS internship_title,
+              i.is_paid,
+              i.fee,
+              d.name AS department_name
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN departments d ON d.id = i.department_id
+       LEFT JOIN external_students es ON es.id = ia.external_student_id
+       LEFT JOIN students s ON s.id = ia.student_id
+       WHERE ia.id = ? AND d.id = ?`,
+    ).bind(applicationId, actor.id).first<any>();
+
+    if (!app) return errorResponse(404, 'Application not found for this department');
+
+    await env.DB.prepare(
+      `UPDATE internship_applications
+       SET status = 'accepted', updated_at = datetime('now')
+       WHERE id = ?`,
+    ).bind(applicationId).run();
+
+    await sendAcceptanceEmail(env, {
+      to: app.student_email,
+      studentName: app.student_name,
+      internshipTitle: app.internship_title,
+      departmentName: app.department_name,
+      isPaid: Number(app.is_paid) === 1,
+      fee: app.fee ? Number(app.fee) : null,
+      joiningInstructions: 'Please report to the department office with valid ID proof within 3 working days.',
+      template: 'external-acceptance',
+    });
+
+    return ok('Application accepted and notification sent');
+  }
+
+  const rejectDepartmentAppMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/reject$/);
+  if (rejectDepartmentAppMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const result = await env.DB.prepare(
+      `UPDATE internship_applications
+       SET status = 'rejected', updated_at = datetime('now')
+       WHERE id = ?
+         AND internship_id IN (SELECT id FROM internships WHERE department_id = ?)`,
+    )
+      .bind(rejectDepartmentAppMatch[1], actor.id)
+      .run();
+
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found for this department');
+    return ok('Application rejected');
+  }
+
+  if (request.method === 'POST' && pathname === '/api/industry-requests') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const industryId = required(body, ['industry_id', 'industryId']);
+    const internshipTitle = required(body, ['internship_title', 'internshipTitle']);
+    const description = required(body, ['description']);
+    const mappedPo = optional(body, ['mapped_po', 'mappedPo']);
+    const mappedPso = optional(body, ['mapped_pso', 'mappedPso']);
+    if (!industryId || !internshipTitle || !description) return badRequest('industry_id, internship_title and description are required');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO industry_requests (id, department_id, industry_id, internship_title, description, mapped_po, mapped_pso, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+    ).bind(id, actor.id, industryId, internshipTitle, description, mappedPo, mappedPso).run();
+
+    return created('Industry request submitted', { id });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/industry-requests') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT ir.id, ir.internship_title, ir.description, ir.mapped_po, ir.mapped_pso, ir.status, ir.created_at,
+              ind.id AS industry_id, ind.name AS industry_name
+       FROM industry_requests ir
+       INNER JOIN industries ind ON ind.id = ir.industry_id
+       WHERE ir.department_id = ?
+       ORDER BY ir.created_at DESC`,
+    ).bind(actor.id).all();
+    return ok('Industry requests fetched', rows.results ?? []);
+  }
+
+  const industryRespondMatch = pathname.match(/^\/api\/industry-requests\/([^/]+)\/respond$/);
+  if (industryRespondMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const status = required(body, ['status']).toUpperCase();
+    if (!['ACCEPTED', 'REJECTED'].includes(status)) return badRequest('status must be ACCEPTED or REJECTED');
+
+    const result = await env.DB.prepare(
+      `UPDATE industry_requests
+       SET status = ?, updated_at = datetime('now')
+       WHERE id = ? AND industry_id = ?`,
+    )
+      .bind(status, industryRespondMatch[1], actor.id)
+      .run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry request not found');
+    return ok(`Industry request ${status.toLowerCase()}`);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/map-students') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const industryRequestId = required(body, ['industry_request_id', 'industryRequestId']);
+    const studentIds = body.student_ids;
+    if (!industryRequestId || !Array.isArray(studentIds) || studentIds.length === 0) {
+      return badRequest('industry_request_id and student_ids[] are required');
+    }
+
+    const requestRow = await env.DB.prepare(
+      `SELECT id, industry_id, internship_title, status
+       FROM industry_requests
+       WHERE id = ? AND department_id = ?`,
+    ).bind(industryRequestId, actor.id).first<{ id: string; industry_id: string; internship_title: string; status: string }>();
+
+    if (!requestRow) return badRequest('Invalid industry_request_id');
+    if (requestRow.status !== 'ACCEPTED') return badRequest('Industry request must be ACCEPTED before mapping students');
+
+    const internship = await env.DB.prepare(
+      `SELECT id FROM internships
+       WHERE department_id = ? AND title = ?
+       ORDER BY created_at DESC LIMIT 1`,
+    ).bind(actor.id, requestRow.internship_title).first<{ id: string }>();
+    if (!internship) return badRequest('Create a matching internship before student mapping');
+
+    const inserted: string[] = [];
+    for (const studentIdRaw of studentIds) {
+      const studentId = toText(studentIdRaw);
+      if (!studentId) continue;
+      const student = await env.DB.prepare(
+        'SELECT id, name, email FROM students WHERE id = ? AND department_id = ?',
+      ).bind(studentId, actor.id).first<{ id: string; name: string; email: string }>();
+      if (!student) continue;
+
+      await env.DB.prepare(
+        `INSERT INTO internship_allocations (id, student_id, external_student_id, industry_id, internship_id, project_details, status)
+         VALUES (?, ?, NULL, ?, ?, ?, 'allocated')`,
+      ).bind(crypto.randomUUID(), student.id, requestRow.industry_id, internship.id, 'Mapped by department').run();
+
+      await sendAcceptanceEmail(env, {
+        to: student.email,
+        studentName: student.name,
+        internshipTitle: requestRow.internship_title,
+        departmentName: 'Department Coordinator Office',
+        isPaid: false,
+        fee: null,
+        joiningInstructions: 'You have been mapped to an industry internship. Please check your student dashboard for details.',
+        template: 'internal-mapping',
+      });
+      inserted.push(student.id);
+    }
+    return ok('Students mapped successfully', { mappedStudentIds: inserted });
+  }
+
   return errorResponse(404, 'Route not found');
 }
 
@@ -1474,6 +1773,68 @@ async function sendOtpEmail(env: EnvBindings, to: string, otp: string): Promise<
   }
 }
 
+type AcceptanceEmailPayload = {
+  to: string;
+  studentName: string;
+  internshipTitle: string;
+  departmentName: string;
+  isPaid: boolean;
+  fee: number | null;
+  joiningInstructions: string;
+  template: 'external-acceptance' | 'internal-mapping';
+};
+
+async function sendAcceptanceEmail(env: EnvBindings, payload: AcceptanceEmailPayload): Promise<void> {
+  if (!payload.to) {
+    await logEmailFailure(env, payload.template, null, 'Missing recipient email');
+    return;
+  }
+  if (!env.RESEND_API_KEY) {
+    await logEmailFailure(env, payload.template, payload.to, 'RESEND_API_KEY is missing');
+    return;
+  }
+
+  const subject = payload.template === 'external-acceptance'
+    ? `Internship Acceptance: ${payload.internshipTitle}`
+    : `Internship Mapping Confirmed: ${payload.internshipTitle}`;
+
+  const html = `<p>Dear ${payload.studentName},</p>
+<p>Congratulations! You have been selected for <strong>${payload.internshipTitle}</strong>.</p>
+<p>Department: <strong>${payload.departmentName}</strong></p>
+<p>Type: <strong>${payload.isPaid ? `Paid (₹${payload.fee ?? 0})` : 'Free'}</strong></p>
+<p>${payload.joiningInstructions}</p>
+<p>Regards,<br/>Internship Management Team</p>`;
+
+  let attempt = 0;
+  let lastError = '';
+  while (attempt < 2) {
+    attempt += 1;
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: env.RESEND_FROM_EMAIL || 'noreply@aureliv.in',
+        to: payload.to,
+        subject,
+        html,
+      }),
+    });
+    if (res.ok) return;
+    lastError = await res.text();
+  }
+  await logEmailFailure(env, payload.template, payload.to, lastError || 'Unknown email failure');
+}
+
+async function logEmailFailure(env: EnvBindings, type: string, recipient: string | null, errorMessage: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO email_logs (id, email_type, recipient, status, error_message)
+     VALUES (?, ?, ?, 'FAILED', ?)`,
+  ).bind(crypto.randomUUID(), type, recipient, errorMessage).run();
+}
+
 
 
 function generatePassword(length = 10): string {
@@ -1556,6 +1917,57 @@ async function ensureDepartmentCompatibility(env: EnvBindings): Promise<void> {
   }
 }
 
+async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> {
+  const internshipColumns = new Set((await getTableColumns(env, 'internships')).map((column) => column.name));
+  if (!internshipColumns.has('is_external')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('is_paid')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN is_paid INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('fee')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN fee INTEGER').run();
+  if (!internshipColumns.has('industry_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN industry_id TEXT').run();
+  if (!internshipColumns.has('status')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN status TEXT NOT NULL DEFAULT 'OPEN'").run();
+
+  const applicationColumns = new Set((await getTableColumns(env, 'internship_applications')).map((column) => column.name));
+  if (!applicationColumns.has('is_external')) await env.DB.prepare('ALTER TABLE internship_applications ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();
+
+  const studentColumns = new Set((await getTableColumns(env, 'students')).map((column) => column.name));
+  if (!studentColumns.has('is_external')) await env.DB.prepare('ALTER TABLE students ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS industry_requests (
+      id TEXT PRIMARY KEY,
+      department_id TEXT NOT NULL,
+      industry_id TEXT NOT NULL,
+      internship_title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      mapped_po TEXT,
+      mapped_pso TEXT,
+      status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACCEPTED', 'REJECTED')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+      FOREIGN KEY (industry_id) REFERENCES industries(id) ON DELETE CASCADE
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS email_logs (
+      id TEXT PRIMARY KEY,
+      email_type TEXT NOT NULL,
+      recipient TEXT,
+      status TEXT NOT NULL CHECK (status IN ('FAILED', 'SENT')),
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ).run();
+
+  await Promise.all([
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internships_external_status ON internships(is_external, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_applications_external_status ON internship_applications(is_external, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_industry_requests_department ON industry_requests(department_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_industry_requests_industry ON industry_requests(industry_id, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status, created_at)').run(),
+  ]);
+}
+
 async function getTableColumns(env: EnvBindings, tableName: string): Promise<Array<{ name: string }>> {
   const rows = await env.DB.prepare(`PRAGMA table_info(${tableName})`).all<{ name: string }>();
   return rows.results ?? [];
@@ -1624,6 +2036,14 @@ function optional(body: JsonMap, keys: string[]): string | null {
 
 function toText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function toBoolean(value: string): boolean | null {
+  const normalized = value.toLowerCase();
+  if (!normalized) return null;
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return null;
 }
 
 function normalizeEmail(value: string): string {
