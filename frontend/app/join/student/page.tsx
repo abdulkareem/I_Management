@@ -7,12 +7,11 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
+import { loginWithPassword } from '@/lib/auth';
 
 type College = { id: string; collegeName: string };
 type Department = { id: string; name: string; collegeId: string };
-type Course = { id: string; name: string; departmentId: string };
-
-const programmes = ['BSc', 'BA', 'MSc'];
+type Program = { id: string; name: string; departmentId: string };
 
 export default function StudentJoinPage() {
   const router = useRouter();
@@ -20,9 +19,10 @@ export default function StudentJoinPage() {
   const [loading, setLoading] = useState(false);
   const [colleges, setColleges] = useState<College[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [collegeId, setCollegeId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
+  const [programId, setProgramId] = useState('');
 
   useEffect(() => {
     apiRequest<College[]>('/api/colleges')
@@ -34,6 +34,8 @@ export default function StudentJoinPage() {
     if (!collegeId) {
       setDepartments([]);
       setDepartmentId('');
+      setProgramId('');
+      setPrograms([]);
       return;
     }
 
@@ -44,13 +46,14 @@ export default function StudentJoinPage() {
 
   useEffect(() => {
     if (!departmentId) {
-      setCourses([]);
+      setPrograms([]);
+      setProgramId('');
       return;
     }
 
-    apiRequest<Course[]>(`/api/courses?departmentId=${encodeURIComponent(departmentId)}`)
-      .then((response) => setCourses(response.data))
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load courses.'));
+    apiRequest<Program[]>(`/api/programs?departmentId=${encodeURIComponent(departmentId)}`)
+      .then((response) => setPrograms(response.data))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load programmes.'));
   }, [departmentId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -72,13 +75,13 @@ export default function StudentJoinPage() {
           email: form.get('email'),
           password: form.get('password'),
           universityRegNumber: form.get('universityRegNumber'),
-          programme: form.get('programme'),
           collegeId: form.get('collegeId'),
           departmentId: form.get('departmentId'),
-          courseId: form.get('courseId'),
+          programId: form.get('programId'),
         }),
       });
-      router.push('/login');
+      await loginWithPassword(String(form.get('email')), String(form.get('password')));
+      router.push('/dashboard/student');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to create student account.');
     } finally {
@@ -97,13 +100,6 @@ export default function StudentJoinPage() {
           <div className="space-y-2"><label htmlFor="studentName">Student Name</label><input id="studentName" name="studentName" required /></div>
           <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
           <div className="space-y-2"><label htmlFor="universityRegNumber">University Reg Number</label><input id="universityRegNumber" name="universityRegNumber" required /></div>
-          <div className="space-y-2">
-            <label htmlFor="programme">Programme</label>
-            <select id="programme" name="programme" required defaultValue="">
-              <option value="" disabled>Select programme</option>
-              {programmes.map((programme) => <option key={programme} value={programme}>{programme}</option>)}
-            </select>
-          </div>
           <div className="space-y-2">
             <label htmlFor="collegeId">College</label>
             <select id="collegeId" name="collegeId" required value={collegeId} onChange={(event) => setCollegeId(event.target.value)}>
@@ -126,10 +122,10 @@ export default function StudentJoinPage() {
             </select>
           </div>
           <div className="space-y-2">
-            <label htmlFor="courseId">Course</label>
-            <select id="courseId" name="courseId" required disabled={!departmentId}>
-              <option value="" disabled>Select course</option>
-              {courses.map((course) => <option key={course.id} value={course.id}>{course.name}</option>)}
+            <label htmlFor="programId">Programme</label>
+            <select id="programId" name="programId" required value={programId} onChange={(event) => setProgramId(event.target.value)} disabled={!departmentId}>
+              <option value="" disabled>Select programme</option>
+              {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
             </select>
           </div>
           <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>

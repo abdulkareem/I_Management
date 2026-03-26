@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS students (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   phone TEXT,
+  university_reg_number TEXT,
   college_id TEXT NOT NULL,
   department_id TEXT NOT NULL,
   program_id TEXT NOT NULL,
