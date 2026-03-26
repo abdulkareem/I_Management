@@ -18,21 +18,24 @@ export default function SuperAdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedCard, setExpandedCard] = useState<'industry-types' | null>(null);
   const [industryTypeName, setIndustryTypeName] = useState('');
+  const [industryTypes, setIndustryTypes] = useState<Entity[]>([]);
 
   async function loadAll() {
     setLoading(true);
     setError(null);
     try {
-      const [collegesRes, industriesRes, departmentsRes, studentsRes] = await Promise.all([
+      const [collegesRes, industriesRes, departmentsRes, studentsRes, typesRes] = await Promise.all([
         fetchWithSession<Entity[]>('/api/admin/colleges'),
         fetchWithSession<Entity[]>('/api/admin/industries'),
         fetchWithSession<Entity[]>('/api/admin/departments'),
         fetchWithSession<Entity[]>('/api/admin/students'),
+        fetchWithSession<Entity[]>('/api/industry-types'),
       ]);
       setColleges(collegesRes.data);
       setIndustries(industriesRes.data);
       setDepartments(departmentsRes.data);
       setStudents(studentsRes.data);
+      setIndustryTypes(typesRes.data);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to load superadmin data.');
     } finally {
@@ -73,6 +76,18 @@ export default function SuperAdminDashboardPage() {
     await loadAll();
   }
 
+  async function editIndustryType(row: Entity) {
+    const name = prompt('Edit industry type', String(row.name ?? ''))?.trim();
+    if (!name || name === row.name) return;
+    await fetchWithSession(`/api/industry-types/${row.id}`, { method: 'PUT', body: JSON.stringify({ name }) });
+    await loadAll();
+  }
+
+  async function deleteIndustryType(id: string) {
+    await fetchWithSession(`/api/industry-types/${id}`, { method: 'DELETE' });
+    await loadAll();
+  }
+
   return (
     <RoleDashboardShell allowedRoles={['SUPER_ADMIN', 'ADMIN']} title="Super Admin Dashboard" subtitle="Manage all entities from D1 with full CRUD and approvals.">
       {() => (
@@ -90,6 +105,17 @@ export default function SuperAdminDashboardPage() {
               </div>
             ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and add industry categories for registrations.</p>}
           </Card>
+          <DataTable
+            title="Industry Types"
+            rows={industryTypes}
+            columns={[{ key: 'name', label: 'Type Name' }]}
+            actions={(row) => (
+              <div className="space-x-2">
+                <Button variant="secondary" onClick={() => editIndustryType(row)}>Edit</Button>
+                <Button variant="secondary" onClick={() => deleteIndustryType(row.id)}>Delete</Button>
+              </div>
+            )}
+          />
           <DataTable title="Colleges" rows={colleges} columns={[{ key: 'name', label: 'Name' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'status', label: 'Status' }]} actions={actionButtons('college')} />
           <DataTable title="Industries" rows={industries} columns={[{ key: 'name', label: 'Name' }, { key: 'industry_type_name', label: 'Type' }, { key: 'email', label: 'Email' }, { key: 'status', label: 'Status' }]} actions={actionButtons('industry')} />
           <DataTable title="Departments" rows={departments} columns={[{ key: 'name', label: 'Name' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'college_name', label: 'College' }]} actions={actionButtons('department')} />

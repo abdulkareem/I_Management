@@ -1,10 +1,12 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ArrowRight, BadgeCheck, Building2, Factory, GraduationCap, HeartHandshake, Sparkles, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Building2, Factory, GraduationCap, HeartHandshake, Sparkles, Zap } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { ButtonLink } from './ui/button';
 import { Card } from './ui/card';
+import { apiRequest } from '@/lib/api';
 
 const roleCards = [
   {
@@ -31,15 +33,16 @@ const roleCards = [
     description: 'Request partnerships, publish internships in under 30 seconds, and accept students instantly.',
     icon: Factory,
   },
-  {
-    href: '/external-student/apply',
-    title: 'External Student',
-    description: 'Apply for internships offered by departments in registered colleges.',
-    icon: BadgeCheck,
-  },
 ];
 
 export function LandingPage() {
+  const [stats, setStats] = useState<{ students: number; colleges: number; industries: number; vacancies: number; applied: number; completed: number } | null>(null);
+  useEffect(() => {
+    apiRequest<{ students: number; colleges: number; industries: number; vacancies: number; applied: number; completed: number }>('/api/public/stats')
+      .then((res) => setStats(res.data))
+      .catch(() => setStats(null));
+  }, []);
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-10 px-4 py-6 sm:px-6 lg:px-8">
       <section className="relative overflow-hidden rounded-[40px] border border-white/10 bg-slate-950/70 px-6 py-8 shadow-[0_30px_120px_rgba(15,23,42,0.45)] sm:px-10 sm:py-12">
@@ -101,7 +104,7 @@ export function LandingPage() {
                         <p className="font-semibold text-white">{title}</p>
                         <p className="text-sm text-slate-300">{status}</p>
                       </div>
-                      <BadgeCheck className="h-5 w-5 text-emerald-300" />
+                      <Sparkles className="h-5 w-5 text-emerald-300" />
                     </div>
                     <div className="mt-4 h-2 rounded-full bg-white/10">
                       <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: progress }} />
@@ -115,6 +118,23 @@ export function LandingPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
+        {stats ? (
+          <>
+            {[
+              ['Registered Students', stats.students],
+              ['Registered Colleges', stats.colleges],
+              ['Registered Industries', stats.industries],
+              ['Internship Vacancies', stats.vacancies],
+              ['Applications Submitted', stats.applied],
+              ['Internships Completed', stats.completed],
+            ].map(([label, value]) => (
+              <Card key={String(label)} className="rounded-[28px] p-6">
+                <p className="text-sm text-slate-300">{label}</p>
+                <p className="mt-2 text-3xl font-bold text-white">{String(value)}</p>
+              </Card>
+            ))}
+          </>
+        ) : null}
         {[
           { icon: HeartHandshake, title: 'Only approved internships', body: 'Students only see opportunities from industries with accepted MoUs for their college.' },
           { icon: Zap, title: 'Fast approvals', body: 'Coordinators review requests, sign MoUs, and unlock student access in one tap.' },
