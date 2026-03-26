@@ -1126,17 +1126,33 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const isExternal = toBoolean(required(body, ['is_external', 'isExternal'])) ?? true;
     const feeRaw = optional(body, ['fee']);
     const fee = feeRaw ? Number(feeRaw) : null;
+    const categoryRaw = toText(optional(body, ['internship_category', 'internshipCategory'])).toUpperCase();
+    const requestedCategory = ['FREE', 'PAID', 'STIPEND'].includes(categoryRaw) ? categoryRaw : null;
+    const vacancyRaw = optional(body, ['vacancy']);
+    const vacancy = vacancyRaw ? Number(vacancyRaw) : null;
     const isPaid = explicitIsPaid ?? Boolean(fee && fee > 0);
+    const internshipCategory = isPaid ? 'PAID' : (requestedCategory ?? 'FREE');
 
     if (!title || !description) return badRequest('title and description are required');
     if (isPaid && (!fee || Number.isNaN(fee) || fee <= 0)) return badRequest('Valid fee is required for paid internships');
+    if (vacancy !== null && (Number.isNaN(vacancy) || vacancy < 0)) return badRequest('vacancy must be a non-negative number');
 
     const internshipId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, is_paid, fee, is_external, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN')`,
+      `INSERT INTO internships (id, title, description, department_id, is_paid, fee, internship_category, vacancy, is_external, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')`,
     )
-      .bind(internshipId, title, description, actor.id, isPaid ? 1 : 0, isPaid ? Math.round(fee ?? 0) : null, isExternal ? 1 : 0)
+      .bind(
+        internshipId,
+        title,
+        description,
+        actor.id,
+        isPaid ? 1 : 0,
+        isPaid ? Math.round(fee ?? 0) : null,
+        internshipCategory,
+        vacancy === null ? 0 : Math.floor(vacancy),
+        isExternal ? 1 : 0,
+      )
       .run();
 
     return created('Department internship created', { id: internshipId });
@@ -1153,15 +1169,30 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const fee = feeRaw ? Number(feeRaw) : null;
     const explicitIsPaidRaw = optional(body, ['is_paid', 'isPaid']);
     const explicitIsPaid = explicitIsPaidRaw ? toBoolean(explicitIsPaidRaw) : null;
+    const categoryRaw = toText(optional(body, ['internship_category', 'internshipCategory'])).toUpperCase();
+    const requestedCategory = ['FREE', 'PAID', 'STIPEND'].includes(categoryRaw) ? categoryRaw : null;
+    const vacancyRaw = optional(body, ['vacancy']);
+    const vacancy = vacancyRaw ? Number(vacancyRaw) : null;
     const isPaid = explicitIsPaid ?? Boolean(fee && fee > 0);
+    const internshipCategory = isPaid ? 'PAID' : (requestedCategory ?? 'FREE');
     if (!title || !description) return badRequest('title and description are required');
     if (isPaid && (!fee || Number.isNaN(fee) || fee <= 0)) return badRequest('Valid fee is required for paid internships');
+    if (vacancy !== null && (Number.isNaN(vacancy) || vacancy < 0)) return badRequest('vacancy must be a non-negative number');
 
     const result = await env.DB.prepare(
       `UPDATE internships
-       SET title = ?, description = ?, is_paid = ?, fee = ?, updated_at = datetime('now')
+       SET title = ?, description = ?, is_paid = ?, fee = ?, internship_category = ?, vacancy = COALESCE(?, vacancy), updated_at = datetime('now')
        WHERE id = ? AND department_id = ?`,
-    ).bind(title, description, isPaid ? 1 : 0, isPaid ? Math.round(fee ?? 0) : null, updateDepartmentInternshipMatch[1], actor.id).run();
+    ).bind(
+      title,
+      description,
+      isPaid ? 1 : 0,
+      isPaid ? Math.round(fee ?? 0) : null,
+      internshipCategory,
+      vacancy === null ? null : Math.floor(vacancy),
+      updateDepartmentInternshipMatch[1],
+      actor.id,
+    ).run();
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Internship not found');
     return ok('Department internship updated');
@@ -1182,7 +1213,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const rows = await env.DB.prepare(
-      `SELECT id, title, description, is_paid, fee, is_external, status, created_at
+      `SELECT id, title, description, is_paid, fee, internship_category, vacancy, is_external, status, created_at
        FROM internships
        WHERE department_id = ?
        ORDER BY created_at DESC`,
@@ -1266,6 +1297,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               i.title AS internship_title,
               i.is_paid,
               i.fee,
+              i.vacancy,
               d.name AS department_name
        FROM internship_applications ia
        INNER JOIN internships i ON i.id = ia.internship_id
@@ -1281,6 +1313,16 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       `UPDATE internship_applications
        SET status = 'accepted', updated_at = datetime('now')
        WHERE id = ?`,
+    ).bind(applicationId).run();
+    await env.DB.prepare(
+      `UPDATE internships
+       SET vacancy = CASE
+          WHEN vacancy IS NULL THEN NULL
+          WHEN vacancy > 0 THEN vacancy - 1
+          ELSE 0
+       END,
+       updated_at = datetime('now')
+       WHERE id = (SELECT internship_id FROM internship_applications WHERE id = ?)`,
     ).bind(applicationId).run();
 
     await sendAcceptanceEmail(env, {
@@ -2238,6 +2280,8 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   if (!internshipColumns.has('is_external')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('is_paid')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN is_paid INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('fee')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN fee INTEGER').run();
+  if (!internshipColumns.has('internship_category')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN internship_category TEXT NOT NULL DEFAULT 'FREE'").run();
+  if (!internshipColumns.has('vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('industry_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN industry_id TEXT').run();
   if (!internshipColumns.has('status')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN status TEXT NOT NULL DEFAULT 'OPEN'").run();
 

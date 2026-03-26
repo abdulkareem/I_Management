@@ -48,7 +48,7 @@ export interface IndustryDashboard {
 }
 
 export interface DepartmentDashboard {
-  internships: Array<{ id: string; title: string; description: string; is_paid: number; fee?: number | null; is_external: number; status: string; created_at: string }>;
+  internships: Array<{ id: string; title: string; description: string; is_paid: number; fee?: number | null; internship_category?: 'FREE' | 'PAID' | 'STIPEND' | null; vacancy?: number | null; is_external: number; status: string; created_at: string }>;
   applications: Array<{ id: string; status: string; internship_title: string; student_name: string; student_email: string; is_external: number; created_at: string }>;
   industryRequests: Array<{ id: string; internship_title: string; description: string; mapped_po?: string | null; mapped_pso?: string | null; status: string; industry_name: string }>;
 }
