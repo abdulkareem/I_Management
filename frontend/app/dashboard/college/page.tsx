@@ -81,6 +81,11 @@ export default function CollegeDashboardPage() {
     await loadAll();
   }
 
+  async function decideApplication(id: string, action: 'accept' | 'reject') {
+    await fetchWithSession(`/api/college/applications/${id}/${action}`, { method: 'POST' });
+    await loadAll();
+  }
+
   return (
     <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN', 'COLLEGE_COORDINATOR']} title="College Dashboard" subtitle="Departments, industries, applications, and allocations are fully connected to D1.">
       {() => (
@@ -114,9 +119,19 @@ export default function CollegeDashboardPage() {
 
           <DataTable title="Linked Industries" rows={industries.map((r) => ({ ...r, id: r.link_id }))} columns={[{ key: 'name', label: 'Industry' }, { key: 'email', label: 'Email' }, { key: 'business_activity', label: 'Business' }, { key: 'status', label: 'Status' }]} actions={(row) => <Button variant="secondary" onClick={() => removeIndustry(row.id)}>Remove</Button>} />
 
-          <DataTable title="Internal Applications" rows={internalApps} columns={[{ key: 'student_name', label: 'Student' }, { key: 'student_email', label: 'Email' }, { key: 'internship_title', label: 'Internship' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Applied At' }]} />
+          <DataTable
+            title="Internal Applications"
+            rows={internalApps}
+            columns={[{ key: 'student_name', label: 'Student' }, { key: 'student_email', label: 'Email' }, { key: 'internship_title', label: 'Internship' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Applied At' }]}
+            actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => decideApplication(row.id, 'accept')}>Accept</Button><Button variant="secondary" onClick={() => decideApplication(row.id, 'reject')}>Reject</Button></div>}
+          />
 
-          <DataTable title="External Applications" rows={externalApps} columns={[{ key: 'student_name', label: 'Student' }, { key: 'student_email', label: 'Email' }, { key: 'internship_title', label: 'Internship' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Applied At' }]} />
+          <DataTable
+            title="External Applications"
+            rows={externalApps}
+            columns={[{ key: 'student_name', label: 'Student' }, { key: 'student_email', label: 'Email' }, { key: 'internship_title', label: 'Internship' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Applied At' }]}
+            actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => decideApplication(row.id, 'accept')}>Accept</Button><Button variant="secondary" onClick={() => decideApplication(row.id, 'reject')}>Reject</Button></div>}
+          />
         </>
       )}
     </RoleDashboardShell>

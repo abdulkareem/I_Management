@@ -26,7 +26,7 @@ export interface SessionProfile {
 export interface StudentDashboard {
   internships: Array<{ id: string; title: string; description: string; industryName: string; applied: boolean; status?: string }>;
   collegeInternships?: Array<{ id: string; title: string; description: string; departmentName: string; collegeName: string }>;
-  externalInternships?: Array<{ id: string; title: string; description: string; industryName: string; departmentName: string; vacancy?: number | null; applied: boolean; status?: string }>;
+  externalInternships?: Array<{ id: string; title: string; description: string; industryName: string; collegeName?: string; departmentName: string; vacancy?: number | null; applied: boolean; status?: string }>;
   applications: Array<{ id: string; internshipTitle: string; industryName: string; status: string; acceptanceUrl?: string | null }>;
   activeApplicationLock?: boolean;
   maxSelectableApplications?: number;

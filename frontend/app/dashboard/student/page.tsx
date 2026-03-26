@@ -66,7 +66,7 @@ export default function StudentDashboardPage() {
   const canApply = Boolean(dashboard?.canApplyForExternal) && availableSlots > 0;
 
   return (
-    <RoleDashboardShell allowedRoles={['STUDENT']} title="Student Dashboard" subtitle="Apply only to external internships and track your application journey.">
+    <RoleDashboardShell allowedRoles={['STUDENT']} title="Student Dashboard" subtitle="Your selected college/department is internal. Apply to opportunities from other colleges.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
@@ -90,7 +90,7 @@ export default function StudentDashboardPage() {
               Internship from this college
             </Button>
             <Button variant={selectedTab === 'external' ? 'primary' : 'secondary'} onClick={() => setSelectedTab('external')}>
-              Internship from External Organizations
+              Internship from Other Colleges
             </Button>
           </section>
 
@@ -112,7 +112,7 @@ export default function StudentDashboardPage() {
           ) : (
             <Card className="rounded-[30px] p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold text-white">External internships</h2>
+                <h2 className="text-xl font-semibold text-white">Internships from other colleges</h2>
                 <Button disabled={!canApply || submitting || selectedIds.length === 0} onClick={applySelected}>
                   {submitting ? 'Applying...' : `Apply (${selectedIds.length})`}
                 </Button>
@@ -125,6 +125,7 @@ export default function StudentDashboardPage() {
                       <th className="py-2 pr-2">Internship</th>
                       <th className="py-2 pr-2">Industry</th>
                       <th className="py-2 pr-2">Department</th>
+                      <th className="py-2 pr-2">College</th>
                       <th className="py-2 pr-2">Vacancy</th>
                       <th className="py-2">Status</th>
                     </tr>
@@ -143,6 +144,7 @@ export default function StudentDashboardPage() {
                           </td>
                           <td className="py-3 pr-2">{item.industryName}</td>
                           <td className="py-3 pr-2">{item.departmentName}</td>
+                          <td className="py-3 pr-2">{item.collegeName ?? '-'}</td>
                           <td className="py-3 pr-2">{item.vacancy ?? 0}</td>
                           <td className="py-3">
                             <Badge className={item.applied ? 'bg-emerald-400/10 text-emerald-200' : 'bg-white/10 text-slate-200'}>
@@ -153,7 +155,7 @@ export default function StudentDashboardPage() {
                       );
                     }) : (
                       <tr>
-                        <td className="py-3 text-slate-300" colSpan={6}>No external internships available right now.</td>
+                        <td className="py-3 text-slate-300" colSpan={7}>No internships from other colleges available right now.</td>
                       </tr>
                     )}
                   </tbody>
