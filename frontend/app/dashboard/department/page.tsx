@@ -26,6 +26,8 @@ export default function DepartmentDashboardPage() {
   const [editingInternshipId, setEditingInternshipId] = useState<string | null>(null);
   const [editingIdeaId, setEditingIdeaId] = useState<string | null>(null);
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
+  const [editingOutcomeId, setEditingOutcomeId] = useState<string | null>(null);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, any>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -92,6 +94,8 @@ export default function DepartmentDashboardPage() {
           description: form.get('description'),
           fee: fee > 0 ? fee : null,
           isPaid: fee > 0,
+          internshipCategory: fee > 0 ? 'PAID' : (form.get('internshipCategory') || 'FREE'),
+          vacancy: Number(form.get('vacancy') || 0),
           isExternal: true,
         }),
       });
@@ -104,9 +108,17 @@ export default function DepartmentDashboardPage() {
 
   async function saveInternship(item: any) {
     const draft = drafts[item.id] ?? item;
+    const fee = Number(draft.fee || 0);
     await fetchWithSession(`/api/department/internships/${item.id}`, {
       method: 'PUT',
-      body: JSON.stringify({ title: draft.title, description: draft.description, fee: Number(draft.fee || 0) || null }),
+      body: JSON.stringify({
+        title: draft.title,
+        description: draft.description,
+        fee: fee > 0 ? fee : null,
+        isPaid: fee > 0,
+        internshipCategory: fee > 0 ? 'PAID' : (draft.internship_category || 'FREE'),
+        vacancy: Number(draft.vacancy ?? item.vacancy ?? 0),
+      }),
     });
     setEditingInternshipId(null);
     await load();
@@ -198,6 +210,7 @@ export default function DepartmentDashboardPage() {
   async function saveProgramOutcome(programId: string, outcome: ProgramOutcome) {
     const draft = drafts[outcome.id] ?? outcome;
     await fetchWithSession(`/api/department/programs/${programId}/outcomes/${outcome.id}`, { method: 'PUT', body: JSON.stringify({ type: draft.type, value: draft.value }) });
+    setEditingOutcomeId(null);
     await load();
   }
 
@@ -232,11 +245,16 @@ export default function DepartmentDashboardPage() {
 
           <section className="grid gap-4 lg:grid-cols-2">
             <Card className="rounded-[20px] p-5">
-              <h2 className="mb-3 text-xl font-semibold">Create External Internship</h2>
+              <h2 className="mb-3 text-xl font-semibold">Create Internship for External Students</h2>
               <form className="grid gap-3" onSubmit={createInternship}>
                 <input name="title" placeholder="Internship title" required />
                 <textarea name="description" placeholder="Description" required />
+                <select name="internshipCategory" defaultValue="FREE">
+                  <option value="FREE">Free Internship</option>
+                  <option value="STIPEND">Internship with Stipend</option>
+                </select>
                 <input name="fee" type="number" min={0} placeholder="Fee (leave empty or 0 for free course)" />
+                <input name="vacancy" type="number" min={0} defaultValue={0} placeholder="Number of vacancies" />
                 <Button>Create Internship</Button>
               </form>
             </Card>
@@ -270,7 +288,11 @@ export default function DepartmentDashboardPage() {
                         {(programOutcomes[program.id] ?? []).filter((entry) => entry.type === type).map((entry) => (
                           <div key={entry.id} className="mb-2 flex gap-2">
                             <input value={drafts[entry.id]?.value ?? entry.value} onChange={(e) => setDrafts((prev) => ({ ...prev, [entry.id]: { ...(prev[entry.id] ?? entry), value: e.target.value, type } }))} />
-                            <Button variant="secondary" onClick={() => saveProgramOutcome(program.id, entry)}>Save</Button>
+                            {editingOutcomeId === entry.id ? (
+                              <Button variant="secondary" onClick={() => saveProgramOutcome(program.id, entry)}>Save</Button>
+                            ) : (
+                              <Button variant="secondary" onClick={() => setEditingOutcomeId(entry.id)}>Edit</Button>
+                            )}
                             <Button variant="secondary" onClick={() => deleteProgramOutcome(program.id, entry.id)}>Delete</Button>
                           </div>
                         ))}
@@ -314,13 +336,13 @@ export default function DepartmentDashboardPage() {
                   <div>
                     <p className="text-sm font-semibold">Map PO</p>
                     {selectedProgramOutcomes.filter((entry) => entry.type === 'PO').map((entry) => (
-                      <label key={entry.id} className="block text-sm"><input type="checkbox" name="mappedPo" value={entry.value} className="mr-2" />{entry.value}</label>
+                      <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPo" value={entry.value} />{entry.value}</label>
                     ))}
                   </div>
                   <div>
                     <p className="text-sm font-semibold">Map PSO</p>
                     {selectedProgramOutcomes.filter((entry) => entry.type === 'PSO').map((entry) => (
-                      <label key={entry.id} className="block text-sm"><input type="checkbox" name="mappedPso" value={entry.value} className="mr-2" />{entry.value}</label>
+                      <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPso" value={entry.value} />{entry.value}</label>
                     ))}
                   </div>
                 </div>
@@ -338,13 +360,27 @@ export default function DepartmentDashboardPage() {
                     <div className="grid gap-2">
                       <input value={drafts[item.id]?.title ?? item.title} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), title: e.target.value } }))} />
                       <textarea value={drafts[item.id]?.description ?? item.description} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), description: e.target.value } }))} />
+                      <select value={drafts[item.id]?.internship_category ?? item.internship_category ?? 'FREE'} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), internship_category: e.target.value } }))}>
+                        <option value="FREE">Free Internship</option>
+                        <option value="STIPEND">Internship with Stipend</option>
+                        <option value="PAID">Paid Internship</option>
+                      </select>
                       <input type="number" min={0} value={drafts[item.id]?.fee ?? item.fee ?? 0} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), fee: e.target.value } }))} />
+                      <input type="number" min={0} value={drafts[item.id]?.vacancy ?? item.vacancy ?? 0} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), vacancy: e.target.value } }))} />
                     </div>
                   ) : (
                     <>
                       <p>{item.title}</p>
                       <p className="text-xs text-slate-300">{item.description}</p>
-                      <p className="text-xs text-slate-400">{item.is_paid ? `Paid • ₹${item.fee ?? 0}` : 'Free'} • {item.status}</p>
+                      <p className="text-xs text-slate-400">
+                        {item.is_paid ? `Paid • ₹${item.fee ?? 0}` : (item.internship_category === 'STIPEND' ? 'With Stipend' : 'Free')}
+                        {' • '}
+                        Category: {item.internship_category || (item.is_paid ? 'PAID' : 'FREE')}
+                        {' • '}
+                        Vacancy: {item.vacancy ?? 0}
+                        {' • '}
+                        {item.status}
+                      </p>
                     </>
                   )}
                   <div className="mt-2 flex gap-2">
@@ -367,8 +403,13 @@ export default function DepartmentDashboardPage() {
                     </div>
                   ) : (
                     <>
-                      <p>{item.internship_title} • {item.industry_name}</p>
-                      <p className="text-xs text-slate-300">Programme: {item.program_name || '-'} • PO: {item.mapped_po || '-'} • PSO: {item.mapped_pso || '-'} • {item.status}</p>
+                      <button type="button" className="w-full text-left" onClick={() => setSelectedIdeaId((prev) => prev === item.id ? null : item.id)}>
+                        <p>{item.internship_title} • {item.industry_name}</p>
+                        <p className="text-xs text-slate-300">Programme: {item.program_name || '-'} • {item.status}</p>
+                      </button>
+                      {selectedIdeaId === item.id ? (
+                        <p className="mt-1 text-xs text-slate-300">PO Mapping: {item.mapped_po || '-'} • PSO Mapping: {item.mapped_pso || '-'}</p>
+                      ) : null}
                     </>
                   )}
                   <div className="mt-2 flex gap-2">
@@ -384,7 +425,23 @@ export default function DepartmentDashboardPage() {
           <Card className="rounded-[20px] p-5">
             <h2 className="mb-3 text-xl font-semibold">Internal Applications Submitted by Students</h2>
             <div className="space-y-2">
-              {dashboard?.applications?.map((app) => (
+              {dashboard?.applications?.filter((item) => item.is_external !== 1).map((app) => (
+                <div key={app.id} className="rounded-lg border border-white/10 p-3">
+                  <p className="font-medium">{app.student_name} • {app.internship_title}</p>
+                  <p className="text-xs text-slate-300">{app.student_email} • {app.status}</p>
+                  <div className="mt-2 flex gap-2">
+                    <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
+                    <Button variant="secondary" onClick={() => rejectApplication(app.id)} disabled={app.status === 'rejected'}>Reject</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="rounded-[20px] p-5">
+            <h2 className="mb-3 text-xl font-semibold">Applications Received from External Students</h2>
+            <div className="space-y-2">
+              {dashboard?.applications?.filter((item) => item.is_external === 1).map((app) => (
                 <div key={app.id} className="rounded-lg border border-white/10 p-3">
                   <p className="font-medium">{app.student_name} • {app.internship_title}</p>
                   <p className="text-xs text-slate-300">{app.student_email} • {app.status}</p>
