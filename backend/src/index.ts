@@ -84,6 +84,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   ) {
     await ensureDepartmentDashboardSchema(env);
   }
+  if (pathname === '/api/student/register') {
+    await ensureStudentRegistrationSchema(env);
+  }
 
   if (request.method === 'GET' && pathname === '/api/health') {
     return ok('API healthy', { now: new Date().toISOString() });
@@ -108,6 +111,19 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/courses') {
+    const departmentId = toText(url.searchParams.get('departmentId'));
+    if (!departmentId) return badRequest('departmentId is required');
+
+    const rows = await env.DB.prepare('SELECT id, name, department_id FROM programs WHERE department_id = ? ORDER BY name ASC')
+      .bind(departmentId)
+      .all<{ id: string; name: string; department_id: string }>();
+
+    return ok('Programs fetched',
+      (rows.results ?? []).map((row) => ({ id: row.id, name: row.name, departmentId: row.department_id })),
+    );
+  }
+
+  if (request.method === 'GET' && pathname === '/api/programs') {
     const departmentId = toText(url.searchParams.get('departmentId'));
     if (!departmentId) return badRequest('departmentId is required');
 
@@ -202,6 +218,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const collegeId = required(body, ['college_id', 'collegeId']);
     const departmentId = required(body, ['department_id', 'departmentId']);
     const programId = required(body, ['program_id', 'courseId', 'programId']);
+    const universityRegNumber = optional(body, ['university_reg_number', 'universityRegNumber']);
     const phone = optional(body, ['phone']);
 
     if (!name || !email || !password || !collegeId || !departmentId || !programId) {
@@ -223,10 +240,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const studentId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO students (id, name, email, phone, college_id, department_id, program_id, password, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      `INSERT INTO students (id, name, email, phone, university_reg_number, college_id, department_id, program_id, password, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     )
-      .bind(studentId, name, email, phone, collegeId, departmentId, programId, password)
+      .bind(studentId, name, email, phone, universityRegNumber, collegeId, departmentId, programId, password)
       .run();
 
     await upsertIdentity(env, { role: 'student', entityId: studentId, email, isActive: 1 });
@@ -1293,6 +1310,58 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Department PO/PSO options fetched', rows.results ?? []);
   }
 
+  if (request.method === 'GET' && pathname === '/api/department/programs') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT id, name, program_outcomes, program_specific_outcomes, created_at
+       FROM programs
+       WHERE department_id = ?
+       ORDER BY name ASC`,
+    ).bind(actor.id).all();
+    return ok('Department programs fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/programs') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const body = await readBody(request);
+    const name = required(body, ['name']);
+    const programOutcomes = optional(body, ['program_outcomes', 'programOutcomes']);
+    const programSpecificOutcomes = optional(body, ['program_specific_outcomes', 'programSpecificOutcomes']);
+
+    if (!name) return badRequest('name is required');
+
+    const existing = await env.DB.prepare(
+      'SELECT id FROM programs WHERE department_id = ? AND lower(name) = lower(?)',
+    ).bind(actor.id, name).first<{ id: string }>();
+    if (existing) return conflict('Program already exists');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO programs (id, department_id, name, program_outcomes, program_specific_outcomes)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).bind(id, actor.id, name, programOutcomes, programSpecificOutcomes).run();
+
+    return created('Department program created', { id, name });
+  }
+
+  const deleteDepartmentProgramMatch = pathname.match(/^\/api\/department\/programs\/([^/]+)$/);
+  if (deleteDepartmentProgramMatch && request.method === 'DELETE') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const result = await env.DB.prepare(
+      `DELETE FROM programs
+       WHERE id = ? AND department_id = ?`,
+    ).bind(deleteDepartmentProgramMatch[1], actor.id).run();
+
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Program not found');
+    return ok('Department program removed');
+  }
+
   if (request.method === 'POST' && pathname === '/api/department/po-pso') {
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
@@ -1340,15 +1409,21 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const industryId = required(body, ['industry_id', 'industryId']);
     const internshipTitle = required(body, ['internship_title', 'internshipTitle']);
     const description = required(body, ['description']);
+    const programId = optional(body, ['program_id', 'programId']);
     const mappedPo = optional(body, ['mapped_po', 'mappedPo']);
     const mappedPso = optional(body, ['mapped_pso', 'mappedPso']);
     if (!industryId || !internshipTitle || !description) return badRequest('industry_id, internship_title and description are required');
 
+    if (programId) {
+      const program = await env.DB.prepare('SELECT id FROM programs WHERE id = ? AND department_id = ?').bind(programId, actor.id).first<{ id: string }>();
+      if (!program) return badRequest('program_id does not belong to this department');
+    }
+
     const id = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO industry_requests (id, department_id, industry_id, internship_title, description, mapped_po, mapped_pso, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
-    ).bind(id, actor.id, industryId, internshipTitle, description, mappedPo, mappedPso).run();
+      `INSERT INTO industry_requests (id, department_id, industry_id, internship_title, description, program_id, mapped_po, mapped_pso, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+    ).bind(id, actor.id, industryId, internshipTitle, description, programId, mappedPo, mappedPso).run();
 
     return created('Industry request submitted', { id });
   }
@@ -1358,9 +1433,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const rows = await env.DB.prepare(
-      `SELECT ir.id, ir.internship_title, ir.description, ir.mapped_po, ir.mapped_pso, ir.status, ir.created_at,
+      `SELECT ir.id, ir.internship_title, ir.description, ir.program_id, p.name AS program_name, ir.mapped_po, ir.mapped_pso, ir.status, ir.created_at,
               ind.id AS industry_id, ind.name AS industry_name
        FROM industry_requests ir
+       LEFT JOIN programs p ON p.id = ir.program_id
        INNER JOIN industries ind ON ind.id = ir.industry_id
        WHERE ir.department_id = ?
        ORDER BY ir.created_at DESC`,
@@ -2011,15 +2087,20 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
       industry_id TEXT NOT NULL,
       internship_title TEXT NOT NULL,
       description TEXT NOT NULL,
+      program_id TEXT,
       mapped_po TEXT,
       mapped_pso TEXT,
       status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACCEPTED', 'REJECTED')),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
-      FOREIGN KEY (industry_id) REFERENCES industries(id) ON DELETE CASCADE
+      FOREIGN KEY (industry_id) REFERENCES industries(id) ON DELETE CASCADE,
+      FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE SET NULL
     )`,
   ).run();
+
+  const industryRequestColumns = new Set((await getTableColumns(env, 'industry_requests')).map((column) => column.name));
+  if (!industryRequestColumns.has('program_id')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN program_id TEXT').run();
 
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS department_outcome_mappings (
@@ -2049,10 +2130,18 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_applications_external_status ON internship_applications(is_external, status)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_industry_requests_department ON industry_requests(department_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_industry_requests_industry ON industry_requests(industry_id, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_industry_requests_program ON industry_requests(program_id)').run(),
     env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_department_outcome_unique ON department_outcome_mappings(department_id, type, value)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_department_outcome_type ON department_outcome_mappings(department_id, type)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status, created_at)').run(),
   ]);
+}
+
+async function ensureStudentRegistrationSchema(env: EnvBindings): Promise<void> {
+  const studentColumns = new Set((await getTableColumns(env, 'students')).map((column) => column.name));
+  if (!studentColumns.has('university_reg_number')) {
+    await env.DB.prepare('ALTER TABLE students ADD COLUMN university_reg_number TEXT').run();
+  }
 }
 
 async function getTableColumns(env: EnvBindings, tableName: string): Promise<Array<{ name: string }>> {

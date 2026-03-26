@@ -11,23 +11,27 @@ import type { DepartmentDashboard } from '@/lib/types';
 type Industry = { id: string; name: string };
 type OutcomeType = 'PO' | 'PSO';
 type OutcomeOption = { id: string; type: OutcomeType; value: string };
+type DepartmentProgram = { id: string; name: string; program_outcomes: string | null; program_specific_outcomes: string | null };
 
 export default function DepartmentDashboardPage() {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<DepartmentDashboard | null>(null);
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [outcomes, setOutcomes] = useState<OutcomeOption[]>([]);
+  const [programs, setPrograms] = useState<DepartmentProgram[]>([]);
   const [outcomeForm, setOutcomeForm] = useState<{ type: OutcomeType; value: string }>({ type: 'PO', value: '' });
   const [removeOutcomeId, setRemoveOutcomeId] = useState<string>('');
+  const [removeProgramId, setRemoveProgramId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const [internshipsRes, applicationsRes, requestsRes, industriesRes, outcomesRes] = await Promise.all([
+    const [internshipsRes, applicationsRes, requestsRes, industriesRes, outcomesRes, programsRes] = await Promise.all([
       fetchWithSession<DepartmentDashboard['internships']>('/api/department/internships'),
       fetchWithSession<DepartmentDashboard['applications']>('/api/department/applications'),
       fetchWithSession<DepartmentDashboard['industryRequests']>('/api/department/industry-requests'),
       fetchWithSession<Industry[]>('/api/department/industries'),
       fetchWithSession<OutcomeOption[]>('/api/department/po-pso'),
+      fetchWithSession<DepartmentProgram[]>('/api/department/programs'),
     ]);
 
     setDashboard({
@@ -37,6 +41,12 @@ export default function DepartmentDashboardPage() {
     });
     setIndustries((industriesRes.data ?? []).map((item: any) => ({ id: item.id, name: item.name })));
     setOutcomes((outcomesRes.data ?? []).map((item: any) => ({ id: item.id, type: item.type, value: item.value })));
+    setPrograms((programsRes.data ?? []).map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      program_outcomes: item.program_outcomes ?? null,
+      program_specific_outcomes: item.program_specific_outcomes ?? null,
+    })));
   }
 
   useEffect(() => {
@@ -111,6 +121,7 @@ export default function DepartmentDashboardPage() {
           industryId: form.get('industryId'),
           internshipTitle: form.get('internshipTitle'),
           description: form.get('description'),
+          programId: form.get('programId') || null,
           mappedPo: form.get('mappedPo'),
           mappedPso: form.get('mappedPso'),
         }),
@@ -153,6 +164,38 @@ export default function DepartmentDashboardPage() {
     }
   }
 
+  async function addProgram(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setError(null);
+    try {
+      await fetchWithSession('/api/department/programs', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: form.get('name'),
+          programOutcomes: form.get('programOutcomes') || null,
+          programSpecificOutcomes: form.get('programSpecificOutcomes') || null,
+        }),
+      });
+      event.currentTarget.reset();
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to add program');
+    }
+  }
+
+  async function removeProgram() {
+    if (!removeProgramId) return;
+    setError(null);
+    try {
+      await fetchWithSession(`/api/department/programs/${removeProgramId}`, { method: 'DELETE' });
+      setRemoveProgramId('');
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to remove program');
+    }
+  }
+
   return (
     <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title="Department Dashboard" subtitle="Manage external internships, applications, industry collaboration, and student mapping.">
       {() => (
@@ -187,6 +230,10 @@ export default function DepartmentDashboardPage() {
                 </select>
                 <input name="internshipTitle" placeholder="Internship title" required />
                 <textarea name="description" placeholder="Idea description" required />
+                <select name="programId" defaultValue="">
+                  <option value="">Select programme (optional)</option>
+                  {programs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
                 <select name="mappedPo" defaultValue="">
                   <option value="">Mapped PO</option>
                   {poOptions.map((item) => <option key={item.id} value={item.value}>{item.value}</option>)}
@@ -197,7 +244,28 @@ export default function DepartmentDashboardPage() {
                 </select>
                 <Button>Submit Idea</Button>
               </form>
-            </Card>
+          </Card>
+
+          <Card className="rounded-[20px] p-5">
+            <h2 className="mb-3 text-xl font-semibold">Programme Menu</h2>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <form className="grid gap-2" onSubmit={addProgram}>
+                <p className="text-sm text-slate-300">Add programme and map its PO / PSO values.</p>
+                <input name="name" placeholder="Programme name" required />
+                <input name="programOutcomes" placeholder="Programme Outcomes (PO, comma separated)" />
+                <input name="programSpecificOutcomes" placeholder="Programme Specific Outcomes (PSO, comma separated)" />
+                <Button>Add Programme</Button>
+              </form>
+              <div className="grid gap-2">
+                <p className="text-sm text-slate-300">Remove programme.</p>
+                <select value={removeProgramId} onChange={(event) => setRemoveProgramId(event.target.value)}>
+                  <option value="">Select programme</option>
+                  {programs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+                <Button variant="secondary" onClick={removeProgram} disabled={!removeProgramId}>Remove Selected</Button>
+              </div>
+            </div>
+          </Card>
           </section>
 
           <Card className="rounded-[20px] p-5">
@@ -255,7 +323,7 @@ export default function DepartmentDashboardPage() {
               {dashboard?.industryRequests?.length ? dashboard.industryRequests.map((item) => (
                 <div key={item.id} className="border-t border-white/10 py-2">
                   <p>{item.internship_title} • {item.industry_name}</p>
-                  <p className="text-xs text-slate-300">PO: {item.mapped_po || '-'} • PSO: {item.mapped_pso || '-'} • {item.status}</p>
+                  <p className="text-xs text-slate-300">Programme: {(item as any).program_name || '-'} • PO: {item.mapped_po || '-'} • PSO: {item.mapped_pso || '-'} • {item.status}</p>
                 </div>
               )) : <p className="text-slate-300">No ideas submitted yet.</p>}
             </Card>
