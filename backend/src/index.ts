@@ -1121,10 +1121,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const body = await readBody(request);
     const title = required(body, ['title']);
     const description = required(body, ['description']);
-    const isPaid = toBoolean(required(body, ['is_paid', 'isPaid'])) ?? false;
+    const explicitIsPaidRaw = optional(body, ['is_paid', 'isPaid']);
+    const explicitIsPaid = explicitIsPaidRaw ? toBoolean(explicitIsPaidRaw) : null;
     const isExternal = toBoolean(required(body, ['is_external', 'isExternal'])) ?? true;
     const feeRaw = optional(body, ['fee']);
     const fee = feeRaw ? Number(feeRaw) : null;
+    const isPaid = explicitIsPaid ?? Boolean(fee && fee > 0);
 
     if (!title || !description) return badRequest('title and description are required');
     if (isPaid && (!fee || Number.isNaN(fee) || fee <= 0)) return badRequest('Valid fee is required for paid internships');
@@ -1138,6 +1140,41 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       .run();
 
     return created('Department internship created', { id: internshipId });
+  }
+
+  const updateDepartmentInternshipMatch = pathname.match(/^\/api\/department\/internships\/([^/]+)$/);
+  if (updateDepartmentInternshipMatch && request.method === 'PUT') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const title = required(body, ['title']);
+    const description = required(body, ['description']);
+    const feeRaw = optional(body, ['fee']);
+    const fee = feeRaw ? Number(feeRaw) : null;
+    const explicitIsPaidRaw = optional(body, ['is_paid', 'isPaid']);
+    const explicitIsPaid = explicitIsPaidRaw ? toBoolean(explicitIsPaidRaw) : null;
+    const isPaid = explicitIsPaid ?? Boolean(fee && fee > 0);
+    if (!title || !description) return badRequest('title and description are required');
+    if (isPaid && (!fee || Number.isNaN(fee) || fee <= 0)) return badRequest('Valid fee is required for paid internships');
+
+    const result = await env.DB.prepare(
+      `UPDATE internships
+       SET title = ?, description = ?, is_paid = ?, fee = ?, updated_at = datetime('now')
+       WHERE id = ? AND department_id = ?`,
+    ).bind(title, description, isPaid ? 1 : 0, isPaid ? Math.round(fee ?? 0) : null, updateDepartmentInternshipMatch[1], actor.id).run();
+
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Internship not found');
+    return ok('Department internship updated');
+  }
+
+  if (updateDepartmentInternshipMatch && request.method === 'DELETE') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const result = await env.DB.prepare('DELETE FROM internships WHERE id = ? AND department_id = ?')
+      .bind(updateDepartmentInternshipMatch[1], actor.id)
+      .run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Internship not found');
+    return ok('Department internship deleted');
   }
 
   if (request.method === 'GET' && pathname === '/api/department/internships') {
@@ -1349,6 +1386,21 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   const deleteDepartmentProgramMatch = pathname.match(/^\/api\/department\/programs\/([^/]+)$/);
+  if (deleteDepartmentProgramMatch && request.method === 'PUT') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const name = required(body, ['name']);
+    if (!name) return badRequest('name is required');
+    const result = await env.DB.prepare(
+      `UPDATE programs
+       SET name = ?, updated_at = datetime('now')
+       WHERE id = ? AND department_id = ?`,
+    ).bind(name, deleteDepartmentProgramMatch[1], actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Program not found');
+    return ok('Department program updated');
+  }
+
   if (deleteDepartmentProgramMatch && request.method === 'DELETE') {
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
@@ -1360,6 +1412,69 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Program not found');
     return ok('Department program removed');
+  }
+
+  const programOutcomesMatch = pathname.match(/^\/api\/department\/programs\/([^/]+)\/outcomes$/);
+  if (programOutcomesMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const program = await env.DB.prepare('SELECT id FROM programs WHERE id = ? AND department_id = ?').bind(programOutcomesMatch[1], actor.id).first();
+    if (!program) return errorResponse(404, 'Program not found');
+    const rows = await env.DB.prepare(
+      `SELECT id, type, value, created_at
+       FROM program_outcome_entries
+       WHERE program_id = ?
+       ORDER BY type ASC, created_at ASC`,
+    ).bind(programOutcomesMatch[1]).all();
+    return ok('Program outcomes fetched', rows.results ?? []);
+  }
+
+  if (programOutcomesMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const type = required(body, ['type']).toUpperCase();
+    const value = required(body, ['value']);
+    if (!['PO', 'PSO'].includes(type)) return badRequest('type must be PO or PSO');
+    if (!value) return badRequest('value is required');
+    const program = await env.DB.prepare('SELECT id FROM programs WHERE id = ? AND department_id = ?').bind(programOutcomesMatch[1], actor.id).first();
+    if (!program) return errorResponse(404, 'Program not found');
+    const id = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO program_outcome_entries (id, program_id, type, value) VALUES (?, ?, ?, ?)')
+      .bind(id, programOutcomesMatch[1], type, value)
+      .run();
+    return created('Program outcome added', { id });
+  }
+
+  const programOutcomeRowMatch = pathname.match(/^\/api\/department\/programs\/([^/]+)\/outcomes\/([^/]+)$/);
+  if (programOutcomeRowMatch && request.method === 'PUT') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const type = required(body, ['type']).toUpperCase();
+    const value = required(body, ['value']);
+    if (!['PO', 'PSO'].includes(type)) return badRequest('type must be PO or PSO');
+    if (!value) return badRequest('value is required');
+    const result = await env.DB.prepare(
+      `UPDATE program_outcome_entries
+       SET type = ?, value = ?, updated_at = datetime('now')
+       WHERE id = ?
+         AND program_id IN (SELECT id FROM programs WHERE id = ? AND department_id = ?)`,
+    ).bind(type, value, programOutcomeRowMatch[2], programOutcomeRowMatch[1], actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Program outcome not found');
+    return ok('Program outcome updated');
+  }
+
+  if (programOutcomeRowMatch && request.method === 'DELETE') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const result = await env.DB.prepare(
+      `DELETE FROM program_outcome_entries
+       WHERE id = ?
+         AND program_id IN (SELECT id FROM programs WHERE id = ? AND department_id = ?)`,
+    ).bind(programOutcomeRowMatch[2], programOutcomeRowMatch[1], actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Program outcome not found');
+    return ok('Program outcome deleted');
   }
 
   if (request.method === 'POST' && pathname === '/api/department/po-pso') {
@@ -1426,6 +1541,58 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(id, actor.id, industryId, internshipTitle, description, programId, mappedPo, mappedPso).run();
 
     return created('Industry request submitted', { id });
+  }
+
+  const departmentIndustryRequestByIdMatch = pathname.match(/^\/api\/department\/industry-requests\/([^/]+)$/);
+  if (departmentIndustryRequestByIdMatch && request.method === 'PUT') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipTitle = required(body, ['internship_title', 'internshipTitle']);
+    const description = required(body, ['description']);
+    const programId = optional(body, ['program_id', 'programId']);
+    const mappedPo = optional(body, ['mapped_po', 'mappedPo']);
+    const mappedPso = optional(body, ['mapped_pso', 'mappedPso']);
+    if (!internshipTitle || !description) return badRequest('internship_title and description are required');
+    const result = await env.DB.prepare(
+      `UPDATE industry_requests
+       SET internship_title = ?, description = ?, program_id = ?, mapped_po = ?, mapped_pso = ?, updated_at = datetime('now')
+       WHERE id = ? AND department_id = ?`,
+    ).bind(internshipTitle, description, programId, mappedPo, mappedPso, departmentIndustryRequestByIdMatch[1], actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry request not found');
+    return ok('Industry request updated');
+  }
+
+  if (departmentIndustryRequestByIdMatch && request.method === 'DELETE') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const result = await env.DB.prepare('DELETE FROM industry_requests WHERE id = ? AND department_id = ?')
+      .bind(departmentIndustryRequestByIdMatch[1], actor.id)
+      .run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry request not found');
+    return ok('Industry request deleted');
+  }
+
+  const industryDetailsMatch = pathname.match(/^\/api\/department\/industries\/([^/]+)$/);
+  if (industryDetailsMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const industry = await env.DB.prepare(
+      `SELECT i.id, i.name, i.business_activity, it.name AS category
+       FROM industries i
+       LEFT JOIN industry_types it ON it.id = i.industry_type_id
+       INNER JOIN college_industry_links cil ON cil.industry_id = i.id
+       INNER JOIN departments d ON d.college_id = cil.college_id
+       WHERE d.id = ? AND i.id = ?`,
+    ).bind(actor.id, industryDetailsMatch[1]).first<{ id: string; name: string; business_activity: string; category: string }>();
+    if (!industry) return errorResponse(404, 'Industry not found');
+    const listings = await env.DB.prepare(
+      `SELECT id, title, criteria, COALESCE(vacancy, 0) AS vacancy
+       FROM industry_internships
+       WHERE industry_id = ?
+       ORDER BY created_at DESC`,
+    ).bind(industry.id).all();
+    return ok('Industry details fetched', { ...industry, listings: listings.results ?? [] });
   }
 
   if (request.method === 'GET' && pathname === '/api/department/industry-requests') {
@@ -2115,6 +2282,21 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   ).run();
 
   await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS program_outcome_entries (
+      id TEXT PRIMARY KEY,
+      program_id TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('PO', 'PSO')),
+      value TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE CASCADE
+    )`,
+  ).run();
+
+  const industryInternshipColumns = new Set((await getTableColumns(env, 'industry_internships')).map((column) => column.name));
+  if (!industryInternshipColumns.has('vacancy')) await env.DB.prepare('ALTER TABLE industry_internships ADD COLUMN vacancy INTEGER').run();
+
+  await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS email_logs (
       id TEXT PRIMARY KEY,
       email_type TEXT NOT NULL,
@@ -2133,6 +2315,7 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_industry_requests_program ON industry_requests(program_id)').run(),
     env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_department_outcome_unique ON department_outcome_mappings(department_id, type, value)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_department_outcome_type ON department_outcome_mappings(department_id, type)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_program_outcome_entries_program ON program_outcome_entries(program_id, type)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status, created_at)').run(),
   ]);
 }
