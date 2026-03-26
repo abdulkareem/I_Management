@@ -26,6 +26,7 @@ type AuthSession = {
       | 'ADMIN'
       | 'COLLEGE'
       | 'DEPARTMENT_COORDINATOR'
+      | 'COORDINATOR'
       | 'INDUSTRY'
       | 'STUDENT'
       | 'EXTERNAL_STUDENT';
@@ -817,7 +818,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'POST' && pathname === '/api/department/change-password') {
-    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
 
     const body = await readBody(request);
@@ -1097,7 +1098,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'POST' && pathname === '/api/department/internships') {
-    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
 
     const body = await readBody(request);
@@ -1123,7 +1124,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/department/internships') {
-    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
 
     const rows = await env.DB.prepare(
@@ -1170,7 +1171,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/department/applications') {
-    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
 
     const statusFilter = toText(url.searchParams.get('status')).toLowerCase();
@@ -1198,7 +1199,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
   const acceptDepartmentAppMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/accept$/);
   if (acceptDepartmentAppMatch && request.method === 'POST') {
-    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
     const applicationId = acceptDepartmentAppMatch[1];
 
@@ -1244,7 +1245,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
   const rejectDepartmentAppMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/reject$/);
   if (rejectDepartmentAppMatch && request.method === 'POST') {
-    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
 
     const result = await env.DB.prepare(
@@ -1260,8 +1261,80 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Application rejected');
   }
 
+  if (request.method === 'GET' && pathname === '/api/department/industries') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT DISTINCT i.id, i.name
+       FROM departments d
+       INNER JOIN college_industry_links cil ON cil.college_id = d.college_id
+       INNER JOIN industries i ON i.id = cil.industry_id
+       WHERE d.id = ?
+         AND cil.status = 'accepted'
+         AND i.status = 'approved'
+         AND i.is_active = 1
+       ORDER BY i.name ASC`,
+    ).bind(actor.id).all();
+
+    return ok('Department industries fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/po-pso') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT id, type, value, created_at
+       FROM department_outcome_mappings
+       WHERE department_id = ?
+       ORDER BY type ASC, value ASC`,
+    ).bind(actor.id).all();
+    return ok('Department PO/PSO options fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/po-pso') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const type = required(body, ['type']).toUpperCase();
+    const value = required(body, ['value']);
+
+    if (!['PO', 'PSO'].includes(type)) return badRequest('type must be PO or PSO');
+    if (!value) return badRequest('value is required');
+
+    const existing = await env.DB.prepare(
+      `SELECT id
+       FROM department_outcome_mappings
+       WHERE department_id = ? AND type = ? AND lower(value) = lower(?)`,
+    ).bind(actor.id, type, value).first<{ id: string }>();
+    if (existing) return conflict(`${type} already exists`);
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO department_outcome_mappings (id, department_id, type, value)
+       VALUES (?, ?, ?, ?)`,
+    ).bind(id, actor.id, type, value).run();
+
+    return created('Department PO/PSO option created', { id, type, value });
+  }
+
+  const deleteDepartmentOutcomeMatch = pathname.match(/^\/api\/department\/po-pso\/([^/]+)$/);
+  if (deleteDepartmentOutcomeMatch && request.method === 'DELETE') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const result = await env.DB.prepare(
+      `DELETE FROM department_outcome_mappings
+       WHERE id = ? AND department_id = ?`,
+    ).bind(deleteDepartmentOutcomeMatch[1], actor.id).run();
+
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'PO/PSO option not found');
+    return ok('Department PO/PSO option removed');
+  }
+
   if (request.method === 'POST' && pathname === '/api/industry-requests') {
-    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
     const body = await readBody(request);
     const industryId = required(body, ['industry_id', 'industryId']);
@@ -1281,7 +1354,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/department/industry-requests') {
-    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR']);
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
 
     const rows = await env.DB.prepare(
@@ -1949,6 +2022,18 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   ).run();
 
   await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS department_outcome_mappings (
+      id TEXT PRIMARY KEY,
+      department_id TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('PO', 'PSO')),
+      value TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+    )`,
+  ).run();
+
+  await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS email_logs (
       id TEXT PRIMARY KEY,
       email_type TEXT NOT NULL,
@@ -1964,6 +2049,8 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_applications_external_status ON internship_applications(is_external, status)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_industry_requests_department ON industry_requests(department_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_industry_requests_industry ON industry_requests(industry_id, status)').run(),
+    env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_department_outcome_unique ON department_outcome_mappings(department_id, type, value)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_department_outcome_type ON department_outcome_mappings(department_id, type)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status, created_at)').run(),
   ]);
 }

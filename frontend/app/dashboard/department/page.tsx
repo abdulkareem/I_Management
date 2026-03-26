@@ -9,19 +9,25 @@ import { fetchWithSession, loadSession } from '@/lib/auth';
 import type { DepartmentDashboard } from '@/lib/types';
 
 type Industry = { id: string; name: string };
+type OutcomeType = 'PO' | 'PSO';
+type OutcomeOption = { id: string; type: OutcomeType; value: string };
 
 export default function DepartmentDashboardPage() {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<DepartmentDashboard | null>(null);
   const [industries, setIndustries] = useState<Industry[]>([]);
+  const [outcomes, setOutcomes] = useState<OutcomeOption[]>([]);
+  const [outcomeForm, setOutcomeForm] = useState<{ type: OutcomeType; value: string }>({ type: 'PO', value: '' });
+  const [removeOutcomeId, setRemoveOutcomeId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const [internshipsRes, applicationsRes, requestsRes, industriesRes] = await Promise.all([
+    const [internshipsRes, applicationsRes, requestsRes, industriesRes, outcomesRes] = await Promise.all([
       fetchWithSession<DepartmentDashboard['internships']>('/api/department/internships'),
       fetchWithSession<DepartmentDashboard['applications']>('/api/department/applications'),
       fetchWithSession<DepartmentDashboard['industryRequests']>('/api/department/industry-requests'),
-      fetchWithSession<Industry[]>('/api/admin/industries'),
+      fetchWithSession<Industry[]>('/api/department/industries'),
+      fetchWithSession<OutcomeOption[]>('/api/department/po-pso'),
     ]);
 
     setDashboard({
@@ -30,6 +36,7 @@ export default function DepartmentDashboardPage() {
       industryRequests: requestsRes.data,
     });
     setIndustries((industriesRes.data ?? []).map((item: any) => ({ id: item.id, name: item.name })));
+    setOutcomes((outcomesRes.data ?? []).map((item: any) => ({ id: item.id, type: item.type, value: item.value })));
   }
 
   useEffect(() => {
@@ -115,6 +122,37 @@ export default function DepartmentDashboardPage() {
     }
   }
 
+  const poOptions = useMemo(() => outcomes.filter((item) => item.type === 'PO'), [outcomes]);
+  const psoOptions = useMemo(() => outcomes.filter((item) => item.type === 'PSO'), [outcomes]);
+
+  async function addOutcomeOption(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!outcomeForm.value.trim()) return;
+    setError(null);
+    try {
+      await fetchWithSession('/api/department/po-pso', {
+        method: 'POST',
+        body: JSON.stringify({ type: outcomeForm.type, value: outcomeForm.value.trim() }),
+      });
+      setOutcomeForm((prev) => ({ ...prev, value: '' }));
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to add PO/PSO option');
+    }
+  }
+
+  async function removeOutcomeOption() {
+    if (!removeOutcomeId) return;
+    setError(null);
+    try {
+      await fetchWithSession(`/api/department/po-pso/${removeOutcomeId}`, { method: 'DELETE' });
+      setRemoveOutcomeId('');
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to remove PO/PSO option');
+    }
+  }
+
   return (
     <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title="Department Dashboard" subtitle="Manage external internships, applications, industry collaboration, and student mapping.">
       {() => (
@@ -149,12 +187,41 @@ export default function DepartmentDashboardPage() {
                 </select>
                 <input name="internshipTitle" placeholder="Internship title" required />
                 <textarea name="description" placeholder="Idea description" required />
-                <input name="mappedPo" placeholder="Mapped PO" />
-                <input name="mappedPso" placeholder="Mapped PSO" />
+                <select name="mappedPo" defaultValue="">
+                  <option value="">Mapped PO</option>
+                  {poOptions.map((item) => <option key={item.id} value={item.value}>{item.value}</option>)}
+                </select>
+                <select name="mappedPso" defaultValue="">
+                  <option value="">Mapped PSO</option>
+                  {psoOptions.map((item) => <option key={item.id} value={item.value}>{item.value}</option>)}
+                </select>
                 <Button>Submit Idea</Button>
               </form>
             </Card>
           </section>
+
+          <Card className="rounded-[20px] p-5">
+            <h2 className="mb-3 text-xl font-semibold">PO / PSO Menu</h2>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <form className="grid gap-2" onSubmit={addOutcomeOption}>
+                <p className="text-sm text-slate-300">Add PO/PSO option for dropdown mapping.</p>
+                <select value={outcomeForm.type} onChange={(event) => setOutcomeForm((prev) => ({ ...prev, type: event.target.value as OutcomeType }))}>
+                  <option value="PO">PO</option>
+                  <option value="PSO">PSO</option>
+                </select>
+                <input placeholder="Enter PO/PSO value" value={outcomeForm.value} onChange={(event) => setOutcomeForm((prev) => ({ ...prev, value: event.target.value }))} />
+                <Button>Add Menu Option</Button>
+              </form>
+              <div className="grid gap-2">
+                <p className="text-sm text-slate-300">Remove PO/PSO option.</p>
+                <select value={removeOutcomeId} onChange={(event) => setRemoveOutcomeId(event.target.value)}>
+                  <option value="">Select PO / PSO</option>
+                  {outcomes.map((item) => <option key={item.id} value={item.id}>{item.type}: {item.value}</option>)}
+                </select>
+                <Button variant="secondary" onClick={removeOutcomeOption} disabled={!removeOutcomeId}>Remove Selected</Button>
+              </div>
+            </div>
+          </Card>
 
           <Card className="rounded-[20px] p-5">
             <h2 className="mb-3 text-xl font-semibold">External Student Applications</h2>
