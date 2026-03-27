@@ -378,7 +378,7 @@ export default function IndustryDashboardPage() {
                     </div>
                     {isEditing ? (
                       <div className="mt-3 grid gap-2 md:grid-cols-3">
-                        <Input placeholder="Vacancies" value={form.vacancy} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, vacancy: e.target.value } }))} />
+                        <Input type="number" min={1} placeholder="Vacancies" value={form.vacancy} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, vacancy: e.target.value } }))} />
                         <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={form.internshipCategory} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, internshipCategory: e.target.value as InternshipCategory } }))}>
                           <option value="FREE">Free</option>
                           <option value="PAID">Paid</option>
