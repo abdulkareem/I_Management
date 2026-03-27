@@ -1662,6 +1662,51 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return created('Application submitted', { internshipId, status: 'pending' });
   }
 
+  const studentMarksheetEmailMatch = pathname.match(/^\/api\/student\/applications\/([^/]+)\/marksheet\/email$/);
+  if (studentMarksheetEmailMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['STUDENT']);
+    if (actor instanceof Response) return actor;
+
+    const app = await env.DB.prepare(
+      `SELECT ia.id, ia.status, ia.industry_feedback, ia.industry_score,
+              s.email AS student_email, s.name AS student_name,
+              i.title AS internship_title,
+              COALESCE(ind.name, 'Industry') AS industry_name,
+              d.name AS department_name,
+              c.name AS host_college_name,
+              (
+                SELECT AVG(orx.weighted_score)
+                FROM outcome_results orx
+                WHERE orx.application_id = ia.id
+              ) AS outcome_marks
+       FROM internship_applications ia
+       INNER JOIN students s ON s.id = ia.student_id
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN departments d ON d.id = i.department_id
+       INNER JOIN colleges c ON c.id = d.college_id
+       LEFT JOIN industries ind ON ind.id = i.industry_id
+       WHERE ia.id = ?
+         AND ia.student_id = ?`,
+    ).bind(studentMarksheetEmailMatch[1], actor.id).first<any>();
+
+    if (!app) return errorResponse(404, 'Application not found');
+
+    await sendStudentMarksheetEmail(env, {
+      to: app.student_email,
+      studentName: app.student_name,
+      internshipTitle: app.internship_title,
+      industryName: app.industry_name,
+      departmentName: app.department_name,
+      collegeName: app.host_college_name,
+      status: String(app.status ?? '').toUpperCase(),
+      industryFeedback: app.industry_feedback ?? null,
+      evaluationMarks: app.industry_score === null || app.industry_score === undefined ? null : Number(app.industry_score),
+      outcomeMarks: app.outcome_marks === null || app.outcome_marks === undefined ? null : Number(app.outcome_marks),
+    });
+
+    return ok('Marksheet emailed successfully');
+  }
+
   if (request.method === 'GET' && pathname === '/api/department/applications') {
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
@@ -2494,7 +2539,12 @@ async function getStudentApplicationEligibility(env: EnvBindings, studentId: str
 }
 
 async function loadStudentDashboard(env: EnvBindings, studentId: string): Promise<Response> {
-  const student = await env.DB.prepare('SELECT college_id FROM students WHERE id = ?').bind(studentId).first<{ college_id: string }>();
+  const student = await env.DB.prepare(
+    `SELECT s.college_id, c.name AS college_name
+     FROM students s
+     LEFT JOIN colleges c ON c.id = s.college_id
+     WHERE s.id = ?`,
+  ).bind(studentId).first<{ college_id: string; college_name: string | null }>();
   if (!student) return unauthorized('Student not found');
 
   const [legacyInternships, applications, collegeInternships, externalInternships, eligibility] = await Promise.all([
@@ -2527,7 +2577,12 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
     ).bind(student.college_id).all(),
     env.DB.prepare(
       `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name, i.vacancy,
-              ia.id AS application_id, ia.status AS application_status
+              ia.id AS application_id, ia.status AS application_status, ia.industry_feedback, ia.industry_score,
+              (
+                SELECT AVG(orx.weighted_score)
+                FROM outcome_results orx
+                WHERE orx.application_id = ia.id
+              ) AS outcome_marks
        FROM internships i
        INNER JOIN departments d ON d.id = i.department_id
        INNER JOIN colleges c ON c.id = d.college_id
@@ -2546,6 +2601,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
   const externalRows = externalInternships.results ?? [];
 
   return ok('Student dashboard loaded', {
+    studentCollegeName: student.college_name ?? 'Your College',
     internships: internshipRows.map((row: any) => ({
       id: row.id,
       title: row.title,
@@ -2578,7 +2634,11 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
       departmentName: row.department_name,
       vacancy: row.vacancy,
       applied: Boolean(row.application_id),
+      applicationId: row.application_id,
       status: row.application_status ? String(row.application_status).toUpperCase() : undefined,
+      industryFeedback: row.industry_feedback ?? null,
+      evaluationMarks: row.industry_score === null || row.industry_score === undefined ? null : Number(row.industry_score),
+      outcomeMarks: row.outcome_marks === null || row.outcome_marks === undefined ? null : Number(row.outcome_marks),
     })),
     activeApplicationLock: eligibility.activeLock,
     maxSelectableApplications: 3,
@@ -2954,6 +3014,19 @@ type AcceptanceEmailPayload = {
   template: 'external-acceptance' | 'internal-mapping';
 };
 
+type StudentMarksheetEmailPayload = {
+  to: string;
+  studentName: string;
+  internshipTitle: string;
+  industryName: string;
+  departmentName: string;
+  collegeName: string;
+  status: string;
+  industryFeedback: string | null;
+  evaluationMarks: number | null;
+  outcomeMarks: number | null;
+};
+
 async function sendAcceptanceEmail(env: EnvBindings, payload: AcceptanceEmailPayload): Promise<void> {
   if (!payload.to) {
     await logEmailFailure(env, payload.template, null, 'Missing recipient email');
@@ -2996,6 +3069,48 @@ async function sendAcceptanceEmail(env: EnvBindings, payload: AcceptanceEmailPay
     lastError = await res.text();
   }
   await logEmailFailure(env, payload.template, payload.to, lastError || 'Unknown email failure');
+}
+
+async function sendStudentMarksheetEmail(env: EnvBindings, payload: StudentMarksheetEmailPayload): Promise<void> {
+  if (!payload.to) {
+    await logEmailFailure(env, 'student-marksheet', null, 'Missing recipient email');
+    return;
+  }
+  if (!env.RESEND_API_KEY) {
+    await logEmailFailure(env, 'student-marksheet', payload.to, 'RESEND_API_KEY is missing');
+    return;
+  }
+
+  const html = `<p>Dear ${payload.studentName},</p>
+<p>Your internship marksheet summary is ready.</p>
+<p><strong>Internship:</strong> ${payload.internshipTitle}</p>
+<p><strong>Industry:</strong> ${payload.industryName}</p>
+<p><strong>Department:</strong> ${payload.departmentName}</p>
+<p><strong>Host College:</strong> ${payload.collegeName}</p>
+<p><strong>Status:</strong> ${payload.status}</p>
+<p><strong>Industry Feedback:</strong> ${payload.industryFeedback || 'Not provided yet'}</p>
+<p><strong>Evaluation Marks:</strong> ${payload.evaluationMarks ?? 'Not available'}</p>
+<p><strong>Outcome Marks:</strong> ${payload.outcomeMarks ?? 'Not available'}</p>
+<p>Regards,<br/>Internship Management Team</p>`;
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: env.RESEND_FROM_EMAIL || 'noreply@aureliv.in',
+      to: payload.to,
+      subject: `Internship Marksheet Summary: ${payload.internshipTitle}`,
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    await logEmailFailure(env, 'student-marksheet', payload.to, text || 'Unknown email failure');
+  }
 }
 
 async function logEmailFailure(env: EnvBindings, type: string, recipient: string | null, errorMessage: string): Promise<void> {
