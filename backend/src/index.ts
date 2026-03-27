@@ -1753,8 +1753,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const id = crypto.randomUUID();
     await env.DB.prepare(
       `INSERT INTO internships
-       (id, title, description, ipo_id, college_id, department_id, duration, total_vacancy, filled_vacancy, remaining_vacancy, requirements, status, published)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'SENT_TO_DEPT', 0)`,
+       (id, title, description, ipo_id, college_id, department_id, duration, total_vacancy, filled_vacancy, remaining_vacancy, available_vacancy, requirements, status, published, created_by, visibility_type, is_external)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'SENT_TO_DEPT', 0, 'INDUSTRY', 'ALL_TARGETS', 0)`,
     ).bind(
       id,
       payload.title,
@@ -1763,6 +1763,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       payload.college_id,
       payload.department_id ?? null,
       payload.duration,
+      payload.total_vacancy,
       payload.total_vacancy,
       payload.total_vacancy,
       payload.requirements,
@@ -1872,7 +1873,11 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     await env.DB.prepare(
       `UPDATE internships
-       SET status = 'PUBLISHED', published = 1, remaining_vacancy = MAX(total_vacancy - filled_vacancy, 0), updated_at = datetime('now')
+       SET status = 'PUBLISHED',
+           published = 1,
+           remaining_vacancy = MAX(total_vacancy - filled_vacancy, 0),
+           available_vacancy = MAX(total_vacancy - filled_vacancy, 0),
+           updated_at = datetime('now')
        WHERE id = ?`,
     ).bind(parsed.data.internship_id).run();
     return ok('Internship published');
@@ -1946,6 +1951,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         `UPDATE internships
          SET filled_vacancy = filled_vacancy + 1,
              remaining_vacancy = total_vacancy - (filled_vacancy + 1),
+             available_vacancy = total_vacancy - (filled_vacancy + 1),
              updated_at = datetime('now')
          WHERE id = ?
            AND filled_vacancy < total_vacancy`,
@@ -2067,8 +2073,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const internshipId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, college_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, is_external, status, stipend_amount, stipend_duration, minimum_days, gender_preference)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
+      `INSERT INTO internships (id, title, description, department_id, college_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DEPARTMENT', 'OTHER_COLLEGES', 'OPEN', ?, ?, ?, ?)`,
     )
       .bind(
         internshipId,
@@ -2079,6 +2085,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         isPaid ? 1 : 0,
         isPaid ? Math.round(fee ?? 0) : null,
         internshipCategory,
+        vacancy === null ? 0 : Math.floor(vacancy),
         vacancy === null ? 0 : Math.floor(vacancy),
         vacancy === null ? 0 : Math.floor(vacancy),
         vacancy === null ? 0 : Math.floor(vacancy),
@@ -2126,6 +2133,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       `UPDATE internships
        SET title = ?, description = ?, is_paid = ?, fee = ?, internship_category = ?, vacancy = COALESCE(?, vacancy),
            total_vacancy = COALESCE(?, total_vacancy), remaining_vacancy = COALESCE(?, remaining_vacancy),
+           available_vacancy = MAX(COALESCE(?, total_vacancy) - COALESCE(filled_vacancy, 0), 0),
            stipend_amount = ?, stipend_duration = ?, minimum_days = ?, gender_preference = COALESCE(?, gender_preference),
            updated_at = datetime('now')
        WHERE id = ? AND department_id = ?`,
@@ -2135,6 +2143,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       isPaid ? 1 : 0,
       isPaid ? Math.round(fee ?? 0) : null,
       internshipCategory,
+      vacancy === null ? null : Math.floor(vacancy),
       vacancy === null ? null : Math.floor(vacancy),
       vacancy === null ? null : Math.floor(vacancy),
       vacancy === null ? null : Math.floor(vacancy),
@@ -2218,17 +2227,17 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const internship = await env.DB.prepare(
-      `SELECT i.id, i.vacancy, d.college_id
+      `SELECT i.id, COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS available_vacancy, d.college_id
        FROM internships i
        INNER JOIN departments d ON d.id = i.department_id
        WHERE i.id = ?`,
-    ).bind(internshipId).first<{ id: string; vacancy: number | null; college_id: string }>();
+    ).bind(internshipId).first<{ id: string; available_vacancy: number | null; college_id: string }>();
     if (!internship) return badRequest('Invalid internship_id');
     if (actor.role === 'STUDENT') {
       const student = await env.DB.prepare('SELECT college_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string }>();
       if (!student) return unauthorized('Student not found');
       if (student.college_id === internship.college_id) return forbidden('You can apply only for internships from other colleges.');
-      if (internship.vacancy !== null && Number(internship.vacancy) <= 0) return forbidden('No vacancy available for this internship');
+      if (internship.available_vacancy !== null && Number(internship.available_vacancy) <= 0) return forbidden('No vacancy available for this internship');
     }
 
     const isExternal = actor.role === 'EXTERNAL_STUDENT' ? 1 : 0;
@@ -2374,6 +2383,11 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
           WHEN vacancy > 0 THEN vacancy - 1
           ELSE 0
        END,
+       available_vacancy = CASE
+         WHEN COALESCE(available_vacancy, vacancy, 0) > 0 THEN COALESCE(available_vacancy, vacancy, 0) - 1
+         ELSE 0
+       END,
+       filled_vacancy = COALESCE(filled_vacancy, 0) + 1,
        updated_at = datetime('now')
        WHERE id = (SELECT internship_id FROM internship_applications WHERE id = ?)`,
     ).bind(applicationId).run();
@@ -3248,6 +3262,10 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        WHERE d.college_id = ?
          AND i.status = 'ACCEPTED'
          AND COALESCE(i.student_visibility, 0) = 1
+         AND NOT (
+           COALESCE(i.is_external, 0) = 1
+           AND COALESCE(i.created_by, 'INDUSTRY') IN ('COLLEGE', 'DEPARTMENT')
+         )
          AND (
            COALESCE(i.gender_preference, 'BOTH') = 'BOTH'
            OR (COALESCE(i.gender_preference, 'BOTH') = 'BOYS' AND ? = 'MALE')
@@ -3256,7 +3274,8 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        ORDER BY i.created_at DESC`,
     ).bind(student.college_id, student.sex ?? '', student.sex ?? '').all(),
     env.DB.prepare(
-      `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name, i.vacancy,
+      `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name,
+              COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS vacancy,
               ia.id AS application_id, ia.status AS application_status, ia.industry_feedback, ia.industry_score,
               (
                 SELECT AVG(orx.weighted_score)
@@ -3272,6 +3291,10 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        WHERE d.college_id <> ?
          AND i.status = 'ACCEPTED'
          AND COALESCE(i.student_visibility, 0) = 1
+         AND (
+           COALESCE(i.created_by, 'INDUSTRY') = 'INDUSTRY'
+           OR (COALESCE(i.created_by, 'INDUSTRY') IN ('COLLEGE', 'DEPARTMENT') AND COALESCE(i.is_external, 0) = 1)
+         )
          AND (
            COALESCE(i.gender_preference, 'BOTH') = 'BOTH'
            OR (COALESCE(i.gender_preference, 'BOTH') = 'BOYS' AND ? = 'MALE')
@@ -3909,12 +3932,20 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   if (!internshipColumns.has('total_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN total_vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('filled_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN filled_vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('remaining_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN remaining_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('available_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN available_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('created_by')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN created_by TEXT NOT NULL DEFAULT 'INDUSTRY'").run();
+  if (!internshipColumns.has('visibility_type')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN visibility_type TEXT NOT NULL DEFAULT 'ALL_TARGETS'").run();
   if (!internshipColumns.has('requirements')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN requirements TEXT').run();
   if (!internshipColumns.has('published')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN published INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('college_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN college_id TEXT').run();
   if (!internshipColumns.has('mapped_co')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN mapped_co TEXT').run();
   if (!internshipColumns.has('mapped_po')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN mapped_po TEXT').run();
   if (!internshipColumns.has('mapped_pso')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN mapped_pso TEXT').run();
+  await env.DB.prepare(
+    `UPDATE internships
+     SET available_vacancy = MAX(COALESCE(total_vacancy, vacancy, 0) - COALESCE(filled_vacancy, 0), 0)
+     WHERE available_vacancy IS NULL OR available_vacancy < 0 OR available_vacancy > COALESCE(total_vacancy, vacancy, available_vacancy)`,
+  ).run();
 
   const applicationColumns = new Set((await getTableColumns(env, 'internship_applications')).map((column) => column.name));
   if (!applicationColumns.has('is_external')) await env.DB.prepare('ALTER TABLE internship_applications ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();
@@ -4123,6 +4154,9 @@ async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
   if (!internshipColumns.has('total_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN total_vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('filled_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN filled_vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('remaining_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN remaining_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('available_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN available_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('created_by')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN created_by TEXT NOT NULL DEFAULT 'INDUSTRY'").run();
+  if (!internshipColumns.has('visibility_type')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN visibility_type TEXT NOT NULL DEFAULT 'ALL_TARGETS'").run();
   if (!internshipColumns.has('requirements')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN requirements TEXT').run();
   if (!internshipColumns.has('published')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN published INTEGER NOT NULL DEFAULT 0').run();
 
