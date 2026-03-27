@@ -1163,7 +1163,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const stipendDuration = toText(optional(body, ['stipend_duration', 'stipendDuration'])) || null;
     const fee = optional(body, ['fee']) ? Number(optional(body, ['fee'])) : null;
 
-    if (!internshipTitle || !college || !category) {
+    if (!internshipTitle || !college || !category || !vacancyRaw) {
       return badRequest('internship_title, college, category and vacancy are required');
     }
     if (department && !programme) return badRequest('programme is required when a department is selected');
@@ -3018,8 +3018,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (already) return conflict('This idea is already published');
 
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, industry_id, is_paid, fee, internship_category, vacancy, is_external, status, student_visibility, industry_request_id, stipend_amount, stipend_duration, minimum_days, maximum_days, gender_preference)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'ACCEPTED', 1, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO internships (id, title, description, department_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, filled_vacancy, remaining_vacancy, is_external, status, industry_request_id, stipend_amount, stipend_duration, minimum_days, maximum_days)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 'OPEN', ?, ?, ?, ?, ?)`,
     )
       .bind(
         crypto.randomUUID(),
@@ -3030,6 +3030,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         internshipCategory === 'PAID' ? 1 : 0,
         internshipCategory === 'PAID' ? fee : null,
         internshipCategory,
+        vacancies,
+        vacancies,
         vacancies,
         requestId,
         internshipCategory === 'STIPEND' ? stipendAmount : null,
@@ -4279,7 +4281,7 @@ async function readBody(request: Request): Promise<JsonMap> {
 function required(body: JsonMap, keys: string[]): string {
   for (const key of keys) {
     const value = toText(body[key]);
-    if (value) return value;
+    if (value !== '') return value;
   }
   return '';
 }
@@ -4287,13 +4289,16 @@ function required(body: JsonMap, keys: string[]): string {
 function optional(body: JsonMap, keys: string[]): string | null {
   for (const key of keys) {
     const value = toText(body[key]);
-    if (value) return value;
+    if (value !== '') return value;
   }
   return null;
 }
 
 function toText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  return '';
 }
 
 function toBoolean(value: string): boolean | null {
