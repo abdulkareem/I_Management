@@ -545,6 +545,7 @@ export default function DepartmentDashboardPage() {
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Internship</th>
                     <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">IPO Feedback</th>
                     <th className="py-2 pr-3">Actions</th>
                   </tr>
                 </thead>
@@ -555,6 +556,7 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>
                       <td className="py-2 pr-3 uppercase">{app.status}</td>
+                      <td className="py-2 pr-3">{(app as any).industry_feedback ? `${(app as any).industry_feedback} (${(app as any).industry_score ?? '-'}/10)` : '-'}</td>
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
@@ -581,6 +583,7 @@ export default function DepartmentDashboardPage() {
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Internship</th>
                     <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">IPO Feedback</th>
                     <th className="py-2 pr-3">Actions</th>
                   </tr>
                 </thead>
@@ -591,6 +594,7 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>
                       <td className="py-2 pr-3 uppercase">{app.status}</td>
+                      <td className="py-2 pr-3">{(app as any).industry_feedback ? `${(app as any).industry_feedback} (${(app as any).industry_score ?? '-'}/10)` : '-'}</td>
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
