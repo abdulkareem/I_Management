@@ -32,7 +32,12 @@ export default function DepartmentDashboardPage() {
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [editingOutcomeId, setEditingOutcomeId] = useState<string | null>(null);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
-  const [expandedCard, setExpandedCard] = useState<'external' | 'programmes' | 'ideas' | 'outcomes' | null>('external');
+  const [expandedCard, setExpandedCard] = useState<Record<'external' | 'programmes' | 'ideas' | 'outcomes', boolean>>({
+    external: true,
+    programmes: false,
+    ideas: false,
+    outcomes: false,
+  });
   const [drafts, setDrafts] = useState<Record<string, any>>({});
   const [internshipType, setInternshipType] = useState<InternshipType>('FREE');
   const [stipendFrequency, setStipendFrequency] = useState<StipendFrequency>('MONTH');
@@ -154,7 +159,8 @@ export default function DepartmentDashboardPage() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const mappedCo = form.getAll('mappedCo').join(', ');
-    const mappedPo = form.getAll('mappedPo').join(', ');
+    const mappedPo = [...form.getAll('mappedPo'), ...form.getAll('mappedProgramPo')].join(', ');
+    const mappedPso = form.getAll('mappedPso').join(', ');
     setError(null);
 
     try {
@@ -167,6 +173,7 @@ export default function DepartmentDashboardPage() {
           programId: form.get('programId') || null,
           mappedCo: mappedCo || null,
           mappedPo: mappedPo || null,
+          mappedPso: mappedPso || null,
         }),
       });
       event.currentTarget.reset();
@@ -188,6 +195,7 @@ export default function DepartmentDashboardPage() {
         programId: draft.program_id || null,
         mappedCo: draft.mapped_co || null,
         mappedPo: draft.mapped_po || null,
+        mappedPso: draft.mapped_pso || null,
       }),
     });
     setEditingIdeaId(null);
@@ -315,10 +323,10 @@ export default function DepartmentDashboardPage() {
 
           <section className="grid gap-4 md:grid-cols-4">
             <Card className="rounded-[20px] p-4">
-              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'external' ? null : 'external')}>
+              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, external: !prev.external }))}>
                 Create Internship for External Students
               </button>
-              {expandedCard === 'external' ? (
+              {expandedCard.external ? (
                 <form className="mt-3 grid gap-3" onSubmit={createInternship}>
                   <input name="title" placeholder="Internship title" required />
                   <textarea name="description" placeholder="Description" required />
@@ -341,10 +349,10 @@ export default function DepartmentDashboardPage() {
               ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and create internships for external students.</p>}
             </Card>
             <Card className="rounded-[20px] p-4">
-              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'programmes' ? null : 'programmes')}>
+              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, programmes: !prev.programmes }))}>
                 Department Programmes (with PO/PSO)
               </button>
-              {expandedCard === 'programmes' ? (
+              {expandedCard.programmes ? (
                 <form className="mt-3 grid gap-2" onSubmit={addProgram}>
                   <input name="name" placeholder="Programme name (eg. BSc Physics)" required />
                   <Button>Add Programme</Button>
@@ -352,10 +360,10 @@ export default function DepartmentDashboardPage() {
               ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and manage programme entries.</p>}
             </Card>
             <Card className="rounded-[20px] p-4">
-              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'ideas' ? null : 'ideas')}>
+              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, ideas: !prev.ideas }))}>
                 Suggest Internship Provider Organization (IPO) Internship Idea
               </button>
-              {expandedCard === 'ideas' ? (
+              {expandedCard.ideas ? (
                 <form className="mt-3 grid gap-3" onSubmit={createIndustryRequest}>
                   <select name="industryId" value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)} required>
                     <option value="">Select registered Internship Provider Organization (IPO)</option>
@@ -391,6 +399,18 @@ export default function DepartmentDashboardPage() {
                           <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPo" value={entry.code} />{entry.code}</label>
                         ))}
                       </div>
+                      <div>
+                        <p className="text-sm font-semibold">Map Programme PO</p>
+                        {selectedProgramOutcomes.filter((entry) => entry.type === 'PO').map((entry) => (
+                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedProgramPo" value={entry.value} />{entry.value}</label>
+                        ))}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">Map Programme PSO</p>
+                        {selectedProgramOutcomes.filter((entry) => entry.type === 'PSO').map((entry) => (
+                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPso" value={entry.value} />{entry.value}</label>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
                   <Button>Submit Idea</Button>
@@ -398,10 +418,10 @@ export default function DepartmentDashboardPage() {
               ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and propose internships to Internship Provider Organizations (IPOs).</p>}
             </Card>
             <Card className="rounded-[20px] p-4">
-              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'outcomes' ? null : 'outcomes')}>
+              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, outcomes: !prev.outcomes }))}>
                 Internship Outcomes Setup
               </button>
-              {expandedCard === 'outcomes' ? (
+              {expandedCard.outcomes ? (
                 <div className="mt-3 grid gap-2">
                   <Button onClick={() => addInternshipOutcome('CO')}>Add Internship CO (CO1–CO6)</Button>
                   <Button onClick={() => addInternshipOutcome('PO')}>Add Internship PO (PO1–PO10)</Button>
@@ -501,7 +521,7 @@ export default function DepartmentDashboardPage() {
                         <p className="text-xs text-slate-300">Programme: {item.program_name || '-'} • {item.status}</p>
                       </button>
                       {selectedIdeaId === item.id ? (
-                        <p className="mt-1 text-xs text-slate-300">CO Mapping: {item.mapped_co || '-'} • PO Mapping: {item.mapped_po || '-'}</p>
+                        <p className="mt-1 text-xs text-slate-300">CO Mapping: {item.mapped_co || '-'} • PO Mapping: {item.mapped_po || '-'} • PSO Mapping: {item.mapped_pso || '-'}</p>
                       ) : null}
                     </>
                   )}
