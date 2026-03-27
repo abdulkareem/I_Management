@@ -54,8 +54,8 @@ export default function DepartmentChangePasswordPage() {
     <main className="mx-auto flex min-h-screen w-full max-w-md items-center px-4 py-10">
       <Card className="w-full rounded-[32px] p-6 sm:p-8">
         <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">Department Security</p>
-        <h1 className="mt-3 text-3xl font-semibold text-white">Change your temporary password</h1>
-        <p className="mt-2 text-sm text-slate-300">This is required once before continuing to the department dashboard.</p>
+        <h1 className="mt-3 text-3xl font-semibold text-slate-900">Change your temporary password</h1>
+        <p className="mt-2 text-sm text-slate-700">This is required once before continuing to the department dashboard.</p>
 
         <form className="mt-6 space-y-4" onSubmit={onSubmit}>
           <div className="space-y-2">
@@ -69,8 +69,8 @@ export default function DepartmentChangePasswordPage() {
           <Button className="w-full" disabled={loading}>{loading ? 'Saving…' : 'Update password'}</Button>
         </form>
 
-        {message ? <p className="mt-3 rounded-[18px] bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{message}</p> : null}
-        {error ? <p className="mt-3 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
+        {message ? <p className="mt-3 rounded-[18px] bg-emerald-400/10 px-4 py-3 text-sm text-emerald-800">{message}</p> : null}
+        {error ? <p className="mt-3 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-800">{error}</p> : null}
       </Card>
     </main>
   );

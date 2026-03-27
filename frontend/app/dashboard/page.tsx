@@ -16,5 +16,5 @@ export default function DashboardRedirectPage() {
     router.replace(dashboardPathFor(session.user.role));
   }, [router]);
 
-  return <div className="flex min-h-screen items-center justify-center text-slate-300">Redirecting...</div>;
+  return <div className="flex min-h-screen items-center justify-center text-slate-900">Redirecting...</div>;
 }

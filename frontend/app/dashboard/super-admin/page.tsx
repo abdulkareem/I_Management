@@ -92,7 +92,7 @@ export default function SuperAdminDashboardPage() {
     <RoleDashboardShell allowedRoles={['SUPER_ADMIN', 'ADMIN']} title="Super Admin Dashboard" subtitle="Manage all entities from D1 with full CRUD and approvals.">
       {() => (
         <>
-          {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          {error ? <Card className="rounded-[28px] p-4 text-rose-800">{error}</Card> : null}
           {loading ? <Card className="rounded-[28px] p-4">Loading dashboard data...</Card> : null}
           <Card className="rounded-[20px] p-4">
             <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'industry-types' ? null : 'industry-types')}>
@@ -103,7 +103,7 @@ export default function SuperAdminDashboardPage() {
                 <input value={industryTypeName} onChange={(e) => setIndustryTypeName(e.target.value)} placeholder="Type name (e.g., Manufacturing)" />
                 <Button onClick={addIndustryType}>Save Industry Type</Button>
               </div>
-            ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and add industry categories for registrations.</p>}
+            ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and add industry categories for registrations.</p>}
           </Card>
           <DataTable
             title="Industry Types"

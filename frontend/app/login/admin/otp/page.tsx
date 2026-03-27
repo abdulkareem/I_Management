@@ -31,8 +31,8 @@ function AdminOtpForm() {
 
   return (
     <Card className="w-full rounded-[32px] p-6 sm:p-8">
-      <h1 className="text-3xl font-semibold text-white">Enter OTP</h1>
-      <p className="mt-2 text-sm text-slate-300">OTP sent to: {email || 'missing email'}</p>
+      <h1 className="text-3xl font-semibold text-slate-900">Enter OTP</h1>
+      <p className="mt-2 text-sm text-slate-700">OTP sent to: {email || 'missing email'}</p>
       <form className="mt-6 space-y-3" onSubmit={handleVerifyOtp}>
         <input
           placeholder="6-digit OTP"
@@ -44,7 +44,7 @@ function AdminOtpForm() {
         />
         <Button className="w-full" disabled={loading || !email}>{loading ? 'Please wait...' : 'Verify OTP'}</Button>
       </form>
-      {error ? <p className="mt-3 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
+      {error ? <p className="mt-3 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-800">{error}</p> : null}
       <Link href="/login/admin" className="mt-4 block text-sm text-cyan-200">Back to email step</Link>
     </Card>
   );

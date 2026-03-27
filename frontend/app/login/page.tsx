@@ -41,8 +41,8 @@ export default function LoginPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md items-center px-4 py-10">
       <Card className="w-full rounded-[32px] p-6 sm:p-8">
-        <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">Welcome back</p>
-        <h1 className="mt-3 text-3xl font-semibold text-white">Continue your internship journey</h1>
+        <p className="text-sm uppercase tracking-[0.24em] text-sky-700">Welcome back</p>
+        <h1 className="mt-3 text-3xl font-semibold text-slate-900">Continue your internship journey</h1>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
@@ -56,11 +56,11 @@ export default function LoginPage() {
           <Button className="w-full" disabled={loading}>{loading ? 'Signing in…' : 'Login'}</Button>
         </form>
 
-        {error ? <p className="mt-3 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
+        {error ? <p className="mt-3 rounded-[18px] border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900">{error}</p> : null}
 
-        <div className="mt-6 grid gap-3 text-sm text-slate-300">
-          <Link href="/login/admin" className="rounded-[18px] border border-white/10 px-4 py-3">Admin OTP login</Link>
-          <Link href="/join/student" className="rounded-[18px] border border-white/10 px-4 py-3">New user? Register</Link>
+        <div className="mt-6 grid gap-3 text-sm text-slate-800">
+          <Link href="/login/admin" className="rounded-[18px] border border-slate-300 px-4 py-3">Admin OTP login</Link>
+          <Link href="/join/student" className="rounded-[18px] border border-slate-300 px-4 py-3">New user? Register</Link>
         </div>
       </Card>
     </main>

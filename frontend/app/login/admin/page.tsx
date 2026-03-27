@@ -30,12 +30,12 @@ export default function AdminLoginPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md items-center px-4 py-10">
       <Card className="w-full rounded-[32px] p-6 sm:p-8">
-        <h1 className="text-3xl font-semibold text-white">Super Admin Login</h1>
+        <h1 className="text-3xl font-semibold text-slate-900">Super Admin Login</h1>
         <form className="mt-6 space-y-3" onSubmit={handleSendOtp}>
           <input type="email" placeholder="Super admin email" value={email} onChange={(event) => setEmail(event.target.value)} required />
           <Button className="w-full" disabled={loading}>{loading ? 'Please wait...' : 'Send OTP'}</Button>
         </form>
-        {error ? <p className="mt-3 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
+        {error ? <p className="mt-3 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-800">{error}</p> : null}
         <Link href="/login" className="mt-4 block text-sm text-cyan-200">Back to login</Link>
       </Card>
     </main>
