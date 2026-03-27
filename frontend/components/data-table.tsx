@@ -72,11 +72,11 @@ export function DataTable<T extends { id: string }>({
   }
 
   return (
-    <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 overflow-x-auto">
+    <div className="overflow-x-auto rounded-[28px] border border-slate-200 bg-white/80 p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold text-white">{title}</h2>
+        <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
         <div className="flex gap-2">
-          <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search..." className="rounded bg-black/30 px-3 py-1 text-sm" />
+          <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search..." className="rounded border border-slate-300 bg-white px-3 py-1 text-sm text-slate-900" />
           <Button variant="secondary" onClick={exportExcel}>Export Excel</Button>
         </div>
       </div>
@@ -96,11 +96,11 @@ export function DataTable<T extends { id: string }>({
         </thead>
         <tbody>
           {paginated.length === 0 ? (
-            <tr className="border-t border-white/10">
-              <td className="py-3 text-slate-300" colSpan={columns.length + (actions ? 1 : 0)}>No data to display.</td>
+            <tr className="border-t border-slate-200">
+              <td className="py-3 text-slate-600" colSpan={columns.length + (actions ? 1 : 0)}>No data to display.</td>
             </tr>
           ) : paginated.map((row) => (
-            <tr key={row.id} className="border-t border-white/10">
+            <tr key={row.id} className="border-t border-slate-200">
               {columns.map((column) => <td key={String(column.key)} className="py-2 pr-2">{String(row[column.key] ?? '')}</td>)}
               {actions ? <td className="py-2">{actions(row)}</td> : null}
             </tr>
@@ -109,7 +109,7 @@ export function DataTable<T extends { id: string }>({
       </table>
       <div className="mt-3 flex items-center justify-end gap-2">
         <Button variant="secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Prev</Button>
-        <span className="text-xs text-slate-300">{page}/{totalPages}</span>
+        <span className="text-xs text-slate-600">{page}/{totalPages}</span>
         <Button variant="secondary" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</Button>
       </div>
     </div>

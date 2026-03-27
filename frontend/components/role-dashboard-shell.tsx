@@ -67,7 +67,7 @@ export function RoleDashboardShell({
   }, [allowedRoles, router]);
 
   if (!session) {
-    return <div className="flex min-h-screen items-center justify-center text-slate-300">Loading your internship space…</div>;
+    return <div className="flex min-h-screen items-center justify-center text-slate-600">Loading your internship space…</div>;
   }
 
   const Icon = roleIcon[session.user.role];
@@ -77,18 +77,18 @@ export function RoleDashboardShell({
       <Card className="rounded-[32px] p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-4">
-            <div className="rounded-[22px] bg-cyan-400/10 p-3 text-cyan-300"><Icon className="h-6 w-6" /></div>
+            <div className="rounded-[22px] bg-indigo-100 p-3 text-indigo-700"><Icon className="h-6 w-6" /></div>
             <div>
-              <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">{roleLabel[session.user.role]}</p>
-              <h1 className="mt-2 text-3xl font-semibold text-white">{title}</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-300">{subtitle}</p>
+              <p className="text-sm uppercase tracking-[0.24em] text-indigo-700">{roleLabel[session.user.role]}</p>
+              <h1 className="mt-2 text-3xl font-semibold text-slate-900">{title}</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">{subtitle}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Link href={dashboardPathFor(session.user.role)} className={`rounded-full px-4 py-2 text-sm ${pathname === dashboardPathFor(session.user.role) ? 'bg-white text-slate-950' : 'border border-white/10 text-white'}`}>
+            <Link href={dashboardPathFor(session.user.role)} className={`rounded-full px-4 py-2 text-sm ${pathname === dashboardPathFor(session.user.role) ? 'bg-indigo-600 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-100'}`}>
               Dashboard
             </Link>
-            <Link href="/login" className="rounded-full border border-white/10 px-4 py-2 text-sm text-white">Switch account</Link>
+            <Link href="/login" className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">Switch account</Link>
             <Button variant="secondary" onClick={() => { clearSession(); router.push('/'); }}>
               <LogOut className="mr-2 h-4 w-4" />Logout
             </Button>
