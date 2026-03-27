@@ -762,8 +762,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       stats: {
         internships: (internships.results ?? []).length,
         liveOpportunities: (internships.results ?? []).length,
-        pendingApplications: appRows.filter((a: any) => a.status === 'pending').length,
-        acceptedApplications: appRows.filter((a: any) => a.status === 'accepted').length,
+        pendingApplications: appRows.filter((a: any) => String(a.status ?? '').toLowerCase() === 'pending').length,
+        acceptedApplications: appRows.filter((a: any) => String(a.status ?? '').toLowerCase() === 'accepted').length,
         attendanceToday: 0,
       },
       opportunities: (internships.results ?? []).map((row: any) => ({
