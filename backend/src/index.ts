@@ -168,7 +168,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/colleges') {
-    const rows = await env.DB.prepare('SELECT id, name FROM colleges ORDER BY name ASC').all<{ id: string; name: string }>();
+    const rows = await env.DB.prepare(
+      `SELECT id, name
+       FROM colleges
+       WHERE status = 'approved' AND is_active = 1
+       ORDER BY name ASC`,
+    ).all<{ id: string; name: string }>();
     return ok('Colleges fetched', (rows.results ?? []).map((row) => ({ id: row.id, collegeName: row.name })));
   }
 
@@ -2914,14 +2919,49 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const body = await readBody(request);
     const internshipTitle = optional(body, ['internship_title', 'internshipTitle']);
     const description = optional(body, ['description']);
+    const suggestedVacancy = optional(body, ['suggested_vacancy', 'suggestedVacancy']);
+    const suggestedInternshipCategory = optional(body, ['suggested_internship_category', 'suggestedInternshipCategory']);
+    const suggestedFee = optional(body, ['suggested_fee', 'suggestedFee']);
+    const suggestedStipendAmount = optional(body, ['suggested_stipend_amount', 'suggestedStipendAmount']);
+    const suggestedStipendDuration = optional(body, ['suggested_stipend_duration', 'suggestedStipendDuration']);
+    const suggestedMinimumDays = optional(body, ['suggested_minimum_days', 'suggestedMinimumDays']);
+    const suggestedMaximumDays = optional(body, ['suggested_maximum_days', 'suggestedMaximumDays']);
+    const genderPreference = optional(body, ['gender_preference', 'genderPreference']);
+    if (suggestedInternshipCategory && !['FREE', 'PAID', 'STIPEND'].includes(String(suggestedInternshipCategory).toUpperCase())) {
+      return badRequest('suggested_internship_category must be FREE, PAID or STIPEND');
+    }
+    if (genderPreference && !['GIRLS', 'BOYS', 'BOTH'].includes(String(genderPreference).toUpperCase())) {
+      return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
+    }
     const result = await env.DB.prepare(
       `UPDATE industry_requests
        SET internship_title = COALESCE(?, internship_title),
            description = COALESCE(?, description),
+           suggested_vacancy = COALESCE(?, suggested_vacancy),
+           suggested_internship_category = COALESCE(?, suggested_internship_category),
+           suggested_fee = COALESCE(?, suggested_fee),
+           suggested_stipend_amount = COALESCE(?, suggested_stipend_amount),
+           suggested_stipend_duration = COALESCE(?, suggested_stipend_duration),
+           suggested_minimum_days = COALESCE(?, suggested_minimum_days),
+           suggested_maximum_days = COALESCE(?, suggested_maximum_days),
+           gender_preference = COALESCE(?, gender_preference),
            updated_at = datetime('now')
        WHERE id = ? AND industry_id = ?`,
     )
-      .bind(internshipTitle, description, industryRequestUpdateMatch[1], actor.id)
+      .bind(
+        internshipTitle,
+        description,
+        suggestedVacancy !== undefined && suggestedVacancy !== null ? Number(suggestedVacancy) : null,
+        suggestedInternshipCategory ? String(suggestedInternshipCategory).toUpperCase() : null,
+        suggestedFee !== undefined && suggestedFee !== null ? Number(suggestedFee) : null,
+        suggestedStipendAmount !== undefined && suggestedStipendAmount !== null ? Number(suggestedStipendAmount) : null,
+        suggestedStipendDuration ? String(suggestedStipendDuration).toUpperCase() : null,
+        suggestedMinimumDays !== undefined && suggestedMinimumDays !== null ? Number(suggestedMinimumDays) : null,
+        suggestedMaximumDays !== undefined && suggestedMaximumDays !== null ? Number(suggestedMaximumDays) : null,
+        genderPreference ? String(genderPreference).toUpperCase() : null,
+        industryRequestUpdateMatch[1],
+        actor.id,
+      )
       .run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry request not found');
     return ok('Industry request updated');
@@ -2933,6 +2973,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const rows = await env.DB.prepare(
       `SELECT ir.id, ir.internship_title, ir.description, ir.status, ir.mapped_co, ir.mapped_po, ir.mapped_pso,
               ir.program_id, p.name AS program_name,
+              ir.gender_preference, ir.suggested_vacancy, ir.suggested_internship_category,
+              ir.suggested_fee, ir.suggested_stipend_amount, ir.suggested_stipend_duration,
+              ir.suggested_minimum_days, ir.suggested_maximum_days,
               d.id AS department_id, d.name AS department_name, c.name AS college_name,
               i.id AS published_internship_id, i.vacancy AS published_vacancy, i.internship_category AS published_category
        FROM industry_requests ir
@@ -2959,8 +3002,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const stipendDuration = toText(optional(body, ['stipend_duration', 'stipendDuration'])) || null;
     const minimumDays = optional(body, ['minimum_days', 'minimumDays']) ? Number(optional(body, ['minimum_days', 'minimumDays'])) : null;
     const maximumDays = optional(body, ['maximum_days', 'maximumDays']) ? Number(optional(body, ['maximum_days', 'maximumDays'])) : null;
+    const genderPreference = toText(optional(body, ['gender_preference', 'genderPreference'])) || 'BOTH';
     if (Number.isNaN(vacancies) || vacancies <= 0) return badRequest('Valid vacancies are required');
     if (!['FREE', 'PAID', 'STIPEND'].includes(internshipCategory)) return badRequest('internship_category must be FREE, PAID or STIPEND');
+    if (!['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference.toUpperCase())) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
 
     const requestRow = await env.DB.prepare(
       `SELECT id, department_id, internship_title, description
@@ -2973,8 +3018,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (already) return conflict('This idea is already published');
 
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, industry_id, is_paid, fee, internship_category, vacancy, is_external, status, industry_request_id, stipend_amount, stipend_duration, minimum_days, maximum_days)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'OPEN', ?, ?, ?, ?, ?)`,
+      `INSERT INTO internships (id, title, description, department_id, industry_id, is_paid, fee, internship_category, vacancy, is_external, status, student_visibility, industry_request_id, stipend_amount, stipend_duration, minimum_days, maximum_days, gender_preference)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'ACCEPTED', 1, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         crypto.randomUUID(),
@@ -2991,6 +3036,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         internshipCategory === 'STIPEND' ? stipendDuration : null,
         minimumDays,
         maximumDays,
+        genderPreference.toUpperCase(),
       )
       .run();
 
@@ -3848,6 +3894,14 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   const industryRequestColumns = new Set((await getTableColumns(env, 'industry_requests')).map((column) => column.name));
   if (!industryRequestColumns.has('program_id')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN program_id TEXT').run();
   if (!industryRequestColumns.has('mapped_co')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN mapped_co TEXT').run();
+  if (!industryRequestColumns.has('gender_preference')) await env.DB.prepare("ALTER TABLE industry_requests ADD COLUMN gender_preference TEXT NOT NULL DEFAULT 'BOTH'").run();
+  if (!industryRequestColumns.has('suggested_vacancy')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN suggested_vacancy INTEGER').run();
+  if (!industryRequestColumns.has('suggested_internship_category')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN suggested_internship_category TEXT').run();
+  if (!industryRequestColumns.has('suggested_fee')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN suggested_fee INTEGER').run();
+  if (!industryRequestColumns.has('suggested_stipend_amount')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN suggested_stipend_amount INTEGER').run();
+  if (!industryRequestColumns.has('suggested_stipend_duration')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN suggested_stipend_duration TEXT').run();
+  if (!industryRequestColumns.has('suggested_minimum_days')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN suggested_minimum_days INTEGER').run();
+  if (!industryRequestColumns.has('suggested_maximum_days')) await env.DB.prepare('ALTER TABLE industry_requests ADD COLUMN suggested_maximum_days INTEGER').run();
 
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS department_outcome_mappings (

@@ -24,6 +24,14 @@ type IndustryIdea = {
   published_internship_id?: string | null;
   published_vacancy?: number | null;
   published_category?: InternshipCategory | null;
+  gender_preference?: 'BOTH' | 'BOYS' | 'GIRLS' | null;
+  suggested_vacancy?: number | null;
+  suggested_internship_category?: InternshipCategory | null;
+  suggested_fee?: number | null;
+  suggested_stipend_amount?: number | null;
+  suggested_stipend_duration?: StipendDuration | null;
+  suggested_minimum_days?: number | null;
+  suggested_maximum_days?: number | null;
 };
 type College = { id: string; name: string };
 type Department = { id: string; name: string };
@@ -69,7 +77,7 @@ export default function IndustryDashboardPage() {
   const [selectedCollege, setSelectedCollege] = useState('');
   const [connectForm, setConnectForm] = useState(EMPTY_CONNECT);
   const [error, setError] = useState<string | null>(null);
-  const [forms, setForms] = useState<Record<string, { vacancy: string; internshipCategory: InternshipCategory; fee: string; stipendAmount: string; stipendDuration: StipendDuration; minimumDays: string; maximumDays: string }>>({});
+  const [forms, setForms] = useState<Record<string, { vacancy: string; internshipCategory: InternshipCategory; fee: string; stipendAmount: string; stipendDuration: StipendDuration; minimumDays: string; maximumDays: string; genderPreference: 'BOTH' | 'BOYS' | 'GIRLS' }>>({});
   const [editingIdeaId, setEditingIdeaId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [ipoProfile, setIpoProfile] = useState<IpoProfile | null>(null);
@@ -132,21 +140,24 @@ export default function IndustryDashboardPage() {
     setConnectSubmitting(true);
     try {
       const payload = {
+        college_id: selectedCollege,
+        department_id: connectForm.departmentId || null,
         internship_title: connectForm.internshipTitle,
-        college: selectedCollege,
-        department: connectForm.departmentId || null,
-        programme: connectForm.departmentId ? connectForm.programme || null : null,
-        category: connectForm.internshipCategory,
+        nature_of_work: connectForm.natureOfWork,
+        internship_category: connectForm.internshipCategory,
         vacancy: Number(connectForm.vacancy || 0),
-        description: connectForm.natureOfWork,
-        genderPreference: connectForm.genderPreference,
+        gender_preference: connectForm.genderPreference,
+        program_id: connectForm.departmentId ? connectForm.programme || null : null,
         hourDuration: Number(connectForm.hourDuration || 0),
         fee: connectForm.internshipCategory === 'PAID' ? Number(connectForm.fee || 0) : null,
         stipendAmount: connectForm.internshipCategory === 'STIPEND' ? Number(connectForm.stipendAmount || 0) : null,
         stipendDuration: connectForm.internshipCategory === 'STIPEND' ? connectForm.stipendDuration : null,
       };
       console.log('SEND TO DEPT PAYLOAD:', payload);
-      const response = await fetchWithSession('/api/industry/send-to-department', {
+      if (connectForm.departmentId && !connectForm.programme) {
+        throw new Error('Please select a programme when a department is selected.');
+      }
+      const response = await fetchWithSession('/api/industry/connect-request', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
@@ -159,25 +170,62 @@ export default function IndustryDashboardPage() {
       setConnectSubmitted(true);
       setSuccessMessage('Sent to Department');
       await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to send request to department.');
     } finally {
       setConnectSubmitting(false);
     }
   }
 
-  async function updateIdea(ideaId: string, title: string, description: string) {
+  async function updateIdea(ideaId: string, title: string, description: string, payload?: { vacancy: string; internshipCategory: InternshipCategory; fee: string; stipendAmount: string; stipendDuration: StipendDuration; minimumDays: string; maximumDays: string; genderPreference: 'BOTH' | 'BOYS' | 'GIRLS' }) {
     await fetchWithSession(`/api/industry-requests/${ideaId}/update`, {
       method: 'PUT',
-      body: JSON.stringify({ internshipTitle: title, description }),
+      body: JSON.stringify({
+        internshipTitle: title,
+        description,
+        suggestedVacancy: payload ? Number(payload.vacancy || 0) : undefined,
+        suggestedInternshipCategory: payload?.internshipCategory,
+        suggestedFee: payload?.internshipCategory === 'PAID' ? Number(payload.fee || 0) : null,
+        suggestedStipendAmount: payload?.internshipCategory === 'STIPEND' ? Number(payload.stipendAmount || 0) : null,
+        suggestedStipendDuration: payload?.internshipCategory === 'STIPEND' ? payload.stipendDuration : null,
+        suggestedMinimumDays: payload ? Number(payload.minimumDays || 0) : undefined,
+        suggestedMaximumDays: payload ? Number(payload.maximumDays || 0) : undefined,
+        genderPreference: payload?.genderPreference,
+      }),
     });
   }
 
+  async function saveIdea(idea: IndustryIdea) {
+    const payload = forms[idea.id] ?? {
+      vacancy: String(idea.suggested_vacancy ?? 1),
+      internshipCategory: idea.suggested_internship_category ?? 'FREE',
+      fee: idea.suggested_fee ? String(idea.suggested_fee) : '',
+      stipendAmount: idea.suggested_stipend_amount ? String(idea.suggested_stipend_amount) : '',
+      stipendDuration: idea.suggested_stipend_duration ?? 'MONTH',
+      minimumDays: idea.suggested_minimum_days ? String(idea.suggested_minimum_days) : '7',
+      maximumDays: idea.suggested_maximum_days ? String(idea.suggested_maximum_days) : '30',
+      genderPreference: idea.gender_preference ?? 'BOTH',
+    };
+    setIdeaActionSubmitting(idea.id);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      await updateIdea(idea.id, idea.internship_title, idea.description, payload);
+      setEditingIdeaId(null);
+      setSuccessMessage('Idea details saved.');
+      await load();
+    } finally {
+      setIdeaActionSubmitting(null);
+    }
+  }
+
   async function acceptAndPublishIdea(idea: IndustryIdea) {
-    const payload = forms[idea.id] ?? { vacancy: '1', internshipCategory: 'FREE' as InternshipCategory, fee: '', stipendAmount: '', stipendDuration: 'MONTH' as StipendDuration, minimumDays: '7', maximumDays: '30' };
+    const payload = forms[idea.id] ?? { vacancy: String(idea.suggested_vacancy ?? 1), internshipCategory: idea.suggested_internship_category ?? 'FREE' as InternshipCategory, fee: idea.suggested_fee ? String(idea.suggested_fee) : '', stipendAmount: idea.suggested_stipend_amount ? String(idea.suggested_stipend_amount) : '', stipendDuration: idea.suggested_stipend_duration ?? 'MONTH' as StipendDuration, minimumDays: String(idea.suggested_minimum_days ?? 7), maximumDays: String(idea.suggested_maximum_days ?? 30), genderPreference: idea.gender_preference ?? 'BOTH' };
     setError(null);
     setSuccessMessage(null);
     setIdeaActionSubmitting(idea.id);
     try {
-      await updateIdea(idea.id, idea.internship_title, idea.description);
+      await updateIdea(idea.id, idea.internship_title, idea.description, payload);
       await fetchWithSession(`/api/industry-requests/${idea.id}/respond`, { method: 'POST', body: JSON.stringify({ status: 'ACCEPTED' }) });
       await fetchWithSession(`/api/industry/ideas/${idea.id}/publish`, {
         method: 'POST',
@@ -189,6 +237,7 @@ export default function IndustryDashboardPage() {
           stipendDuration: payload.internshipCategory === 'STIPEND' ? payload.stipendDuration : null,
           minimumDays: Number(payload.minimumDays || 0),
           maximumDays: Number(payload.maximumDays || 0),
+          genderPreference: payload.genderPreference,
         }),
       });
       setEditingIdeaId(null);
@@ -362,7 +411,7 @@ export default function IndustryDashboardPage() {
             <h2 className="mt-2 text-2xl font-semibold text-slate-900">Department Suggested Ideas</h2>
             <div className="mt-5 space-y-3">
               {paginatedIdeas.rows.length ? paginatedIdeas.rows.map((idea) => {
-                const form = forms[idea.id] ?? { vacancy: '1', internshipCategory: 'FREE' as InternshipCategory, fee: '', stipendAmount: '', stipendDuration: 'MONTH' as StipendDuration, minimumDays: '7', maximumDays: '30' };
+                const form = forms[idea.id] ?? { vacancy: String(idea.suggested_vacancy ?? 1), internshipCategory: idea.suggested_internship_category ?? 'FREE' as InternshipCategory, fee: idea.suggested_fee ? String(idea.suggested_fee) : '', stipendAmount: idea.suggested_stipend_amount ? String(idea.suggested_stipend_amount) : '', stipendDuration: idea.suggested_stipend_duration ?? 'MONTH' as StipendDuration, minimumDays: String(idea.suggested_minimum_days ?? 7), maximumDays: String(idea.suggested_maximum_days ?? 30), genderPreference: idea.gender_preference ?? 'BOTH' };
                 const isEditing = editingIdeaId === idea.id;
                 return (
                   <div key={idea.id} className="rounded-[24px] border border-slate-200 bg-white p-4">
@@ -372,13 +421,18 @@ export default function IndustryDashboardPage() {
                     <Input className="mt-2" value={idea.description} disabled={!isEditing} onChange={(event) => setIdeas((prev) => prev.map((item) => (item.id === idea.id ? { ...item, description: event.target.value } : item)))} />
                     <Badge className="mt-2">{idea.status}</Badge>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Button variant="secondary" onClick={() => setEditingIdeaId(isEditing ? null : idea.id)}>{isEditing ? 'Close Edit' : 'Edit'}</Button>
+                      <Button variant="secondary" disabled={ideaActionSubmitting === idea.id} onClick={() => { if (isEditing) { void saveIdea(idea); return; } setEditingIdeaId(idea.id); }}>{isEditing ? (ideaActionSubmitting === idea.id ? 'Saving...' : 'Save') : 'Edit'}</Button>
                       <Button variant="secondary" disabled={ideaActionSubmitting === idea.id} onClick={() => acceptAndPublishIdea(idea)}>{ideaActionSubmitting === idea.id ? 'Submitting...' : 'Accept Idea'}</Button>
                       <Button variant="secondary" disabled={ideaActionSubmitting === idea.id} onClick={() => rejectIdea(idea.id)}>{ideaActionSubmitting === idea.id ? 'Submitting...' : 'Reject Idea'}</Button>
                     </div>
                     {isEditing ? (
                       <div className="mt-3 grid gap-2 md:grid-cols-3">
                         <Input placeholder="Vacancies" value={form.vacancy} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, vacancy: e.target.value } }))} />
+                        <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={form.genderPreference} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, genderPreference: e.target.value as 'BOTH' | 'BOYS' | 'GIRLS' } }))}>
+                          <option value="BOTH">Girls and Boys</option>
+                          <option value="GIRLS">Girls only</option>
+                          <option value="BOYS">Boys only</option>
+                        </select>
                         <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={form.internshipCategory} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, internshipCategory: e.target.value as InternshipCategory } }))}>
                           <option value="FREE">Free</option>
                           <option value="PAID">Paid</option>
