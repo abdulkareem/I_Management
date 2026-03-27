@@ -59,6 +59,7 @@ export default function IndustryDashboardPage() {
   const [feedbackDraft, setFeedbackDraft] = useState<Record<string, { feedback: string; score: string }>>({});
   const [ideasPage, setIdeasPage] = useState(1);
   const [connectSubmitting, setConnectSubmitting] = useState(false);
+  const [connectSubmitted, setConnectSubmitted] = useState(false);
   const [ideaActionSubmitting, setIdeaActionSubmitting] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -96,6 +97,7 @@ export default function IndustryDashboardPage() {
     }
     setError(null);
     setSuccessMessage(null);
+    setConnectSubmitted(false);
     setConnectSubmitting(true);
     try {
       await fetchWithSession('/api/industry/connect-request', {
@@ -118,6 +120,7 @@ export default function IndustryDashboardPage() {
       setSelectedCollege('');
       setConnectForm(EMPTY_CONNECT);
       setDepartments([]);
+      setConnectSubmitted(true);
       setSuccessMessage('Sent to department successfully.');
       await load();
     } finally {
@@ -218,7 +221,7 @@ export default function IndustryDashboardPage() {
   const acceptedApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'ACCEPTED') ?? [], [dashboard]);
   const ideaPageSize = 5;
   const paginatedIdeas = useMemo(() => {
-    const visibleIdeas = ideas.filter((idea) => idea.status !== 'REJECTED');
+    const visibleIdeas = ideas.filter((idea) => idea.status === 'PENDING');
     const totalPages = Math.max(1, Math.ceil(visibleIdeas.length / ideaPageSize));
     const safePage = Math.min(ideasPage, totalPages);
     const start = (safePage - 1) * ideaPageSize;
@@ -235,7 +238,7 @@ export default function IndustryDashboardPage() {
           {!dashboard ? <Card className="rounded-[28px] p-4">Loading IPO data...</Card> : null}
 
           <section className="grid gap-4 md:grid-cols-3">
-            <Card className="rounded-[28px] p-5">e internships: {dashboard?.stats.liveOpportunities ?? 0}</Card>
+            <Card className="rounded-[28px] p-5">Published Internships: {dashboard?.stats.liveOpportunities ?? 0}</Card>
             <Card className="rounded-[28px] p-5">Pending applications: {dashboard?.stats.pendingApplications ?? 0}</Card>
             <Card className="rounded-[28px] p-5">Accepted applications: {dashboard?.stats.acceptedApplications ?? 0}</Card>
           </section>
@@ -293,7 +296,9 @@ export default function IndustryDashboardPage() {
               ) : null}
               <Input placeholder="Duration in hours (e.g. 60/120)" value={connectForm.hourDuration} onChange={(e) => setConnectForm((prev) => ({ ...prev, hourDuration: e.target.value }))} />
               <Input placeholder="Vacancies" value={connectForm.vacancy} onChange={(e) => setConnectForm((prev) => ({ ...prev, vacancy: e.target.value }))} />
-              <Button disabled={connectSubmitting} onClick={submitConnectRequest}>{connectSubmitting ? 'Submitting...' : 'Send to Department'}</Button>
+              <Button disabled={connectSubmitting} onClick={submitConnectRequest}>
+                {connectSubmitting ? 'Submitting...' : connectSubmitted ? 'Submitted' : 'Send to Department'}
+              </Button>
             </div>
           </Card>
 
