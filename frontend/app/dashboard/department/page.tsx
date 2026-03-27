@@ -334,8 +334,8 @@ export default function DepartmentDashboardPage() {
     <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title={dashboardTitle} subtitle="Manage programs, PO/PSO mapping, internships, ideas and student applications.">
       {() => (
         <>
-          {error ? <Card className="rounded-[20px] p-4 text-rose-200">{error}</Card> : null}
-          {successMessage ? <Card className="rounded-[20px] p-4 text-emerald-200">{successMessage}</Card> : null}
+          {error ? <Card className="rounded-[20px] p-4 text-rose-800">{error}</Card> : null}
+          {successMessage ? <Card className="rounded-[20px] p-4 text-emerald-800">{successMessage}</Card> : null}
           <section className="grid gap-4 md:grid-cols-4">
             <Card className="rounded-[20px] p-4">Internships: {metrics.internships}</Card>
             <Card className="rounded-[20px] p-4">Pending: {metrics.pendingApplications}</Card>
@@ -344,7 +344,7 @@ export default function DepartmentDashboardPage() {
           </section>
 
           <div className="flex justify-end">
-            <Link href="/forgot-password" className="rounded-full border border-white/20 px-4 py-2 text-sm text-white">Reset Password</Link>
+            <Link href="/forgot-password" className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-900">Reset Password</Link>
           </div>
 
           <section className="grid gap-4 md:grid-cols-4">
@@ -372,7 +372,7 @@ export default function DepartmentDashboardPage() {
                   <input name="hourDuration" type="number" min={0} placeholder="Duration in hours (e.g. 60 or 120)" />
                   <Button disabled={internshipSubmitting}>{internshipSubmitting ? 'Submitting...' : 'Create Internship'}</Button>
                 </form>
-              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and create internships for external students.</p>}
+              ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and create internships for external students.</p>}
             </Card>
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, programmes: !prev.programmes }))}>
@@ -383,7 +383,7 @@ export default function DepartmentDashboardPage() {
                   <input name="name" placeholder="Programme name (eg. BSc Physics)" required />
                   <Button>Add Programme</Button>
                 </form>
-              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and manage programme entries.</p>}
+              ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and manage programme entries.</p>}
             </Card>
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, ideas: !prev.ideas }))}>
@@ -396,7 +396,7 @@ export default function DepartmentDashboardPage() {
                     {industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}{industry.is_linked ? '' : ' (auto-link on submit)'}</option>)}
                   </select>
                   {industryDetails ? (
-                    <div className="rounded-lg border border-white/10 p-2 text-sm text-slate-300">
+                    <div className="rounded-lg border border-slate-200 p-2 text-sm text-slate-700">
                       <p>Activity: {industryDetails.business_activity}</p>
                       <p>Category: {industryDetails.category || '-'}</p>
                       {!industryDetails.is_linked ? <p className="mt-1 text-amber-200">This IPO is registered but not linked to your college yet. It will be linked automatically when you submit this idea.</p> : null}
@@ -442,7 +442,7 @@ export default function DepartmentDashboardPage() {
                   ) : null}
                   <Button disabled={ideaSubmitting}>{ideaSubmitting ? 'Submitting...' : 'Submit Idea'}</Button>
                 </form>
-              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and propose internships to Internship Provider Organizations (IPOs).</p>}
+              ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and propose internships to Internship Provider Organizations (IPOs).</p>}
             </Card>
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, outcomes: !prev.outcomes }))}>
@@ -452,10 +452,10 @@ export default function DepartmentDashboardPage() {
                 <div className="mt-3 grid gap-2">
                   <Button onClick={() => addInternshipOutcome('CO')}>Add Internship CO (CO1–CO6)</Button>
                   <Button onClick={() => addInternshipOutcome('PO')}>Add Internship PO (PO1–PO10)</Button>
-                  <p className="text-xs text-slate-300">COs: {internshipCos.map((entry) => entry.code).join(', ') || '-'}</p>
-                  <p className="text-xs text-slate-300">POs: {internshipPos.map((entry) => entry.code).join(', ') || '-'}</p>
+                  <p className="text-xs text-slate-700">COs: {internshipCos.map((entry) => entry.code).join(', ') || '-'}</p>
+                  <p className="text-xs text-slate-700">POs: {internshipPos.map((entry) => entry.code).join(', ') || '-'}</p>
                 </div>
-              ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and add CO/PO definitions.</p>}
+              ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and add CO/PO definitions.</p>}
             </Card>
           </section>
 
@@ -463,7 +463,7 @@ export default function DepartmentDashboardPage() {
             <h2 className="mb-3 text-xl font-semibold">Department Programmes</h2>
             <div className="space-y-4">
               {programs.map((program) => (
-                <div key={program.id} className="rounded-xl border border-white/10 p-3">
+                <div key={program.id} className="rounded-xl border border-slate-200 p-3">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     {editingProgramId === program.id ? (
                       <input value={drafts[program.id]?.name ?? program.name} onChange={(e) => setDrafts((prev) => ({ ...prev, [program.id]: { ...(prev[program.id] ?? program), name: e.target.value } }))} />
@@ -474,7 +474,7 @@ export default function DepartmentDashboardPage() {
                   </div>
                   <div className="grid gap-2 md:grid-cols-2">
                     {['PO', 'PSO'].map((type) => (
-                      <div key={`${program.id}-${type}`} className="rounded-lg border border-white/10 p-2">
+                      <div key={`${program.id}-${type}`} className="rounded-lg border border-slate-200 p-2">
                         <p className="mb-2 text-sm font-semibold">{type} entries</p>
                         {(programOutcomes[program.id] ?? []).filter((entry) => entry.type === type).map((entry) => (
                           <div key={entry.id} className="mb-2 flex gap-2">
@@ -502,20 +502,20 @@ export default function DepartmentDashboardPage() {
           <section className="grid gap-4 lg:grid-cols-2">
             <Card className="rounded-[20px] p-5">
               <h2 className="mb-3 text-xl font-semibold">Linked Internship Provider Organizations (IPOs)</h2>
-              <p className="mb-2 text-xs text-slate-300">These links come from your college. Selecting an IPO in “Submit Idea” will auto-link it when needed.</p>
+              <p className="mb-2 text-xs text-slate-700">These links come from your college. Selecting an IPO in “Submit Idea” will auto-link it when needed.</p>
               <div className="space-y-2">
                 {industries.filter((item) => item.is_linked).length ? industries.filter((item) => item.is_linked).map((item) => (
-                  <div key={item.id} className="rounded-lg border border-white/10 p-2">
-                    <p className="font-medium text-white">{item.name}</p>
-                    <p className="text-xs text-emerald-200">Linked to your college</p>
+                  <div key={item.id} className="rounded-lg border border-slate-200 p-2">
+                    <p className="font-medium text-slate-900">{item.name}</p>
+                    <p className="text-xs text-emerald-800">Linked to your college</p>
                   </div>
-                )) : <p className="text-sm text-slate-300">No IPO links are active for your college yet.</p>}
+                )) : <p className="text-sm text-slate-700">No IPO links are active for your college yet.</p>}
               </div>
             </Card>
             <Card className="rounded-[20px] p-5">
               <h2 className="mb-3 text-xl font-semibold">Internship Listings</h2>
               {dashboard?.internships?.map((item) => (
-                <div key={item.id} className="mb-2 rounded-lg border border-white/10 p-2">
+                <div key={item.id} className="mb-2 rounded-lg border border-slate-200 p-2">
                   {editingInternshipId === item.id ? (
                     <div className="grid gap-2">
                       <input value={drafts[item.id]?.title ?? item.title} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), title: e.target.value } }))} />
@@ -531,7 +531,7 @@ export default function DepartmentDashboardPage() {
                   ) : (
                     <>
                       <p>{item.title}</p>
-                      <p className="text-xs text-slate-300">{item.description}</p>
+                      <p className="text-xs text-slate-700">{item.description}</p>
                       <p className="text-xs text-slate-400">Category: {item.internship_category || 'FREE'} • Vacancy: {item.vacancy ?? 0} • {item.status}</p>
                     </>
                   )}
@@ -547,7 +547,7 @@ export default function DepartmentDashboardPage() {
             <Card className="rounded-[20px] p-5">
               <h2 className="mb-3 text-xl font-semibold">Suggested Internship Provider Organization (IPO) Ideas</h2>
               {paginatedIdeas.rows.map((item: any) => (
-                <div key={item.id} className="mb-2 rounded-lg border border-white/10 p-2">
+                <div key={item.id} className="mb-2 rounded-lg border border-slate-200 p-2">
                   {editingIdeaId === item.id ? (
                     <div className="grid gap-2">
                       <input value={drafts[item.id]?.internship_title ?? item.internship_title} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), internship_title: e.target.value } }))} />
@@ -557,10 +557,10 @@ export default function DepartmentDashboardPage() {
                     <>
                       <button type="button" className="w-full text-left" onClick={() => setSelectedIdeaId((prev) => prev === item.id ? null : item.id)}>
                         <p>{item.internship_title} • {item.industry_name}</p>
-                        <p className="text-xs text-slate-300">Programme: {item.program_name || '-'} • {item.status}</p>
+                        <p className="text-xs text-slate-700">Programme: {item.program_name || '-'} • {item.status}</p>
                       </button>
                       {selectedIdeaId === item.id ? (
-                        <p className="mt-1 text-xs text-slate-300">CO Mapping: {item.mapped_co || '-'} • PO Mapping: {item.mapped_po || '-'} • PSO Mapping: {item.mapped_pso || '-'}</p>
+                        <p className="mt-1 text-xs text-slate-700">CO Mapping: {item.mapped_co || '-'} • PO Mapping: {item.mapped_po || '-'} • PSO Mapping: {item.mapped_pso || '-'}</p>
                       ) : null}
                     </>
                   )}
@@ -571,7 +571,7 @@ export default function DepartmentDashboardPage() {
                   </div>
                 </div>
               ))}
-              <div className="mt-3 flex items-center justify-between text-sm text-slate-300">
+              <div className="mt-3 flex items-center justify-between text-sm text-slate-700">
                 <span>Page {paginatedIdeas.safePage} of {paginatedIdeas.totalPages}</span>
                 <div className="flex gap-2">
                   <Button variant="secondary" onClick={() => setIdeasPage((prev) => Math.max(1, prev - 1))} disabled={paginatedIdeas.safePage <= 1}>Previous</Button>
@@ -586,7 +586,7 @@ export default function DepartmentDashboardPage() {
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="text-left text-slate-300">
+                  <tr className="text-left text-slate-700">
                     <th className="py-2 pr-3">Student</th>
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Internship</th>
@@ -597,7 +597,7 @@ export default function DepartmentDashboardPage() {
                 </thead>
                 <tbody>
                   {internalApps.map((app) => (
-                    <tr key={app.id} className="border-t border-white/10">
+                    <tr key={app.id} className="border-t border-slate-200">
                       <td className="py-2 pr-3">{app.student_name}</td>
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>
@@ -624,7 +624,7 @@ export default function DepartmentDashboardPage() {
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="text-left text-slate-300">
+                  <tr className="text-left text-slate-700">
                     <th className="py-2 pr-3">Student</th>
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Internship</th>
@@ -635,7 +635,7 @@ export default function DepartmentDashboardPage() {
                 </thead>
                 <tbody>
                   {externalApps.map((app) => (
-                    <tr key={app.id} className="border-t border-white/10">
+                    <tr key={app.id} className="border-t border-slate-200">
                       <td className="py-2 pr-3">{app.student_name}</td>
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>

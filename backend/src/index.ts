@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 interface EnvBindings {
   DB: D1Database;
   RESEND_API_KEY?: string;
@@ -56,6 +58,50 @@ const INTERNSHIP_STATUS = {
 
 type InternshipStatus = (typeof INTERNSHIP_STATUS)[keyof typeof INTERNSHIP_STATUS];
 const ALLOWED_INTERNSHIP_STATUS = new Set<InternshipStatus>(Object.values(INTERNSHIP_STATUS));
+const WORKFLOW_INTERNSHIP_STATUS = ['DRAFT', 'SENT_TO_DEPT', 'ACCEPTED', 'PUBLISHED', 'CLOSED'] as const;
+
+const ipoInternshipCreateSchema = z.object({
+  title: z.string().trim().min(3),
+  description: z.string().trim().min(10),
+  duration: z.string().trim().min(2),
+  total_vacancy: z.coerce.number().int().min(1),
+  requirements: z.string().trim().min(2),
+  college_id: z.string().trim().min(1),
+  department_id: z.string().trim().min(1).optional().nullable(),
+});
+
+const mapInternshipSchema = z.object({
+  internship_id: z.string().trim().min(1),
+  po_ids: z.array(z.string().trim().min(1)).min(1),
+  pso_ids: z.array(z.string().trim().min(1)).min(1),
+  co_ids: z.array(z.string().trim().min(1)).min(1),
+  internship_po: z.array(z.string().trim().min(1)).default([]),
+});
+
+const publishInternshipSchema = z.object({
+  internship_id: z.string().trim().min(1),
+});
+
+const studentApplySchema = z.object({
+  internship_id: z.string().trim().min(1),
+});
+
+const acceptApplicationSchema = z.object({
+  application_id: z.string().trim().min(1),
+});
+
+const ipoCompleteSchema = z.object({
+  application_id: z.string().trim().min(1),
+  feedback: z.string().trim().min(3),
+  rating: z.coerce.number().min(1).max(5),
+});
+
+const evaluateSchema = z.object({
+  application_id: z.string().trim().min(1),
+  marks: z.coerce.number().min(0).max(100),
+  feedback: z.string().trim().optional(),
+  co_po_score: z.record(z.string(), z.coerce.number().min(0).max(100)),
+});
 
 export default {
   async fetch(request: Request, env: EnvBindings): Promise<Response> {
@@ -100,6 +146,18 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     || pathname.startsWith('/api/student/applications')
   ) {
     await ensureDepartmentDashboardSchema(env);
+  }
+  if (
+    pathname === '/api/ipo/internship'
+    || pathname === '/api/department/map-internship'
+    || pathname === '/api/department/publish'
+    || pathname === '/api/student/internships'
+    || pathname === '/api/student/apply'
+    || pathname === '/api/ipo/application/accept'
+    || pathname === '/api/ipo/complete'
+    || pathname === '/api/department/evaluate'
+  ) {
+    await ensureInternshipWorkflowSchema(env);
   }
   if (pathname === '/api/student/register') {
     await ensureStudentRegistrationSchema(env);
@@ -1622,6 +1680,293 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const rows = await env.DB.prepare(query).all();
     return ok('Internships fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/ipo/internship') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const parsed = ipoInternshipCreateSchema.safeParse(body);
+    if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Invalid request');
+
+    const payload = parsed.data;
+    const department = payload.department_id
+      ? await env.DB.prepare('SELECT id, college_id FROM departments WHERE id = ?').bind(payload.department_id).first<{ id: string; college_id: string }>()
+      : null;
+    if (payload.department_id && !department) return badRequest('department_id is invalid');
+    if (department?.college_id && department.college_id !== payload.college_id) return badRequest('department_id does not belong to college_id');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO internships
+       (id, title, description, ipo_id, college_id, department_id, duration, total_vacancy, filled_vacancy, remaining_vacancy, requirements, status, published)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'SENT_TO_DEPT', 0)`,
+    ).bind(
+      id,
+      payload.title,
+      payload.description,
+      actor.id,
+      payload.college_id,
+      payload.department_id ?? null,
+      payload.duration,
+      payload.total_vacancy,
+      payload.total_vacancy,
+      payload.requirements,
+    ).run();
+
+    return created('Internship created and sent to department', { id, status: 'SENT_TO_DEPT' });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/internships') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT i.id, i.title, i.description, i.duration, i.total_vacancy, i.filled_vacancy, i.remaining_vacancy,
+              i.requirements, i.status, i.published, i.created_at, i.updated_at, i.department_id, d.college_id,
+              COALESCE(i.is_paid, 0) AS is_paid, i.fee, i.internship_category, i.is_external, i.vacancy
+       FROM internships i
+       INNER JOIN departments d ON d.id = ?
+       WHERE i.college_id = d.college_id
+         AND (i.department_id IS NULL OR i.department_id = ?)
+       ORDER BY i.created_at DESC`,
+    ).bind(actor.id, actor.id).all();
+
+    return ok('Department internships fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/map-internship') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const parsed = mapInternshipSchema.safeParse(body);
+    if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Invalid request');
+    const payload = parsed.data;
+
+    const internship = await env.DB.prepare(
+      `SELECT i.id, i.college_id, i.department_id, i.status, d.college_id AS dept_college_id
+       FROM internships i
+       INNER JOIN departments d ON d.id = ?
+       WHERE i.id = ?`,
+    ).bind(actor.id, payload.internship_id).first<{ id: string; college_id: string; department_id: string | null; status: string; dept_college_id: string }>();
+    if (!internship) return errorResponse(404, 'Internship not found');
+    if (internship.college_id !== internship.dept_college_id) return forbidden('Internship does not belong to your college');
+    if (internship.department_id && internship.department_id !== actor.id) return forbidden('Internship targeted to a different department');
+
+    await env.DB.prepare(
+      `INSERT INTO internship_mappings (id, internship_id, department_id, po_ids, pso_ids, co_ids, internship_po, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(internship_id, department_id) DO UPDATE SET
+         po_ids = excluded.po_ids,
+         pso_ids = excluded.pso_ids,
+         co_ids = excluded.co_ids,
+         internship_po = excluded.internship_po,
+         updated_at = datetime('now')`,
+    ).bind(
+      crypto.randomUUID(),
+      payload.internship_id,
+      actor.id,
+      JSON.stringify(payload.po_ids),
+      JSON.stringify(payload.pso_ids),
+      JSON.stringify(payload.co_ids),
+      JSON.stringify(payload.internship_po),
+    ).run();
+
+    await env.DB.prepare(
+      `UPDATE internships
+       SET status = CASE WHEN status = 'SENT_TO_DEPT' THEN 'ACCEPTED' ELSE status END,
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    ).bind(payload.internship_id).run();
+
+    return ok('Internship mappings saved');
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/publish') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const parsed = publishInternshipSchema.safeParse(body);
+    if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Invalid request');
+
+    const internship = await env.DB.prepare(
+      `SELECT i.id, i.total_vacancy, i.college_id, i.department_id, d.college_id AS dept_college
+       FROM internships i
+       INNER JOIN departments d ON d.id = ?
+       WHERE i.id = ?`,
+    ).bind(actor.id, parsed.data.internship_id).first<{ id: string; total_vacancy: number; college_id: string; department_id: string | null; dept_college: string }>();
+    if (!internship) return errorResponse(404, 'Internship not found');
+    if (internship.college_id !== internship.dept_college) return forbidden('Internship does not belong to your college');
+    if (internship.department_id && internship.department_id !== actor.id) return forbidden('Internship targeted to a different department');
+
+    const mapping = await env.DB.prepare(
+      `SELECT id, po_ids, pso_ids, co_ids FROM internship_mappings WHERE internship_id = ? AND department_id = ?`,
+    ).bind(parsed.data.internship_id, actor.id).first<{ id: string; po_ids: string; pso_ids: string; co_ids: string }>();
+    if (!mapping) return badRequest('Department mappings must be completed before publishing');
+    if (!hasNonEmptyJsonArray(mapping.po_ids) || !hasNonEmptyJsonArray(mapping.pso_ids) || !hasNonEmptyJsonArray(mapping.co_ids)) {
+      return badRequest('PO, PSO and CO mappings are required before publishing');
+    }
+    if (!internship.total_vacancy || internship.total_vacancy < 1) return badRequest('Vacancy must be defined before publishing');
+
+    await env.DB.prepare(
+      `UPDATE internships
+       SET status = 'PUBLISHED', published = 1, remaining_vacancy = MAX(total_vacancy - filled_vacancy, 0), updated_at = datetime('now')
+       WHERE id = ?`,
+    ).bind(parsed.data.internship_id).run();
+    return ok('Internship published');
+  }
+
+  if (request.method === 'GET' && pathname === '/api/student/internships') {
+    const actor = requireRole(request, ['STUDENT']);
+    if (actor instanceof Response) return actor;
+    const student = await env.DB.prepare('SELECT college_id, department_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string; department_id: string }>();
+    if (!student) return unauthorized('Student not found');
+    const rows = await env.DB.prepare(
+      `SELECT i.id, i.title, i.description, i.duration, i.total_vacancy, i.filled_vacancy, i.remaining_vacancy, i.status,
+              CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END AS applied, a.status AS application_status
+       FROM internships i
+       LEFT JOIN applications a ON a.internship_id = i.id AND a.student_id = ?
+       WHERE i.status = 'PUBLISHED'
+         AND i.published = 1
+         AND i.college_id = ?
+         AND (i.department_id IS NULL OR i.department_id = ?)
+       ORDER BY i.created_at DESC`,
+    ).bind(actor.id, student.college_id, student.department_id).all();
+    return ok('Student internships fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/student/apply') {
+    const actor = requireRole(request, ['STUDENT']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const parsed = studentApplySchema.safeParse(body);
+    if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Invalid request');
+    const internshipId = parsed.data.internship_id;
+
+    const internship = await env.DB.prepare(
+      `SELECT id, status, published, remaining_vacancy FROM internships WHERE id = ?`,
+    ).bind(internshipId).first<{ id: string; status: string; published: number; remaining_vacancy: number }>();
+    if (!internship) return errorResponse(404, 'Internship not found');
+    if (internship.status !== 'PUBLISHED' || Number(internship.published) !== 1) return forbidden('Internship is not open for applications');
+    if ((internship.remaining_vacancy ?? 0) <= 0) return forbidden('No vacancy available');
+
+    const existing = await env.DB.prepare('SELECT id FROM applications WHERE student_id = ? AND internship_id = ?').bind(actor.id, internshipId).first<{ id: string }>();
+    if (existing) return conflict('You already applied to this internship');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO applications (id, student_id, internship_id, status) VALUES (?, ?, ?, 'APPLIED')`,
+    ).bind(id, actor.id, internshipId).run();
+    return created('Application submitted', { id, status: 'APPLIED' });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/ipo/application/accept') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const parsed = acceptApplicationSchema.safeParse(body);
+    if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Invalid request');
+
+    const app = await env.DB.prepare(
+      `SELECT a.id, a.status, a.internship_id, i.ipo_id, i.total_vacancy, i.filled_vacancy
+       FROM applications a
+       INNER JOIN internships i ON i.id = a.internship_id
+       WHERE a.id = ?`,
+    ).bind(parsed.data.application_id).first<{ id: string; status: string; internship_id: string; ipo_id: string; total_vacancy: number; filled_vacancy: number }>();
+    if (!app) return errorResponse(404, 'Application not found');
+    if (app.ipo_id !== actor.id) return forbidden('You can only accept applications for your internships');
+    if (app.status === 'ACCEPTED') return ok('Application already accepted');
+    if ((app.filled_vacancy ?? 0) >= (app.total_vacancy ?? 0)) return conflict('Vacancy limit reached');
+
+    await env.DB.exec('BEGIN');
+    try {
+      const updateInternship = await env.DB.prepare(
+        `UPDATE internships
+         SET filled_vacancy = filled_vacancy + 1,
+             remaining_vacancy = total_vacancy - (filled_vacancy + 1),
+             updated_at = datetime('now')
+         WHERE id = ?
+           AND filled_vacancy < total_vacancy`,
+      ).bind(app.internship_id).run();
+      if ((updateInternship.meta.changes ?? 0) === 0) throw new Error('Vacancy limit reached');
+
+      await env.DB.prepare(
+        `UPDATE applications SET status = 'ACCEPTED' WHERE id = ?`,
+      ).bind(parsed.data.application_id).run();
+      await env.DB.exec('COMMIT');
+    } catch (error) {
+      await env.DB.exec('ROLLBACK');
+      return conflict(error instanceof Error ? error.message : 'Unable to accept application');
+    }
+
+    return ok('Application accepted and vacancy updated');
+  }
+
+  if (request.method === 'POST' && pathname === '/api/ipo/complete') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const parsed = ipoCompleteSchema.safeParse(body);
+    if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Invalid request');
+
+    const app = await env.DB.prepare(
+      `SELECT a.id, a.student_id, a.internship_id, i.ipo_id
+       FROM applications a
+       INNER JOIN internships i ON i.id = a.internship_id
+       WHERE a.id = ?`,
+    ).bind(parsed.data.application_id).first<{ id: string; student_id: string; internship_id: string; ipo_id: string }>();
+    if (!app) return errorResponse(404, 'Application not found');
+    if (app.ipo_id !== actor.id) return forbidden('You can only complete applications for your internships');
+
+    await env.DB.prepare(
+      `INSERT INTO internship_feedback (id, internship_id, student_id, ipo_feedback, rating, created_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(internship_id, student_id) DO UPDATE SET
+         ipo_feedback = excluded.ipo_feedback,
+         rating = excluded.rating,
+         created_at = datetime('now')`,
+    ).bind(crypto.randomUUID(), app.internship_id, app.student_id, parsed.data.feedback, parsed.data.rating).run();
+    await env.DB.prepare(`UPDATE internships SET status = CASE WHEN remaining_vacancy <= 0 THEN 'CLOSED' ELSE status END, updated_at = datetime('now') WHERE id = ?`)
+      .bind(app.internship_id).run();
+    return ok('Internship completion feedback saved');
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/evaluate') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const parsed = evaluateSchema.safeParse(body);
+    if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Invalid request');
+
+    const app = await env.DB.prepare(
+      `SELECT a.id, a.internship_id, i.college_id, i.department_id, d.college_id AS dept_college
+       FROM applications a
+       INNER JOIN internships i ON i.id = a.internship_id
+       INNER JOIN departments d ON d.id = ?
+       WHERE a.id = ?`,
+    ).bind(actor.id, parsed.data.application_id).first<{ id: string; internship_id: string; college_id: string; department_id: string | null; dept_college: string }>();
+    if (!app) return errorResponse(404, 'Application not found');
+    if (app.college_id !== app.dept_college) return forbidden('Application does not belong to your college');
+    if (app.department_id && app.department_id !== actor.id) return forbidden('Application does not belong to your department');
+
+    await env.DB.prepare(
+      `INSERT INTO evaluations (id, application_id, marks, feedback, co_po_score, evaluated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+       ON CONFLICT(application_id) DO UPDATE SET
+         marks = excluded.marks,
+         feedback = excluded.feedback,
+         co_po_score = excluded.co_po_score,
+         evaluated_by = excluded.evaluated_by,
+         updated_at = datetime('now')`,
+    ).bind(
+      crypto.randomUUID(),
+      parsed.data.application_id,
+      parsed.data.marks,
+      parsed.data.feedback ?? null,
+      JSON.stringify(parsed.data.co_po_score),
+      actor.id,
+    ).run();
+    return ok('Department evaluation saved');
   }
 
   if (request.method === 'POST' && pathname === '/api/department/internships') {
@@ -3533,6 +3878,93 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   ]);
 }
 
+async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
+  const internshipColumns = new Set((await getTableColumns(env, 'internships')).map((column) => column.name));
+  if (!internshipColumns.has('ipo_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN ipo_id TEXT').run();
+  if (!internshipColumns.has('college_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN college_id TEXT').run();
+  if (!internshipColumns.has('duration')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN duration TEXT').run();
+  if (!internshipColumns.has('total_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN total_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('filled_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN filled_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('remaining_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN remaining_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('requirements')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN requirements TEXT').run();
+  if (!internshipColumns.has('published')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN published INTEGER NOT NULL DEFAULT 0').run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_mappings (
+      id TEXT PRIMARY KEY,
+      internship_id TEXT NOT NULL,
+      department_id TEXT NOT NULL,
+      po_ids TEXT NOT NULL,
+      pso_ids TEXT NOT NULL,
+      co_ids TEXT NOT NULL,
+      internship_po TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+      UNIQUE (internship_id, department_id)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS applications (
+      id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL,
+      internship_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'APPLIED' CHECK (status IN ('APPLIED', 'ACCEPTED', 'REJECTED')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      UNIQUE(student_id, internship_id)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS evaluations (
+      id TEXT PRIMARY KEY,
+      application_id TEXT NOT NULL UNIQUE,
+      marks REAL NOT NULL,
+      feedback TEXT,
+      co_po_score TEXT NOT NULL,
+      evaluated_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_feedback (
+      id TEXT PRIMARY KEY,
+      internship_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      ipo_feedback TEXT NOT NULL,
+      rating REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+      UNIQUE(internship_id, student_id)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL CHECK (role IN ('ADMIN', 'DEPARTMENT', 'IPO', 'STUDENT')),
+      linked_entity_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ).run();
+
+  await Promise.all([
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_internships_ipo ON internships(ipo_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_internships_college_dept_status ON internships(college_id, department_id, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_applications_internship ON applications(internship_id, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_feedback_internship ON internship_feedback(internship_id)').run(),
+  ]);
+}
+
 async function ensureStudentRegistrationSchema(env: EnvBindings): Promise<void> {
   const studentColumns = new Set((await getTableColumns(env, 'students')).map((column) => column.name));
   if (!studentColumns.has('university_reg_number')) {
@@ -3687,6 +4119,15 @@ function toBoolean(value: string): boolean | null {
   if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
   return null;
+}
+
+function hasNonEmptyJsonArray(value: string): boolean {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeEmail(value: string): string {

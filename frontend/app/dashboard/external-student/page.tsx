@@ -30,7 +30,7 @@ export default function ExternalStudentDashboardPage() {
     <RoleDashboardShell allowedRoles={['EXTERNAL_STUDENT']} title="External Student Dashboard" subtitle="Apply to internships and track live status.">
       {() => (
         <>
-          {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          {error ? <Card className="rounded-[28px] p-4 text-rose-800">{error}</Card> : null}
           <DataTable
             title="Available Internships"
             rows={(dashboard?.internships ?? []).map((i) => ({ ...i, id: i.id, action: i.applied ? (i.status ?? 'Applied') : 'Apply' }))}

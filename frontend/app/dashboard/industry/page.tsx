@@ -280,8 +280,8 @@ export default function IndustryDashboardPage() {
     <RoleDashboardShell allowedRoles={['INDUSTRY']} title="Internship Providing Organization Dashboard" subtitle="Review department ideas, connect with colleges, publish student vacancies, and track applications.">
       {() => (
         <>
-          {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
-          {successMessage ? <Card className="rounded-[28px] p-4 text-emerald-200">{successMessage}</Card> : null}
+          {error ? <Card className="rounded-[28px] p-4 text-rose-800">{error}</Card> : null}
+          {successMessage ? <Card className="rounded-[28px] p-4 text-emerald-800">{successMessage}</Card> : null}
           {!dashboard ? <Card className="rounded-[28px] p-4">Loading IPO data...</Card> : null}
 
           <section className="grid gap-4 md:grid-cols-3">
@@ -291,13 +291,13 @@ export default function IndustryDashboardPage() {
           </section>
 
           <div className="flex justify-end gap-3">
-            <Link href="/forgot-password" className="rounded-full border border-white/20 px-4 py-2 text-sm text-white">Reset Password</Link>
+            <Link href="/forgot-password" className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-900">Reset Password</Link>
             <Button variant="secondary" onClick={() => setProfileOpen((value) => !value)}>IPO Profile</Button>
           </div>
 
           {profileOpen && ipoProfile ? (
             <Card className="rounded-[30px] p-6">
-              <h2 className="mt-2 text-2xl font-semibold text-white">{ipoProfile.name}</h2>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-900">{ipoProfile.name}</h2>
               <div className="mt-5 grid gap-3 md:grid-cols-2">
                 <Input placeholder="Company address" value={ipoProfile.company_address ?? ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, company_address: event.target.value } : prev))} />
                 <Input placeholder="Contact number" value={ipoProfile.contact_number ?? ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, contact_number: event.target.value } : prev))} />
@@ -310,28 +310,28 @@ export default function IndustryDashboardPage() {
           ) : null}
 
           <Card className="rounded-[30px] p-6">
-            <h2 className="mt-2 text-2xl font-semibold text-white">Connect to College</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">Connect to College</h2>
             <form ref={connectFormRef} className="mt-5 grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); void submitConnectRequest(); }}>
-              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={selectedCollege} onChange={(e) => { setSelectedCollege(e.target.value); setConnectForm((prev) => ({ ...prev, departmentId: '', programme: '' })); }}>
+              <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={selectedCollege} onChange={(e) => { setSelectedCollege(e.target.value); setConnectForm((prev) => ({ ...prev, departmentId: '', programme: '' })); }}>
                 <option value="">Select college</option>
                 {colleges.map((college) => <option key={college.id} value={college.id}>{college.name}</option>)}
               </select>
-              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.departmentId} onChange={(e) => setConnectForm((prev) => ({ ...prev, departmentId: e.target.value, programme: '' }))}>
+              <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={connectForm.departmentId} onChange={(e) => setConnectForm((prev) => ({ ...prev, departmentId: e.target.value, programme: '' }))}>
                 <option value="">No preference (all departments)</option>
                 {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
               </select>
-              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.programme} onChange={(e) => setConnectForm((prev) => ({ ...prev, programme: e.target.value }))}>
+              <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={connectForm.programme} onChange={(e) => setConnectForm((prev) => ({ ...prev, programme: e.target.value }))}>
                 <option value="">Select programme</option>
                 {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
               </select>
               <Input placeholder="Internship title" value={connectForm.internshipTitle} onChange={(e) => setConnectForm((prev) => ({ ...prev, internshipTitle: e.target.value }))} />
               <Input placeholder="Nature of internship work" value={connectForm.natureOfWork} onChange={(e) => setConnectForm((prev) => ({ ...prev, natureOfWork: e.target.value }))} />
-              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.genderPreference} onChange={(e) => setConnectForm((prev) => ({ ...prev, genderPreference: e.target.value }))}>
+              <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={connectForm.genderPreference} onChange={(e) => setConnectForm((prev) => ({ ...prev, genderPreference: e.target.value }))}>
                 <option value="BOTH">Girls and Boys</option>
                 <option value="GIRLS">Girls only</option>
                 <option value="BOYS">Boys only</option>
               </select>
-              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.internshipCategory} onChange={(e) => setConnectForm((prev) => ({ ...prev, internshipCategory: e.target.value as InternshipCategory }))}>
+              <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={connectForm.internshipCategory} onChange={(e) => setConnectForm((prev) => ({ ...prev, internshipCategory: e.target.value as InternshipCategory }))}>
                 <option value="FREE">Free internship</option>
                 <option value="PAID">Paid internship</option>
                 <option value="STIPEND">Internship with stipend</option>
@@ -339,7 +339,7 @@ export default function IndustryDashboardPage() {
               {connectForm.internshipCategory === 'PAID' ? <Input placeholder="Fee amount" value={connectForm.fee} onChange={(e) => setConnectForm((prev) => ({ ...prev, fee: e.target.value }))} /> : null}
               {connectForm.internshipCategory === 'STIPEND' ? <Input placeholder="Stipend amount" value={connectForm.stipendAmount} onChange={(e) => setConnectForm((prev) => ({ ...prev, stipendAmount: e.target.value }))} /> : null}
               {connectForm.internshipCategory === 'STIPEND' ? (
-                <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.stipendDuration} onChange={(e) => setConnectForm((prev) => ({ ...prev, stipendDuration: e.target.value as StipendDuration }))}>
+                <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={connectForm.stipendDuration} onChange={(e) => setConnectForm((prev) => ({ ...prev, stipendDuration: e.target.value as StipendDuration }))}>
                   <option value="DAY">Per day</option>
                   <option value="WEEK">Per week</option>
                   <option value="MONTH">Per month</option>
@@ -354,16 +354,16 @@ export default function IndustryDashboardPage() {
           </Card>
 
           <Card className="rounded-[30px] p-6">
-            <h2 className="mt-2 text-2xl font-semibold text-white">Department Suggested Ideas</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">Department Suggested Ideas</h2>
             <div className="mt-5 space-y-3">
               {paginatedIdeas.rows.length ? paginatedIdeas.rows.map((idea) => {
                 const form = forms[idea.id] ?? { vacancy: '1', internshipCategory: 'FREE' as InternshipCategory, fee: '', stipendAmount: '', stipendDuration: 'MONTH' as StipendDuration, minimumDays: '7', maximumDays: '30' };
                 const isEditing = editingIdeaId === idea.id;
                 return (
-                  <div key={idea.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div key={idea.id} className="rounded-[24px] border border-slate-200 bg-white p-4">
                     <Input className="mb-2" value={idea.internship_title} disabled={!isEditing} onChange={(event) => setIdeas((prev) => prev.map((item) => (item.id === idea.id ? { ...item, internship_title: event.target.value } : item)))} />
-                    <p className="mt-1 text-sm text-slate-300">{idea.college_name} • {idea.department_name}</p>
-                    <p className="mt-1 text-xs text-slate-300">Programme: {idea.program_name || '-'} • CO: {idea.mapped_co || '-'} • PO: {idea.mapped_po || '-'} • PSO: {idea.mapped_pso || '-'}</p>
+                    <p className="mt-1 text-sm text-slate-700">{idea.college_name} • {idea.department_name}</p>
+                    <p className="mt-1 text-xs text-slate-700">Programme: {idea.program_name || '-'} • CO: {idea.mapped_co || '-'} • PO: {idea.mapped_po || '-'} • PSO: {idea.mapped_pso || '-'}</p>
                     <Input className="mt-2" value={idea.description} disabled={!isEditing} onChange={(event) => setIdeas((prev) => prev.map((item) => (item.id === idea.id ? { ...item, description: event.target.value } : item)))} />
                     <Badge className="mt-2">{idea.status}</Badge>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -374,7 +374,7 @@ export default function IndustryDashboardPage() {
                     {isEditing ? (
                       <div className="mt-3 grid gap-2 md:grid-cols-3">
                         <Input placeholder="Vacancies" value={form.vacancy} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, vacancy: e.target.value } }))} />
-                        <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={form.internshipCategory} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, internshipCategory: e.target.value as InternshipCategory } }))}>
+                        <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={form.internshipCategory} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, internshipCategory: e.target.value as InternshipCategory } }))}>
                           <option value="FREE">Free</option>
                           <option value="PAID">Paid</option>
                           <option value="STIPEND">With Stipend</option>
@@ -382,7 +382,7 @@ export default function IndustryDashboardPage() {
                         {form.internshipCategory === 'PAID' ? <Input placeholder="Fee" value={form.fee} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, fee: e.target.value } }))} /> : null}
                         {form.internshipCategory === 'STIPEND' ? <Input placeholder="Stipend amount" value={form.stipendAmount} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, stipendAmount: e.target.value } }))} /> : null}
                         {form.internshipCategory === 'STIPEND' ? (
-                          <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={form.stipendDuration} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, stipendDuration: e.target.value as StipendDuration } }))}>
+                          <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={form.stipendDuration} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, stipendDuration: e.target.value as StipendDuration } }))}>
                             <option value="DAY">Per day</option>
                             <option value="WEEK">Per week</option>
                             <option value="MONTH">Per month</option>
@@ -394,8 +394,8 @@ export default function IndustryDashboardPage() {
                     ) : null}
                   </div>
                 );
-              }) : <p className="text-slate-300">No suggested ideas found</p>}
-              <div className="mt-3 flex items-center justify-between text-sm text-slate-300">
+              }) : <p className="text-slate-700">No suggested ideas found</p>}
+              <div className="mt-3 flex items-center justify-between text-sm text-slate-700">
                 <span>Page {paginatedIdeas.safePage} of {paginatedIdeas.totalPages}</span>
                 <div className="flex gap-2">
                   <Button variant="secondary" onClick={() => setIdeasPage((prev) => Math.max(1, prev - 1))} disabled={paginatedIdeas.safePage <= 1}>Previous</Button>
@@ -407,13 +407,13 @@ export default function IndustryDashboardPage() {
 
           <Card className="rounded-[30px] p-6">
             <div className="mt-2 flex items-center justify-between gap-2">
-              <h2 className="text-2xl font-semibold text-white">Accepted Ideas (Published for Students)</h2>
+              <h2 className="text-2xl font-semibold text-slate-900">Accepted Ideas (Published for Students)</h2>
               <Button variant="secondary" onClick={() => { void load(); }}>Refresh</Button>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[960px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-white/20 text-slate-300">
+                  <tr className="border-b border-slate-300 text-slate-700">
                     <th className="py-2 pr-2">Internship</th>
                     <th className="py-2 pr-2">College</th>
                     <th className="py-2 pr-2">Department</th>
@@ -427,7 +427,7 @@ export default function IndustryDashboardPage() {
                 </thead>
                 <tbody>
                   {industryInternships.length ? industryInternships.map((item) => (
-                    <tr key={item.id} className="border-b border-white/10">
+                    <tr key={item.id} className="border-b border-slate-200">
                       <td className="py-3 pr-2">{item.internship_title || '-'}</td>
                       <td className="py-3 pr-2">{item.college_name || '-'}</td>
                       <td className="py-3 pr-2">{item.department_name || '-'}</td>
@@ -448,7 +448,7 @@ export default function IndustryDashboardPage() {
                     </tr>
                   )) : (
                     <tr>
-                      <td className="py-3 text-slate-300" colSpan={9}>No internships yet.</td>
+                      <td className="py-3 text-slate-700" colSpan={9}>No internships yet.</td>
                     </tr>
                   )}
                 </tbody>
@@ -457,31 +457,31 @@ export default function IndustryDashboardPage() {
           </Card>
 
           <Card className="rounded-[30px] p-6">
-            <h2 className="mt-2 text-2xl font-semibold text-white">Received applications from students</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">Received applications from students</h2>
             <div className="mt-5 space-y-3">
               {pendingApplications.length ? pendingApplications.map((application) => (
-                <div key={application.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
-                  <p className="font-semibold text-white">{application.studentName}</p>
-                  <p className="mt-1 text-sm text-slate-300">{application.studentEmail ?? '-'} • {application.collegeName}</p>
-                  <p className="mt-1 text-sm text-slate-300">{application.opportunityTitle}</p>
+                <div key={application.id} className="rounded-[24px] border border-slate-200 bg-white p-4">
+                  <p className="font-semibold text-slate-900">{application.studentName}</p>
+                  <p className="mt-1 text-sm text-slate-700">{application.studentEmail ?? '-'} • {application.collegeName}</p>
+                  <p className="mt-1 text-sm text-slate-700">{application.opportunityTitle}</p>
                   <p className="mt-1 text-xs text-slate-400">Applied: {application.createdAt ?? '-'}</p>
                   <div className="mt-3 flex gap-2">
                     <Button variant="secondary" onClick={() => acceptApplication(application.id)}>Accept</Button>
                     <Button variant="secondary" onClick={() => rejectApplication(application.id)}>Reject</Button>
                   </div>
                 </div>
-              )) : <p className="text-slate-300">No received applications found.</p>}
+              )) : <p className="text-slate-700">No received applications found.</p>}
             </div>
           </Card>
 
           <Card className="rounded-[30px] p-6">
-            <h2 className="mt-2 text-2xl font-semibold text-white">Accepted Applications (Approved)</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">Accepted Applications (Approved)</h2>
             <div className="mt-5 space-y-3">
               {acceptedApplications.length ? acceptedApplications.map((application) => (
-                <div key={application.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
-                  <p className="font-semibold text-white">{application.studentName}</p>
-                  <p className="mt-1 text-sm text-slate-300">{application.studentEmail ?? '-'} • {application.collegeName}</p>
-                  <p className="mt-1 text-sm text-slate-300">{application.opportunityTitle}</p>
+                <div key={application.id} className="rounded-[24px] border border-slate-200 bg-white p-4">
+                  <p className="font-semibold text-slate-900">{application.studentName}</p>
+                  <p className="mt-1 text-sm text-slate-700">{application.studentEmail ?? '-'} • {application.collegeName}</p>
+                  <p className="mt-1 text-sm text-slate-700">{application.opportunityTitle}</p>
                   <p className="mt-1 text-xs text-slate-400">Completed: {application.completedAt ?? 'Not completed'}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => completeApplication(application.id)} disabled={Boolean(application.completedAt)}>Completed</Button>
@@ -490,7 +490,7 @@ export default function IndustryDashboardPage() {
                     <Button variant="secondary" onClick={() => submitFeedback(application.id)}>Save Feedback</Button>
                   </div>
                 </div>
-              )) : <p className="text-slate-300">No accepted applications found.</p>}
+              )) : <p className="text-slate-700">No accepted applications found.</p>}
             </div>
           </Card>
         </>

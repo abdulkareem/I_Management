@@ -5,7 +5,9 @@ import type { StudentDashboard } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { InternshipProgressTracker } from '@/components/internship-progress-tracker';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
+import { StatusBadge } from '@/components/status-badge';
 import { fetchWithSession } from '@/lib/auth';
 
 type InternshipTab = 'college' | 'external';
@@ -211,9 +213,7 @@ export default function StudentDashboardPage() {
                           <td className="py-3 pr-2">{item.collegeName ?? '-'}</td>
                           <td className="py-3 pr-2">{item.vacancy ?? 0}</td>
                           <td className="py-3">
-                            <Badge className={item.applied ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}>
-                              {item.applied ? item.status ?? 'Applied' : 'Open'}
-                            </Badge>
+                            <StatusBadge status={item.applied ? item.status ?? 'PUBLISHED' : 'PUBLISHED'} />
                           </td>
                           <td className="py-3 pr-2 text-slate-600">{item.industryFeedback ?? (item.applied ? 'Pending feedback' : '-')}</td>
                           <td className="py-3 pr-2">{item.evaluationMarks ?? (item.applied ? 'Pending' : '-')}</td>
@@ -225,6 +225,7 @@ export default function StudentDashboardPage() {
                                 {emailingId === item.applicationId ? 'Sending...' : 'Send to Email'}
                               </Button>
                             </div>
+                            {item.applied ? <div className="mt-2"><InternshipProgressTracker status={item.status ?? 'PUBLISHED'} /></div> : null}
                           </td>
                         </tr>
                       );

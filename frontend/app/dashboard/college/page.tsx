@@ -121,18 +121,18 @@ export default function CollegeDashboardPage() {
     <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN', 'COLLEGE_COORDINATOR']} title="College Dashboard" subtitle="Departments, Internship Provider Organizations (IPOs), applications, and allocations are fully connected to D1.">
       {() => (
         <>
-          {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          {error ? <Card className="rounded-[28px] p-4 text-rose-800">{error}</Card> : null}
 
           <Card className="rounded-[28px] p-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-white">Department Module</h2>
+              <h2 className="text-xl font-semibold text-slate-900">Department Module</h2>
               <Button onClick={() => setShowDepartmentForm((value) => !value)}>{showDepartmentForm ? 'Close Form' : 'Create Department'}</Button>
             </div>
           </Card>
 
           {showDepartmentForm ? (
             <Card className="rounded-[28px] p-5">
-              <h3 className="mb-4 text-lg font-semibold text-white">Create Department</h3>
+              <h3 className="mb-4 text-lg font-semibold text-slate-900">Create Department</h3>
               <div className="grid gap-3 md:grid-cols-2">
                 <Input placeholder="Department name" value={departmentForm.name} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, name: event.target.value }))} />
                 <Input placeholder="Department coordinator name" value={departmentForm.coordinator_name} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, coordinator_name: event.target.value }))} />
@@ -152,12 +152,12 @@ export default function CollegeDashboardPage() {
 
           {ipoDetails ? (
             <Card className="rounded-[28px] p-5">
-              <h2 className="text-xl font-semibold text-white">{ipoDetails.name}</h2>
-              <p className="mt-2 text-sm text-slate-300">Address: {ipoDetails.company_address || '-'}</p>
-              <p className="text-sm text-slate-300">Contact: {ipoDetails.contact_number || '-'}</p>
-              <p className="text-sm text-slate-300">Email: {ipoDetails.email || '-'}</p>
-              <p className="text-sm text-slate-300">Registration No: {ipoDetails.registration_number || '-'}</p>
-              <p className="text-sm text-slate-300">Registration Year: {ipoDetails.registration_year || '-'}</p>
+              <h2 className="text-xl font-semibold text-slate-900">{ipoDetails.name}</h2>
+              <p className="mt-2 text-sm text-slate-700">Address: {ipoDetails.company_address || '-'}</p>
+              <p className="text-sm text-slate-700">Contact: {ipoDetails.contact_number || '-'}</p>
+              <p className="text-sm text-slate-700">Email: {ipoDetails.email || '-'}</p>
+              <p className="text-sm text-slate-700">Registration No: {ipoDetails.registration_number || '-'}</p>
+              <p className="text-sm text-slate-700">Registration Year: {ipoDetails.registration_year || '-'}</p>
             </Card>
           ) : null}
 
