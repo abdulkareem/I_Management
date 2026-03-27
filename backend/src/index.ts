@@ -973,11 +973,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const rows = await env.DB.prepare(
       `SELECT DISTINCT c.id, c.name
-       FROM college_industry_links l
-       INNER JOIN colleges c ON c.id = l.college_id
-       WHERE l.industry_id = ? AND l.status = 'active'
+       FROM colleges c
+       WHERE c.is_active = 1 AND c.status = 'approved'
        ORDER BY c.name ASC`,
-    ).bind(actor.id).all();
+    ).all();
 
     return ok('Industry colleges fetched', rows.results ?? []);
   }
@@ -988,11 +987,6 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const collegeId = industryCollegeDepartmentsMatch[1];
-    const allowed = await env.DB.prepare(
-      `SELECT id FROM college_industry_links
-       WHERE industry_id = ? AND college_id = ? AND status = 'active'`,
-    ).bind(actor.id, collegeId).first<{ id: string }>();
-    if (!allowed) return forbidden('This college is not linked with your industry');
 
     const rows = await env.DB.prepare(
       `SELECT id, name
@@ -1032,7 +1026,20 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       `SELECT id FROM college_industry_links
        WHERE industry_id = ? AND college_id = ? AND status = 'active'`,
     ).bind(actor.id, collegeId).first<{ id: string }>();
-    if (!linked) return forbidden('This college is not linked with your industry');
+    if (!linked) {
+      const linkId = crypto.randomUUID();
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO college_industry_links (
+          id,
+          college_id,
+          industry_id,
+          status,
+          requested_by,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, 'active', 'industry', datetime('now'), datetime('now'))`,
+      ).bind(linkId, collegeId, actor.id).run();
+    }
 
     const department = await env.DB.prepare(
       `SELECT id FROM departments
