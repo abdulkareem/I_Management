@@ -3959,7 +3959,7 @@ async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
 
   await Promise.all([
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_internships_ipo ON internships(ipo_id)').run(),
-    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_internships_college_dept ON internships(college_id, department_id, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_internships_college_dept_status ON internships(college_id, department_id, status)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_applications_internship ON applications(internship_id, status)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_feedback_internship ON internship_feedback(internship_id)').run(),
   ]);
