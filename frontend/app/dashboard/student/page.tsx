@@ -17,6 +17,7 @@ export default function StudentDashboardPage() {
   const [selectedTab, setSelectedTab] = useState<InternshipTab>('external');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [emailingId, setEmailingId] = useState<string | null>(null);
   const [ipoDetails, setIpoDetails] = useState<any | null>(null);
 
   const refresh = async () => {
@@ -72,6 +73,54 @@ export default function StudentDashboardPage() {
     setIpoDetails(response.data ?? null);
   }
 
+  function downloadMarksheet(item: NonNullable<StudentDashboard['externalInternships']>[number]) {
+    const popup = window.open('', '_blank', 'width=900,height=700');
+    if (!popup) {
+      setError('Popup blocked. Please allow popups to download marksheet PDF.');
+      return;
+    }
+    const status = item.status ?? 'PENDING';
+    const feedback = item.industryFeedback ?? 'Not provided yet';
+    const evaluationMarks = item.evaluationMarks ?? 'Not available';
+    const outcomeMarks = item.outcomeMarks ?? 'Not available';
+    popup.document.write(`
+      <html>
+        <head><title>Internship Marksheet</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 24px;">
+          <h1>Internship Marksheet</h1>
+          <p><strong>Internship:</strong> ${item.title}</p>
+          <p><strong>Industry:</strong> ${item.industryName}</p>
+          <p><strong>Department:</strong> ${item.departmentName}</p>
+          <p><strong>College:</strong> ${item.collegeName ?? '-'}</p>
+          <p><strong>Application status:</strong> ${status}</p>
+          <p><strong>Industry feedback:</strong> ${feedback}</p>
+          <p><strong>Evaluation marks:</strong> ${evaluationMarks}</p>
+          <p><strong>Outcome marks:</strong> ${outcomeMarks}</p>
+          <p style="margin-top: 20px; font-size: 12px;">Use browser print dialog and choose "Save as PDF".</p>
+        </body>
+      </html>
+    `);
+    popup.document.close();
+    popup.focus();
+    popup.print();
+  }
+
+  async function emailMarksheet(item: NonNullable<StudentDashboard['externalInternships']>[number]) {
+    if (!item.applicationId) return;
+    setError(null);
+    setEmailingId(item.applicationId);
+    try {
+      await fetchWithSession(`/api/student/applications/${item.applicationId}/marksheet/email`, {
+        method: 'POST',
+      });
+      setError('Marksheet summary emailed successfully.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to send marksheet email.');
+    } finally {
+      setEmailingId(null);
+    }
+  }
+
   return (
     <RoleDashboardShell allowedRoles={['STUDENT']} title="Student Dashboard" subtitle="Your selected college/department is internal. Apply to opportunities from other colleges.">
       {() => (
@@ -94,16 +143,16 @@ export default function StudentDashboardPage() {
 
           <section className="grid gap-4 md:grid-cols-2">
             <Button variant={selectedTab === 'college' ? 'primary' : 'secondary'} onClick={() => setSelectedTab('college')}>
-              Internship from this college
+              Internship from {dashboard?.studentCollegeName ?? 'your college'}
             </Button>
             <Button variant={selectedTab === 'external' ? 'primary' : 'secondary'} onClick={() => setSelectedTab('external')}>
-              Internship from Other Colleges
+              Internship from other organizations
             </Button>
           </section>
 
           {selectedTab === 'college' ? (
             <Card className="rounded-[30px] p-6">
-              <h2 className="text-xl font-semibold text-white">Internships from this college</h2>
+              <h2 className="text-xl font-semibold text-white">Internships from {dashboard?.studentCollegeName ?? 'your college'}</h2>
               <p className="mt-2 text-sm text-amber-200">You can view these internships, but cannot apply as per university rule (mother institute restriction).</p>
               <div className="mt-4 space-y-3">
                 {dashboard?.collegeInternships?.length ? dashboard.collegeInternships.map((item) => (
@@ -119,13 +168,13 @@ export default function StudentDashboardPage() {
           ) : (
             <Card className="rounded-[30px] p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold text-white">Internships from other colleges</h2>
+                <h2 className="text-xl font-semibold text-white">Internships from other organizations</h2>
                 <Button disabled={!canApply || submitting || selectedIds.length === 0} onClick={applySelected}>
                   {submitting ? 'Applying...' : `Apply (${selectedIds.length})`}
                 </Button>
               </div>
               <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[760px] text-left text-sm">
+                <table className="w-full min-w-[1260px] text-left text-sm">
                   <thead>
                     <tr className="border-b border-white/20 text-slate-300">
                       <th className="py-2 pr-2">Select</th>
@@ -134,7 +183,11 @@ export default function StudentDashboardPage() {
                       <th className="py-2 pr-2">Department</th>
                       <th className="py-2 pr-2">College</th>
                       <th className="py-2 pr-2">Vacancy</th>
-                      <th className="py-2">Status</th>
+                      <th className="py-2 pr-2">Status</th>
+                      <th className="py-2 pr-2">Industry feedback</th>
+                      <th className="py-2 pr-2">Evaluation marks</th>
+                      <th className="py-2 pr-2">Outcome marks</th>
+                      <th className="py-2">Marksheet</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -158,11 +211,22 @@ export default function StudentDashboardPage() {
                               {item.applied ? item.status ?? 'Applied' : 'Open'}
                             </Badge>
                           </td>
+                          <td className="py-3 pr-2 text-slate-300">{item.industryFeedback ?? (item.applied ? 'Pending feedback' : '-')}</td>
+                          <td className="py-3 pr-2">{item.evaluationMarks ?? (item.applied ? 'Pending' : '-')}</td>
+                          <td className="py-3 pr-2">{item.outcomeMarks ?? (item.applied ? 'Pending' : '-')}</td>
+                          <td className="py-3">
+                            <div className="flex flex-wrap gap-2">
+                              <Button variant="secondary" disabled={!item.applied} onClick={() => downloadMarksheet(item)}>Download PDF</Button>
+                              <Button variant="secondary" disabled={!item.applicationId || emailingId === item.applicationId} onClick={() => emailMarksheet(item)}>
+                                {emailingId === item.applicationId ? 'Sending...' : 'Send to Email'}
+                              </Button>
+                            </div>
+                          </td>
                         </tr>
                       );
                     }) : (
                       <tr>
-                        <td className="py-3 text-slate-300" colSpan={7}>No internships from other colleges available right now.</td>
+                        <td className="py-3 text-slate-300" colSpan={12}>No internships from other organizations available right now.</td>
                       </tr>
                     )}
                   </tbody>
