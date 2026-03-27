@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Modal } from '@/components/ui/modal';
 import { fetchWithSession, loadSession } from '@/lib/auth';
 import type { DepartmentDashboard } from '@/lib/types';
 
@@ -49,6 +50,12 @@ export default function DepartmentDashboardPage() {
   const [internshipSubmitting, setInternshipSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [advertisementDrafts, setAdvertisementDrafts] = useState<Record<string, { programId: string; mappedCo: string[]; mappedPo: string[]; mappedPso: string[] }>>({});
+  const [outcomeModalOpen, setOutcomeModalOpen] = useState(false);
+  const [outcomeForm, setOutcomeForm] = useState<{ type: 'CO' | 'PO'; code: string; description: string }>({ type: 'CO', code: '', description: '' });
+  const [markEntryModal, setMarkEntryModal] = useState<{ open: boolean; applicationId: string | null }>({ open: false, applicationId: null });
+  const [markForm, setMarkForm] = useState({ attendanceMarks: '0', workRegisterMarks: '0', presentationMarks: '0', vivaMarks: '0', reportMarks: '0' });
+  const [outcomeAssessmentModal, setOutcomeAssessmentModal] = useState<{ open: boolean; applicationId: string | null }>({ open: false, applicationId: null });
+  const [outcomeAssessmentForm, setOutcomeAssessmentForm] = useState({ outcomeType: 'CO', outcomeId: '', studentScore: '0', supervisorScore: '0', coordinatorScore: '0' });
 
   async function load() {
     const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes] = await Promise.all([
@@ -291,12 +298,12 @@ export default function DepartmentDashboardPage() {
     await load();
   }
 
-  async function addInternshipOutcome(type: 'CO' | 'PO') {
-    const code = window.prompt(`Enter ${type} code (eg. ${type}1)`);
-    const description = window.prompt(`Enter ${type} description`);
-    if (!code || !description) return;
-    const endpoint = type === 'CO' ? '/api/department/internship-cos' : '/api/department/internship-pos';
-    await fetchWithSession(endpoint, { method: 'POST', body: JSON.stringify({ code, description }) });
+  async function saveInternshipOutcomeDefinition() {
+    if (!outcomeForm.code.trim() || !outcomeForm.description.trim()) return;
+    const endpoint = outcomeForm.type === 'CO' ? '/api/department/internship-cos' : '/api/department/internship-pos';
+    await fetchWithSession(endpoint, { method: 'POST', body: JSON.stringify({ code: outcomeForm.code.trim(), description: outcomeForm.description.trim() }) });
+    setOutcomeModalOpen(false);
+    setOutcomeForm({ type: 'CO', code: '', description: '' });
     await load();
   }
 
@@ -315,30 +322,37 @@ export default function DepartmentDashboardPage() {
     await load();
   }
 
-  async function enterEvaluation(applicationId: string) {
-    const attendanceMarks = Number(window.prompt('Attendance marks (0-9)', '0') ?? '0');
-    const workRegisterMarks = Number(window.prompt('Work register marks (0-6)', '0') ?? '0');
-    const presentationMarks = Number(window.prompt('Presentation marks (0-14)', '0') ?? '0');
-    const vivaMarks = Number(window.prompt('Viva marks (0-14)', '0') ?? '0');
-    const reportMarks = Number(window.prompt('Report marks (0-7)', '0') ?? '0');
-    await fetchWithSession(`/api/department/applications/${applicationId}/evaluation`, {
+  async function saveEvaluationMarks() {
+    if (!markEntryModal.applicationId) return;
+    await fetchWithSession(`/api/department/applications/${markEntryModal.applicationId}/evaluation`, {
       method: 'POST',
-      body: JSON.stringify({ attendanceMarks, workRegisterMarks, presentationMarks, vivaMarks, reportMarks }),
+      body: JSON.stringify({
+        attendanceMarks: Number(markForm.attendanceMarks || 0),
+        workRegisterMarks: Number(markForm.workRegisterMarks || 0),
+        presentationMarks: Number(markForm.presentationMarks || 0),
+        vivaMarks: Number(markForm.vivaMarks || 0),
+        reportMarks: Number(markForm.reportMarks || 0),
+      }),
     });
+    setMarkEntryModal({ open: false, applicationId: null });
+    setMarkForm({ attendanceMarks: '0', workRegisterMarks: '0', presentationMarks: '0', vivaMarks: '0', reportMarks: '0' });
     await load();
   }
 
-  async function enterOutcomeAssessment(applicationId: string) {
-    const outcomeType = (window.prompt('Outcome type: CO or PO', 'CO') ?? 'CO').toUpperCase();
-    const outcomeId = window.prompt('Enter outcome code (example: CO1 or PO2)', '');
-    const studentScore = Number(window.prompt('Student score (0-5)', '0') ?? '0');
-    const supervisorScore = Number(window.prompt('Internship Provider Organization supervisor score (0-5)', '0') ?? '0');
-    const coordinatorScore = Number(window.prompt('Department coordinator score (0-5)', '0') ?? '0');
-    if (!outcomeId) return;
-    await fetchWithSession(`/api/department/applications/${applicationId}/outcome-assessment`, {
+  async function saveOutcomeAssessment() {
+    if (!outcomeAssessmentModal.applicationId || !outcomeAssessmentForm.outcomeId.trim()) return;
+    await fetchWithSession(`/api/department/applications/${outcomeAssessmentModal.applicationId}/outcome-assessment`, {
       method: 'POST',
-      body: JSON.stringify({ outcomeId, outcomeType, studentScore, supervisorScore, coordinatorScore }),
+      body: JSON.stringify({
+        outcomeId: outcomeAssessmentForm.outcomeId.trim(),
+        outcomeType: outcomeAssessmentForm.outcomeType,
+        studentScore: Number(outcomeAssessmentForm.studentScore || 0),
+        supervisorScore: Number(outcomeAssessmentForm.supervisorScore || 0),
+        coordinatorScore: Number(outcomeAssessmentForm.coordinatorScore || 0),
+      }),
     });
+    setOutcomeAssessmentModal({ open: false, applicationId: null });
+    setOutcomeAssessmentForm({ outcomeType: 'CO', outcomeId: '', studentScore: '0', supervisorScore: '0', coordinatorScore: '0' });
     await load();
   }
 
@@ -486,8 +500,8 @@ export default function DepartmentDashboardPage() {
               </button>
               {expandedCard.outcomes ? (
                 <div className="mt-3 grid gap-2">
-                  <Button onClick={() => addInternshipOutcome('CO')}>Add Internship CO (CO1–CO6)</Button>
-                  <Button onClick={() => addInternshipOutcome('PO')}>Add Internship PO (PO1–PO10)</Button>
+                  <Button onClick={() => { setOutcomeForm({ type: 'CO', code: '', description: '' }); setOutcomeModalOpen(true); }}>Add Internship CO (CO1–CO6)</Button>
+                  <Button onClick={() => { setOutcomeForm({ type: 'PO', code: '', description: '' }); setOutcomeModalOpen(true); }}>Add Internship PO (PO1–PO10)</Button>
                   <p className="text-xs text-slate-700">COs: {internshipCos.map((entry) => entry.code).join(', ') || '-'}</p>
                   <p className="text-xs text-slate-700">POs: {internshipPos.map((entry) => entry.code).join(', ') || '-'}</p>
                 </div>
@@ -712,8 +726,8 @@ export default function DepartmentDashboardPage() {
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
                           {app.status !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
                           <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
-                          <Button variant="secondary" onClick={() => enterEvaluation(app.id)} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => enterOutcomeAssessment(app.id)} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
                         </div>
                       </td>
                     </tr>
@@ -750,8 +764,8 @@ export default function DepartmentDashboardPage() {
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
                           {app.status !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
                           <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
-                          <Button variant="secondary" onClick={() => enterEvaluation(app.id)} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => enterOutcomeAssessment(app.id)} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
                         </div>
                       </td>
                     </tr>
@@ -760,6 +774,90 @@ export default function DepartmentDashboardPage() {
               </table>
             </div>
           </Card>
+
+          <Modal
+            open={outcomeModalOpen}
+            title={`Add Internship ${outcomeForm.type}`}
+            onClose={() => {
+              setOutcomeModalOpen(false);
+              setOutcomeForm({ type: 'CO', code: '', description: '' });
+            }}
+            footer={(
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => { setOutcomeModalOpen(false); setOutcomeForm({ type: 'CO', code: '', description: '' }); }}>Close</Button>
+                <Button onClick={saveInternshipOutcomeDefinition}>Save</Button>
+              </div>
+            )}
+          >
+            <div className="grid gap-3">
+              <label className="grid gap-1 text-sm">
+                Outcome Type
+                <select value={outcomeForm.type} onChange={(e) => setOutcomeForm((prev) => ({ ...prev, type: e.target.value as 'CO' | 'PO' }))}>
+                  <option value="CO">CO</option>
+                  <option value="PO">PO</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm">
+                Code
+                <input value={outcomeForm.code} onChange={(e) => setOutcomeForm((prev) => ({ ...prev, code: e.target.value }))} placeholder="CO1 / PO1" />
+              </label>
+              <label className="grid gap-1 text-sm">
+                Description
+                <textarea value={outcomeForm.description} onChange={(e) => setOutcomeForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="Outcome description" />
+              </label>
+            </div>
+          </Modal>
+
+          <Modal
+            open={markEntryModal.open}
+            title="Mark Entry Window"
+            onClose={() => {
+              setMarkEntryModal({ open: false, applicationId: null });
+              setMarkForm({ attendanceMarks: '0', workRegisterMarks: '0', presentationMarks: '0', vivaMarks: '0', reportMarks: '0' });
+            }}
+            footer={(
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setMarkEntryModal({ open: false, applicationId: null })}>Close</Button>
+                <Button onClick={saveEvaluationMarks}>Save All</Button>
+              </div>
+            )}
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1 text-sm">Attendance & Performance Feedback (0-9)<input type="number" min={0} max={9} value={markForm.attendanceMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, attendanceMarks: e.target.value }))} /></label>
+              <label className="grid gap-1 text-sm">Work Register (0-6)<input type="number" min={0} max={6} value={markForm.workRegisterMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, workRegisterMarks: e.target.value }))} /></label>
+              <label className="grid gap-1 text-sm">Presentation (0-14)<input type="number" min={0} max={14} value={markForm.presentationMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, presentationMarks: e.target.value }))} /></label>
+              <label className="grid gap-1 text-sm">Viva Voce (0-14)<input type="number" min={0} max={14} value={markForm.vivaMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, vivaMarks: e.target.value }))} /></label>
+              <label className="grid gap-1 text-sm md:col-span-2">Internship Report (0-7)<input type="number" min={0} max={7} value={markForm.reportMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, reportMarks: e.target.value }))} /></label>
+            </div>
+          </Modal>
+
+          <Modal
+            open={outcomeAssessmentModal.open}
+            title="Outcome Assessment Engine"
+            onClose={() => {
+              setOutcomeAssessmentModal({ open: false, applicationId: null });
+              setOutcomeAssessmentForm({ outcomeType: 'CO', outcomeId: '', studentScore: '0', supervisorScore: '0', coordinatorScore: '0' });
+            }}
+            footer={(
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: false, applicationId: null })}>Close</Button>
+                <Button onClick={saveOutcomeAssessment}>Save</Button>
+              </div>
+            )}
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1 text-sm">Outcome Type
+                <select value={outcomeAssessmentForm.outcomeType} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, outcomeType: e.target.value }))}>
+                  <option value="CO">CO</option>
+                  <option value="PO">PO</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm">Outcome Code<input value={outcomeAssessmentForm.outcomeId} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, outcomeId: e.target.value }))} placeholder="CO1 / PO2" /></label>
+              <label className="grid gap-1 text-sm">Student Score (0-5)<input type="number" min={0} max={5} value={outcomeAssessmentForm.studentScore} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, studentScore: e.target.value }))} /></label>
+              <label className="grid gap-1 text-sm">Supervisor Score (0-5)<input type="number" min={0} max={5} value={outcomeAssessmentForm.supervisorScore} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, supervisorScore: e.target.value }))} /></label>
+              <label className="grid gap-1 text-sm md:col-span-2">Coordinator Score (0-5)<input type="number" min={0} max={5} value={outcomeAssessmentForm.coordinatorScore} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, coordinatorScore: e.target.value }))} /></label>
+            </div>
+          </Modal>
         </>
       )}
     </RoleDashboardShell>

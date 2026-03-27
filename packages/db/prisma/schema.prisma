@@ -29,6 +29,18 @@ enum TargetType {
   DEPARTMENT
 }
 
+enum InternshipCreatedBy {
+  INDUSTRY
+  COLLEGE
+  DEPARTMENT
+}
+
+enum InternshipVisibilityType {
+  ALL_TARGETS
+  OTHER_COLLEGES
+  TARGETED_ONLY
+}
+
 model User {
   id             String      @id @default(cuid())
   name           String
@@ -109,6 +121,10 @@ model Internship {
   totalVacancy   Int                  @default(0) @map("total_vacancy")
   filledVacancy  Int                  @default(0) @map("filled_vacancy")
   remainingVacancy Int                @default(0) @map("remaining_vacancy")
+  availableVacancy Int                @default(0) @map("available_vacancy")
+  createdByType  InternshipCreatedBy  @default(INDUSTRY) @map("created_by")
+  visibilityType InternshipVisibilityType @default(ALL_TARGETS) @map("visibility_type")
+  isExternal     Boolean              @default(false) @map("is_external")
   status         String               @default("DRAFT")
   collegeId      String?              @map("college_id")
   departmentId   String?              @map("department_id")

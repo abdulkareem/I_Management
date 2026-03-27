@@ -78,16 +78,11 @@ export default function StudentDashboardPage() {
   }
 
   function downloadMarksheet(item: NonNullable<StudentDashboard['externalInternships']>[number]) {
-    const popup = window.open('', '_blank', 'width=900,height=700');
-    if (!popup) {
-      setError('Popup blocked. Please allow popups to download marksheet PDF.');
-      return;
-    }
     const status = item.status ?? 'PENDING';
     const feedback = item.industryFeedback ?? 'Not provided yet';
     const evaluationMarks = item.evaluationMarks ?? 'Not available';
     const outcomeMarks = item.outcomeMarks ?? 'Not available';
-    popup.document.write(`
+    const html = `
       <html>
         <head><title>Internship Marksheet</title></head>
         <body style="font-family: Arial, sans-serif; padding: 24px;">
@@ -100,13 +95,19 @@ export default function StudentDashboardPage() {
           <p><strong>Industry feedback:</strong> ${feedback}</p>
           <p><strong>Evaluation marks:</strong> ${evaluationMarks}</p>
           <p><strong>Outcome marks:</strong> ${outcomeMarks}</p>
-          <p style="margin-top: 20px; font-size: 12px;">Use browser print dialog and choose "Save as PDF".</p>
+          <p style="margin-top: 20px; font-size: 12px;">Generated from the student dashboard.</p>
         </body>
       </html>
-    `);
-    popup.document.close();
-    popup.focus();
-    popup.print();
+    `;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `internship-marksheet-${item.id}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    setNotice('Marksheet downloaded as HTML. You can open and print/save as PDF.');
   }
 
   async function emailMarksheet(item: NonNullable<StudentDashboard['externalInternships']>[number]) {
