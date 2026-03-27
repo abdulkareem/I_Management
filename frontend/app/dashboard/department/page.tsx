@@ -45,6 +45,9 @@ export default function DepartmentDashboardPage() {
   const [internshipCos, setInternshipCos] = useState<OutcomeDefinition[]>([]);
   const [internshipPos, setInternshipPos] = useState<OutcomeDefinition[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [ideaSubmitting, setIdeaSubmitting] = useState(false);
+  const [internshipSubmitting, setInternshipSubmitting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function load() {
     const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes] = await Promise.all([
@@ -110,13 +113,16 @@ export default function DepartmentDashboardPage() {
 
   async function createInternship(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const fee = Number(form.get('fee') || 0);
     const stipendAmount = Number(form.get('stipendAmount') || 0);
     const hourDuration = Number(form.get('hourDuration') || 0);
     setError(null);
+    setSuccessMessage(null);
 
     try {
+      setInternshipSubmitting(true);
       await fetchWithSession('/api/department/internships', {
         method: 'POST',
         body: JSON.stringify({
@@ -132,12 +138,15 @@ export default function DepartmentDashboardPage() {
           isExternal: true,
         }),
       });
-      event.currentTarget.reset();
+      formElement.reset();
       setInternshipType('FREE');
       setStipendFrequency('MONTH');
+      setSuccessMessage('Internship submitted successfully.');
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Failed to create internship');
+    } finally {
+      setInternshipSubmitting(false);
     }
   }
 
@@ -166,13 +175,16 @@ export default function DepartmentDashboardPage() {
 
   async function createIndustryRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const mappedCo = form.getAll('mappedCo').join(', ');
     const mappedPo = [...form.getAll('mappedPo'), ...form.getAll('mappedProgramPo')].join(', ');
     const mappedPso = form.getAll('mappedPso').join(', ');
     setError(null);
+    setSuccessMessage(null);
 
     try {
+      setIdeaSubmitting(true);
       await fetchWithSession('/api/industry-requests', {
         method: 'POST',
         body: JSON.stringify({
@@ -185,13 +197,16 @@ export default function DepartmentDashboardPage() {
           mappedPso: mappedPso || null,
         }),
       });
-      event.currentTarget.reset();
+      formElement.reset();
       setSelectedProgramForIdea('');
       setSelectedIndustry('');
       setIdeasPage(1);
+      setSuccessMessage('Idea submitted successfully.');
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Failed to create industry request');
+    } finally {
+      setIdeaSubmitting(false);
     }
   }
 
@@ -320,6 +335,7 @@ export default function DepartmentDashboardPage() {
       {() => (
         <>
           {error ? <Card className="rounded-[20px] p-4 text-rose-200">{error}</Card> : null}
+          {successMessage ? <Card className="rounded-[20px] p-4 text-emerald-200">{successMessage}</Card> : null}
           <section className="grid gap-4 md:grid-cols-4">
             <Card className="rounded-[20px] p-4">Internships: {metrics.internships}</Card>
             <Card className="rounded-[20px] p-4">Pending: {metrics.pendingApplications}</Card>
@@ -354,7 +370,7 @@ export default function DepartmentDashboardPage() {
                     </select>
                   ) : null}
                   <input name="hourDuration" type="number" min={0} placeholder="Duration in hours (e.g. 60 or 120)" />
-                  <Button>Create Internship</Button>
+                  <Button disabled={internshipSubmitting}>{internshipSubmitting ? 'Submitting...' : 'Create Internship'}</Button>
                 </form>
               ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and create internships for external students.</p>}
             </Card>
@@ -424,7 +440,7 @@ export default function DepartmentDashboardPage() {
                       </div>
                     </div>
                   ) : null}
-                  <Button>Submit Idea</Button>
+                  <Button disabled={ideaSubmitting}>{ideaSubmitting ? 'Submitting...' : 'Submit Idea'}</Button>
                 </form>
               ) : <p className="mt-2 text-sm text-slate-300">Tap to expand and propose internships to Internship Provider Organizations (IPOs).</p>}
             </Card>
@@ -484,6 +500,18 @@ export default function DepartmentDashboardPage() {
           </Card>
 
           <section className="grid gap-4 lg:grid-cols-2">
+            <Card className="rounded-[20px] p-5">
+              <h2 className="mb-3 text-xl font-semibold">Linked Internship Provider Organizations (IPOs)</h2>
+              <p className="mb-2 text-xs text-slate-300">These links come from your college. Selecting an IPO in “Submit Idea” will auto-link it when needed.</p>
+              <div className="space-y-2">
+                {industries.filter((item) => item.is_linked).length ? industries.filter((item) => item.is_linked).map((item) => (
+                  <div key={item.id} className="rounded-lg border border-white/10 p-2">
+                    <p className="font-medium text-white">{item.name}</p>
+                    <p className="text-xs text-emerald-200">Linked to your college</p>
+                  </div>
+                )) : <p className="text-sm text-slate-300">No IPO links are active for your college yet.</p>}
+              </div>
+            </Card>
             <Card className="rounded-[20px] p-5">
               <h2 className="mb-3 text-xl font-semibold">Internship Listings</h2>
               {dashboard?.internships?.map((item) => (

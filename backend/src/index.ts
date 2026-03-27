@@ -1091,7 +1091,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const linked = await env.DB.prepare(
       `SELECT id FROM college_industry_links
-       WHERE industry_id = ? AND college_id = ? AND status = 'active'`,
+       WHERE industry_id = ? AND college_id = ? AND status IN ('approved', 'active')`,
     ).bind(actor.id, collegeId).first<{ id: string }>();
     if (!linked) {
       const linkId = crypto.randomUUID();
@@ -1104,7 +1104,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
           requested_by,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, 'active', 'industry', datetime('now'), datetime('now'))`,
+        ) VALUES (?, ?, ?, 'approved', 'industry', datetime('now'), datetime('now'))`,
       ).bind(linkId, collegeId, actor.id).run();
     }
 
@@ -1952,7 +1952,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        LEFT JOIN college_industry_links cil
          ON cil.industry_id = i.id
         AND cil.college_id = d.college_id
-        AND cil.status = 'approved'
+        AND cil.status IN ('approved', 'active')
        WHERE d.id = ?
          AND i.status = 'approved'
          AND i.is_active = 1
@@ -2290,7 +2290,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        LEFT JOIN college_industry_links cil
          ON cil.industry_id = i.id
         AND cil.college_id = d.college_id
-        AND cil.status = 'approved'
+        AND cil.status IN ('approved', 'active')
        WHERE i.id = ?
          AND i.status = 'approved'
          AND i.is_active = 1`,
@@ -2366,11 +2366,13 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const rows = await env.DB.prepare(
       `SELECT ir.id, ir.internship_title, ir.description, ir.status, ir.mapped_co, ir.mapped_po, ir.mapped_pso,
               ir.program_id, p.name AS program_name,
-              d.id AS department_id, d.name AS department_name, c.name AS college_name
+              d.id AS department_id, d.name AS department_name, c.name AS college_name,
+              i.id AS published_internship_id, i.vacancy AS published_vacancy, i.internship_category AS published_category
        FROM industry_requests ir
        INNER JOIN departments d ON d.id = ir.department_id
        INNER JOIN colleges c ON c.id = d.college_id
        LEFT JOIN programs p ON p.id = ir.program_id
+       LEFT JOIN internships i ON i.industry_request_id = ir.id
        WHERE ir.industry_id = ?
        ORDER BY ir.created_at DESC`,
     ).bind(actor.id).all();
