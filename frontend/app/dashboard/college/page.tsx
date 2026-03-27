@@ -9,7 +9,7 @@ import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
 
 type Department = { id: string; name: string; coordinator_name: string; coordinator_email: string; coordinator_mobile?: string; is_active: number; is_first_login: number };
-type IndustryLink = { link_id: string; name: string; email: string; business_activity: string; status: string };
+type IndustryLink = { link_id: string; industry_id: string; name: string; email: string; business_activity: string; status: string };
 type Application = { id: string; student_name: string; student_email: string; internship_title: string; status: string; created_at: string };
 
 export default function CollegeDashboardPage() {
@@ -20,6 +20,7 @@ export default function CollegeDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [showDepartmentForm, setShowDepartmentForm] = useState(false);
+  const [ipoDetails, setIpoDetails] = useState<any | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [departmentForm, setDepartmentForm] = useState({
     name: '',
@@ -107,6 +108,15 @@ export default function CollegeDashboardPage() {
     }
   }
 
+  async function viewIpoProfile(industryId: string) {
+    try {
+      const response = await fetchWithSession(`/api/ipo/${industryId}`);
+      setIpoDetails(response.data ?? null);
+    } catch {
+      setIpoDetails(null);
+    }
+  }
+
   return (
     <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN', 'COLLEGE_COORDINATOR']} title="College Dashboard" subtitle="Departments, Internship Provider Organizations (IPOs), applications, and allocations are fully connected to D1.">
       {() => (
@@ -138,7 +148,18 @@ export default function CollegeDashboardPage() {
 
           <DataTable title="Departments" rows={departments} columns={[{ key: 'name', label: 'Department' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'coordinator_mobile', label: 'Mobile' }, { key: 'is_first_login', label: 'First Login' }, { key: 'is_active', label: 'Active' }]} actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => editDepartment(row)}>Edit</Button><Button variant="secondary" onClick={() => deleteDepartment(row.id)}>Delete</Button></div>} />
 
-          <DataTable title="Linked Internship Provider Organizations (IPOs)" rows={industries.map((r) => ({ ...r, id: r.link_id }))} columns={[{ key: 'name', label: 'IPO' }, { key: 'email', label: 'Email' }, { key: 'business_activity', label: 'Business' }, { key: 'status', label: 'Status' }]} actions={(row) => <Button variant="secondary" onClick={() => removeIndustry(row.id)}>Remove</Button>} />
+          <DataTable title="Linked Internship Provider Organizations (IPOs)" rows={industries.map((r) => ({ ...r, id: r.link_id }))} columns={[{ key: 'name', label: 'IPO' }, { key: 'email', label: 'Email' }, { key: 'business_activity', label: 'Business' }, { key: 'status', label: 'Status' }]} actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => viewIpoProfile((row as any).industry_id)}>View Profile</Button><Button variant="secondary" onClick={() => removeIndustry(row.id)}>Remove</Button></div>} />
+
+          {ipoDetails ? (
+            <Card className="rounded-[28px] p-5">
+              <h2 className="text-xl font-semibold text-white">{ipoDetails.name}</h2>
+              <p className="mt-2 text-sm text-slate-300">Address: {ipoDetails.company_address || '-'}</p>
+              <p className="text-sm text-slate-300">Contact: {ipoDetails.contact_number || '-'}</p>
+              <p className="text-sm text-slate-300">Email: {ipoDetails.email || '-'}</p>
+              <p className="text-sm text-slate-300">Registration No: {ipoDetails.registration_number || '-'}</p>
+              <p className="text-sm text-slate-300">Registration Year: {ipoDetails.registration_year || '-'}</p>
+            </Card>
+          ) : null}
 
           <DataTable
             title="Internal Applications"

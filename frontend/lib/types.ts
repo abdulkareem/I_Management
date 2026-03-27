@@ -26,7 +26,7 @@ export interface SessionProfile {
 export interface StudentDashboard {
   internships: Array<{ id: string; title: string; description: string; industryName: string; applied: boolean; status?: string }>;
   collegeInternships?: Array<{ id: string; title: string; description: string; departmentName: string; collegeName: string }>;
-  externalInternships?: Array<{ id: string; title: string; description: string; industryName: string; collegeName?: string; departmentName: string; vacancy?: number | null; applied: boolean; status?: string }>;
+  externalInternships?: Array<{ id: string; title: string; description: string; industryName: string; industryId?: string | null; collegeName?: string; departmentName: string; vacancy?: number | null; applied: boolean; status?: string }>;
   applications: Array<{ id: string; internshipTitle: string; industryName: string; status: string; acceptanceUrl?: string | null }>;
   activeApplicationLock?: boolean;
   maxSelectableApplications?: number;
@@ -49,7 +49,7 @@ export interface IndustryDashboard {
   industry: { id: string; name: string; description?: string | null; emblem?: string | null };
   stats: { liveOpportunities?: number; pendingApplications?: number; acceptedApplications?: number; attendanceToday?: number; internships?: number };
   opportunities?: Array<{ id: string; title: string; description: string; applications: number }>;
-  applications?: Array<{ id: string; studentName: string; collegeName: string; opportunityTitle: string; status: string }>;
+  applications?: Array<{ id: string; studentName: string; studentEmail?: string | null; collegeName: string; opportunityTitle: string; status: string; createdAt?: string; completedAt?: string | null; industryFeedback?: string | null; industryScore?: number | null }>;
   approvedColleges?: Array<{ id: string; name: string }>;
 }
 

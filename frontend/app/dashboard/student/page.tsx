@@ -17,6 +17,7 @@ export default function StudentDashboardPage() {
   const [selectedTab, setSelectedTab] = useState<InternshipTab>('external');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [ipoDetails, setIpoDetails] = useState<any | null>(null);
 
   const refresh = async () => {
     const response = await fetchWithSession<StudentDashboard>('/student/dashboard');
@@ -64,6 +65,12 @@ export default function StudentDashboardPage() {
   }
 
   const canApply = Boolean(dashboard?.canApplyForExternal) && availableSlots > 0;
+
+  async function openIpoProfile(industryId?: string | null) {
+    if (!industryId) return;
+    const response = await fetchWithSession(`/api/ipo/${industryId}`);
+    setIpoDetails(response.data ?? null);
+  }
 
   return (
     <RoleDashboardShell allowedRoles={['STUDENT']} title="Student Dashboard" subtitle="Your selected college/department is internal. Apply to opportunities from other colleges.">
@@ -142,7 +149,7 @@ export default function StudentDashboardPage() {
                             <p className="font-medium text-white">{item.title}</p>
                             <p className="text-xs text-slate-400">{item.description}</p>
                           </td>
-                          <td className="py-3 pr-2">{item.industryName}</td>
+                          <td className="py-3 pr-2"><button type="button" className="text-cyan-200 underline" onClick={() => openIpoProfile(item.industryId)}>{item.industryName}</button></td>
                           <td className="py-3 pr-2">{item.departmentName}</td>
                           <td className="py-3 pr-2">{item.collegeName ?? '-'}</td>
                           <td className="py-3 pr-2">{item.vacancy ?? 0}</td>
@@ -163,6 +170,17 @@ export default function StudentDashboardPage() {
               </div>
             </Card>
           )}
+          {ipoDetails ? (
+            <Card className="rounded-[30px] p-6">
+              <h2 className="text-xl font-semibold text-white">{ipoDetails.name}</h2>
+              <p className="mt-2 text-sm text-slate-300">Address: {ipoDetails.company_address || '-'}</p>
+              <p className="text-sm text-slate-300">Contact: {ipoDetails.contact_number || '-'}</p>
+              <p className="text-sm text-slate-300">Email: {ipoDetails.email || '-'}</p>
+              <p className="text-sm text-slate-300">Registration No: {ipoDetails.registration_number || '-'}</p>
+              <p className="text-sm text-slate-300">Registration Year: {ipoDetails.registration_year || '-'}</p>
+              <div className="mt-3"><Button variant="secondary" onClick={() => setIpoDetails(null)}>Close IPO Profile</Button></div>
+            </Card>
+          ) : null}
         </>
       )}
     </RoleDashboardShell>

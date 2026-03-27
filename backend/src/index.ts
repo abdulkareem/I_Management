@@ -78,6 +78,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
   if (
     pathname.startsWith('/api/department')
+    || pathname.startsWith('/api/industry')
+    || pathname.startsWith('/api/dashboard/industry')
+    || pathname === '/industry/dashboard'
+    || pathname.startsWith('/api/ipo')
     || pathname.startsWith('/api/applications')
     || pathname.startsWith('/api/industry-requests')
     || pathname.startsWith('/api/internships')
@@ -729,7 +733,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       env.DB.prepare(
         `SELECT ia.id,
                 ia.status,
+                ia.created_at,
+                ia.completed_at,
+                ia.industry_feedback,
+                ia.industry_score,
                 COALESCE(s.name, es.name) AS student_name,
+                COALESCE(s.email, es.email) AS student_email,
                 COALESCE(c.name, es.college, 'External') AS college_name,
                 i.title AS opportunity_title
          FROM internship_applications ia
@@ -766,9 +775,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       applications: appRows.map((row: any) => ({
         id: row.id,
         studentName: row.student_name,
+        studentEmail: row.student_email,
         collegeName: row.college_name,
         opportunityTitle: row.opportunity_title,
         status: row.status.toUpperCase(),
+        createdAt: row.created_at,
+        completedAt: row.completed_at,
+        industryFeedback: row.industry_feedback,
+        industryScore: row.industry_score,
       })),
     });
   }
@@ -981,6 +995,59 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Industry colleges fetched', rows.results ?? []);
   }
 
+  if (request.method === 'GET' && pathname === '/api/industry/profile') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const row = await env.DB.prepare(
+      `SELECT id, name, email, business_activity, company_address, contact_number, registration_number, registration_year
+       FROM industries
+       WHERE id = ?`,
+    ).bind(actor.id).first();
+    if (!row) return errorResponse(404, 'IPO profile not found');
+    return ok('IPO profile fetched', row);
+  }
+
+  if (request.method === 'PUT' && pathname === '/api/industry/profile') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+
+    await env.DB.prepare(
+      `UPDATE industries
+       SET company_address = COALESCE(?, company_address),
+           contact_number = COALESCE(?, contact_number),
+           email = COALESCE(?, email),
+           registration_number = COALESCE(?, registration_number),
+           registration_year = COALESCE(?, registration_year),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(
+        optional(body, ['company_address', 'companyAddress']),
+        optional(body, ['contact_number', 'contactNumber']),
+        optional(body, ['email']) ? normalizeEmail(toText(optional(body, ['email']))) : null,
+        optional(body, ['registration_number', 'registrationNumber']),
+        optional(body, ['registration_year', 'registrationYear']) ? Number(optional(body, ['registration_year', 'registrationYear'])) : null,
+        actor.id,
+      )
+      .run();
+
+    return ok('IPO profile updated');
+  }
+
+  const ipoProfileMatch = pathname.match(/^\/api\/ipo\/([^/]+)$/);
+  if (ipoProfileMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['STUDENT', 'EXTERNAL_STUDENT', 'COLLEGE', 'DEPARTMENT_COORDINATOR', 'COORDINATOR', 'INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const row = await env.DB.prepare(
+      `SELECT id, name, email, business_activity, company_address, contact_number, registration_number, registration_year
+       FROM industries
+       WHERE id = ?`,
+    ).bind(ipoProfileMatch[1]).first();
+    if (!row) return errorResponse(404, 'IPO profile not found');
+    return ok('IPO profile fetched', row);
+  }
+
   const industryCollegeDepartmentsMatch = pathname.match(/^\/api\/industry\/colleges\/([^/]+)\/departments$/);
   if (industryCollegeDepartmentsMatch && request.method === 'GET') {
     const actor = requireRole(request, ['INDUSTRY']);
@@ -1003,7 +1070,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
     const body = await readBody(request);
     const collegeId = required(body, ['college_id', 'collegeId']);
-    const departmentId = required(body, ['department_id', 'departmentId']);
+    const departmentId = optional(body, ['department_id', 'departmentId']);
     const internshipTitle = required(body, ['internship_title', 'internshipTitle']);
     const natureOfWork = required(body, ['nature_of_work', 'natureOfWork']);
     const preference = toText(optional(body, ['gender_preference', 'genderPreference'])).toUpperCase() || 'BOTH';
@@ -1015,8 +1082,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const hourDuration = optional(body, ['hour_duration', 'hourDuration']) ? Number(optional(body, ['hour_duration', 'hourDuration'])) : null;
     const vacancy = Number(required(body, ['vacancy', 'vacancies']));
 
-    if (!collegeId || !departmentId || !internshipTitle || !natureOfWork) {
-      return badRequest('college_id, department_id, internship_title and nature_of_work are required');
+    if (!collegeId || !internshipTitle || !natureOfWork) {
+      return badRequest('college_id, internship_title and nature_of_work are required');
     }
     if (!['GIRLS', 'BOYS', 'BOTH'].includes(preference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
     if (!['FREE', 'PAID', 'STIPEND'].includes(internshipCategory)) return badRequest('internship_category must be FREE, PAID or STIPEND');
@@ -1041,11 +1108,17 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       ).bind(linkId, collegeId, actor.id).run();
     }
 
-    const department = await env.DB.prepare(
-      `SELECT id FROM departments
-       WHERE id = ? AND college_id = ?`,
-    ).bind(departmentId, collegeId).first<{ id: string }>();
-    if (!department) return badRequest('Invalid department for selected college');
+    const targetDepartments = departmentId
+      ? await env.DB.prepare(
+        `SELECT id FROM departments
+         WHERE id = ? AND college_id = ? AND is_active = 1`,
+      ).bind(departmentId, collegeId).all<{ id: string }>()
+      : await env.DB.prepare(
+        `SELECT id FROM departments
+         WHERE college_id = ? AND is_active = 1`,
+      ).bind(collegeId).all<{ id: string }>();
+    const departmentRows = targetDepartments.results ?? [];
+    if (!departmentRows.length) return badRequest('No active departments found for selected college');
 
     const details: string[] = [
       `Nature of work: ${natureOfWork}`,
@@ -1058,13 +1131,17 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (internshipCategory === 'STIPEND') details.push(`Stipend: ${stipendAmount ?? 0} per ${stipendDuration ?? '-'}`);
     if (hourDuration && hourDuration > 0) details.push(`Hours: ${hourDuration}`);
 
-    const id = crypto.randomUUID();
-    await env.DB.prepare(
-      `INSERT INTO industry_requests (id, department_id, industry_id, internship_title, description, status)
-       VALUES (?, ?, ?, ?, ?, 'PENDING')`,
-    ).bind(id, departmentId, actor.id, internshipTitle, details.join(' | ')).run();
+    const createdIds: string[] = [];
+    for (const department of departmentRows) {
+      const id = crypto.randomUUID();
+      await env.DB.prepare(
+        `INSERT INTO industry_requests (id, department_id, industry_id, internship_title, description, status)
+         VALUES (?, ?, ?, ?, ?, 'PENDING')`,
+      ).bind(id, department.id, actor.id, internshipTitle, details.join(' | ')).run();
+      createdIds.push(id);
+    }
 
-    return created('Industry connect request submitted', { id });
+    return created('Industry connect request submitted', { ids: createdIds, appliedToAllDepartments: !departmentId });
   }
 
   if (request.method === 'GET' && pathname === '/api/college/industries') {
@@ -1374,6 +1451,42 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Application accepted');
   }
 
+  const industryCompleteMatch = pathname.match(/^\/api\/industry\/applications\/([^/]+)\/complete$/);
+  if (industryCompleteMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const result = await env.DB.prepare(
+      `UPDATE internship_applications
+       SET completed_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ?
+         AND status = 'accepted'
+         AND internship_id IN (SELECT id FROM internships WHERE industry_id = ?)`,
+    ).bind(industryCompleteMatch[1], actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Accepted application not found');
+    return ok('Application marked completed');
+  }
+
+  const industryFeedbackMatch = pathname.match(/^\/api\/industry\/applications\/([^/]+)\/feedback$/);
+  if (industryFeedbackMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const feedback = toText(required(body, ['feedback']));
+    const score = Number(required(body, ['score']));
+    if (!feedback) return badRequest('feedback is required');
+    if (Number.isNaN(score) || score < 0 || score > 10) return badRequest('score must be between 0 and 10');
+    const result = await env.DB.prepare(
+      `UPDATE internship_applications
+       SET industry_feedback = ?,
+           industry_score = ?,
+           updated_at = datetime('now')
+       WHERE id = ?
+         AND internship_id IN (SELECT id FROM internships WHERE industry_id = ?)`,
+    ).bind(feedback, score, industryFeedbackMatch[1], actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
+    return ok('Feedback saved');
+  }
+
   if (request.method === 'GET' && pathname === '/api/internships') {
     const externalOnly = toText(url.searchParams.get('external')).toLowerCase() === 'true';
     const query = externalOnly
@@ -1556,7 +1669,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const statusFilter = toText(url.searchParams.get('status')).toLowerCase();
     const statusClause = ['pending', 'accepted', 'rejected'].includes(statusFilter) ? ' AND ia.status = ? ' : '';
     const stmt = env.DB.prepare(
-      `SELECT ia.id, ia.status, ia.created_at, ia.is_external, ia.completed_at,
+      `SELECT ia.id, ia.status, ia.created_at, ia.is_external, ia.completed_at, ia.industry_feedback, ia.industry_score,
               i.id AS internship_id, i.title AS internship_title, i.is_paid, i.fee,
               d.name AS department_name,
               COALESCE(es.name, s.name) AS student_name,
@@ -2099,7 +2212,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
     const industry = await env.DB.prepare(
-      `SELECT i.id, i.name, i.business_activity, it.name AS category
+      `SELECT i.id, i.name, i.business_activity, i.email, i.company_address, i.contact_number, i.registration_number, i.registration_year, it.name AS category
        FROM industries i
        LEFT JOIN industry_types it ON it.id = i.industry_type_id
        INNER JOIN college_industry_links cil ON cil.industry_id = i.id
@@ -2149,6 +2262,26 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       .run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry request not found');
     return ok(`Industry request ${status.toLowerCase()}`);
+  }
+
+  const industryRequestUpdateMatch = pathname.match(/^\/api\/industry-requests\/([^/]+)\/update$/);
+  if (industryRequestUpdateMatch && request.method === 'PUT') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipTitle = optional(body, ['internship_title', 'internshipTitle']);
+    const description = optional(body, ['description']);
+    const result = await env.DB.prepare(
+      `UPDATE industry_requests
+       SET internship_title = COALESCE(?, internship_title),
+           description = COALESCE(?, description),
+           updated_at = datetime('now')
+       WHERE id = ? AND industry_id = ?`,
+    )
+      .bind(internshipTitle, description, industryRequestUpdateMatch[1], actor.id)
+      .run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry request not found');
+    return ok('Industry request updated');
   }
 
   if (request.method === 'GET' && pathname === '/api/industry/ideas') {
@@ -2360,7 +2493,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        ORDER BY i.created_at DESC`,
     ).bind(student.college_id).all(),
     env.DB.prepare(
-      `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, d.name AS department_name, c.name AS college_name, i.vacancy,
+      `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name, i.vacancy,
               ia.id AS application_id, ia.status AS application_status
        FROM internships i
        INNER JOIN departments d ON d.id = i.department_id
@@ -2407,6 +2540,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
       title: row.title,
       description: row.description,
       industryName: row.industry_name,
+      industryId: row.industry_id,
       collegeName: row.college_name,
       departmentName: row.department_name,
       vacancy: row.vacancy,
@@ -2938,6 +3072,8 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   const applicationColumns = new Set((await getTableColumns(env, 'internship_applications')).map((column) => column.name));
   if (!applicationColumns.has('is_external')) await env.DB.prepare('ALTER TABLE internship_applications ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();
   if (!applicationColumns.has('completed_at')) await env.DB.prepare('ALTER TABLE internship_applications ADD COLUMN completed_at TEXT').run();
+  if (!applicationColumns.has('industry_feedback')) await env.DB.prepare('ALTER TABLE internship_applications ADD COLUMN industry_feedback TEXT').run();
+  if (!applicationColumns.has('industry_score')) await env.DB.prepare('ALTER TABLE internship_applications ADD COLUMN industry_score REAL').run();
 
   const studentColumns = new Set((await getTableColumns(env, 'students')).map((column) => column.name));
   if (!studentColumns.has('is_external')) await env.DB.prepare('ALTER TABLE students ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();
@@ -3084,6 +3220,12 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
 
   const industryInternshipColumns = new Set((await getTableColumns(env, 'industry_internships')).map((column) => column.name));
   if (!industryInternshipColumns.has('vacancy')) await env.DB.prepare('ALTER TABLE industry_internships ADD COLUMN vacancy INTEGER').run();
+
+  const industryColumns = new Set((await getTableColumns(env, 'industries')).map((column) => column.name));
+  if (!industryColumns.has('company_address')) await env.DB.prepare('ALTER TABLE industries ADD COLUMN company_address TEXT').run();
+  if (!industryColumns.has('contact_number')) await env.DB.prepare('ALTER TABLE industries ADD COLUMN contact_number TEXT').run();
+  if (!industryColumns.has('registration_number')) await env.DB.prepare('ALTER TABLE industries ADD COLUMN registration_number TEXT').run();
+  if (!industryColumns.has('registration_year')) await env.DB.prepare('ALTER TABLE industries ADD COLUMN registration_year INTEGER').run();
 
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS email_logs (
