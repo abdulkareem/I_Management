@@ -27,6 +27,7 @@ export default function StudentJoinPage() {
   const [customCollegeName, setCustomCollegeName] = useState('');
   const [customDepartmentName, setCustomDepartmentName] = useState('');
   const [customProgramName, setCustomProgramName] = useState('');
+  const [sex, setSex] = useState<'MALE' | 'FEMALE'>('MALE');
   const isCollegeNotInList = collegeId === OTHER_COLLEGE_VALUE;
 
   useEffect(() => {
@@ -101,6 +102,7 @@ export default function StudentJoinPage() {
           customCollegeName: isCollegeNotInList ? form.get('customCollegeName') : null,
           customDepartmentName: isCollegeNotInList ? form.get('customDepartmentName') : null,
           customProgramName: isCollegeNotInList ? form.get('customProgramName') : null,
+          sex,
         }),
       });
       await loginWithPassword(String(form.get('email')), String(form.get('password')));
@@ -123,6 +125,13 @@ export default function StudentJoinPage() {
           <div className="space-y-2"><label htmlFor="studentName">Student Name</label><input id="studentName" name="studentName" required /></div>
           <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
           <div className="space-y-2"><label htmlFor="universityRegNumber">University Reg Number</label><input id="universityRegNumber" name="universityRegNumber" required /></div>
+          <div className="space-y-2">
+            <label htmlFor="sex">Sex</label>
+            <select id="sex" name="sex" value={sex} onChange={(event) => setSex(event.target.value as 'MALE' | 'FEMALE')} required>
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+            </select>
+          </div>
           <div className="space-y-2">
             <label htmlFor="collegeId">Your College</label>
             <select id="collegeId" name="collegeId" required value={collegeId} onChange={(event) => setCollegeId(event.target.value)}>

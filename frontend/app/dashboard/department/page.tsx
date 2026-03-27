@@ -48,7 +48,7 @@ export default function DepartmentDashboardPage() {
   const [ideaSubmitting, setIdeaSubmitting] = useState(false);
   const [internshipSubmitting, setInternshipSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [advertisementDrafts, setAdvertisementDrafts] = useState<Record<string, { programId: string; mappedCo: string; mappedPo: string; mappedPso: string }>>({});
+  const [advertisementDrafts, setAdvertisementDrafts] = useState<Record<string, { programId: string; mappedCo: string[]; mappedPo: string[]; mappedPso: string[] }>>({});
 
   async function load() {
     const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes] = await Promise.all([
@@ -136,6 +136,7 @@ export default function DepartmentDashboardPage() {
           stipendAmount: internshipType === 'STIPEND' ? stipendAmount : null,
           stipendDuration: internshipType === 'STIPEND' ? stipendFrequency : null,
           minimumDays: hourDuration > 0 ? hourDuration : null,
+          genderPreference: form.get('genderPreference') || 'BOTH',
           isExternal: true,
         }),
       });
@@ -175,14 +176,14 @@ export default function DepartmentDashboardPage() {
   }
 
   async function submitDepartmentAdvertisement(internshipId: string) {
-    const draft = advertisementDrafts[internshipId] ?? { programId: '', mappedCo: '', mappedPo: '', mappedPso: '' };
+    const draft = advertisementDrafts[internshipId] ?? { programId: '', mappedCo: [], mappedPo: [], mappedPso: [] };
     await fetchWithSession(`/api/department/internships/${internshipId}/submit-advertisement`, {
       method: 'POST',
       body: JSON.stringify({
         programId: draft.programId || null,
-        mappedCo: draft.mappedCo || null,
-        mappedPo: draft.mappedPo || null,
-        mappedPso: draft.mappedPso || null,
+        mappedCo: draft.mappedCo.join(', ') || null,
+        mappedPo: draft.mappedPo.join(', ') || null,
+        mappedPso: draft.mappedPso.join(', ') || null,
       }),
     });
     setEditingInternshipId(null);
@@ -347,6 +348,16 @@ export default function DepartmentDashboardPage() {
   const industryAdvertisements = (dashboard?.internships ?? []).filter((item: any) => item.status === 'SENT_TO_DEPARTMENT');
   const internalApps = (dashboard?.applications ?? []).filter((item) => item.is_external !== 1 && item.status !== 'rejected');
   const externalApps = (dashboard?.applications ?? []).filter((item) => item.is_external === 1 && item.status !== 'rejected');
+  const parseMappings = (value?: string | null) => value?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
+
+  const toggleDraftSelection = (internshipId: string, field: 'mappedCo' | 'mappedPo' | 'mappedPso', value: string) => {
+    setAdvertisementDrafts((prev) => {
+      const current = prev[internshipId] ?? { programId: '', mappedCo: [], mappedPo: [], mappedPso: [] };
+      const items = current[field];
+      const nextItems = items.includes(value) ? items.filter((entry) => entry !== value) : [...items, value];
+      return { ...prev, [internshipId]: { ...current, [field]: nextItems } };
+    });
+  };
 
   return (
     <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title={dashboardTitle} subtitle="Manage programs, PO/PSO mapping, internships, ideas and student applications.">
@@ -379,7 +390,8 @@ export default function DepartmentDashboardPage() {
                     <option value="PAID">Paid Internship</option>
                     <option value="STIPEND">Internship with Stipend</option>
                   </select>
-                  {internshipType !== 'FREE' ? <input name="fee" type="number" min={0} placeholder={internshipType === 'PAID' ? 'Fee amount' : 'Stipend amount'} required /> : null}
+                  {internshipType === 'PAID' ? <input name="fee" type="number" min={0} placeholder="Fee amount" required /> : null}
+                  {internshipType === 'STIPEND' ? <input name="stipendAmount" type="number" min={0} placeholder="Stipend amount" required /> : null}
                   {internshipType === 'STIPEND' ? (
                     <select name="stipendDuration" value={stipendFrequency} onChange={(e) => setStipendFrequency(e.target.value as StipendFrequency)}>
                       <option value="DAY">Per day</option>
@@ -387,6 +399,11 @@ export default function DepartmentDashboardPage() {
                       <option value="MONTH">Per month</option>
                     </select>
                   ) : null}
+                  <select name="genderPreference" defaultValue="BOTH">
+                    <option value="BOTH">Boys or Girls</option>
+                    <option value="BOYS">Boys only</option>
+                    <option value="GIRLS">Girls only</option>
+                  </select>
                   <input name="hourDuration" type="number" min={0} placeholder="Duration in hours (e.g. 60 or 120)" />
                   <input name="vacancy" type="number" min={0} placeholder="Vacancy" required />
                   <Button disabled={internshipSubmitting}>{internshipSubmitting ? 'Submitting...' : 'Create Internship'}</Button>
@@ -478,45 +495,47 @@ export default function DepartmentDashboardPage() {
             </Card>
           </section>
 
-          <Card className="rounded-[20px] p-5">
-            <h2 className="mb-3 text-xl font-semibold">Department Programmes</h2>
-            <div className="space-y-4">
-              {programs.map((program) => (
-                <div key={program.id} className="rounded-xl border border-slate-200 p-3">
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    {editingProgramId === program.id ? (
-                      <input value={drafts[program.id]?.name ?? program.name} onChange={(e) => setDrafts((prev) => ({ ...prev, [program.id]: { ...(prev[program.id] ?? program), name: e.target.value } }))} />
-                    ) : <p className="font-semibold">{program.name}</p>}
-                    <Button variant="secondary" onClick={() => setEditingProgramId(program.id)}>Edit</Button>
-                    <Button variant="secondary" onClick={() => updateProgram(program)}>Save</Button>
-                    <Button variant="secondary" onClick={() => deleteProgram(program.id)}>Delete</Button>
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-2">
-                    {['PO', 'PSO'].map((type) => (
-                      <div key={`${program.id}-${type}`} className="rounded-lg border border-slate-200 p-2">
-                        <p className="mb-2 text-sm font-semibold">{type} entries</p>
-                        {(programOutcomes[program.id] ?? []).filter((entry) => entry.type === type).map((entry) => (
-                          <div key={entry.id} className="mb-2 flex gap-2">
-                            <input value={drafts[entry.id]?.value ?? entry.value} onChange={(e) => setDrafts((prev) => ({ ...prev, [entry.id]: { ...(prev[entry.id] ?? entry), value: e.target.value, type } }))} />
-                            {editingOutcomeId === entry.id ? (
-                              <Button variant="secondary" onClick={() => saveProgramOutcome(program.id, entry)}>Save</Button>
-                            ) : (
-                              <Button variant="secondary" onClick={() => setEditingOutcomeId(entry.id)}>Edit</Button>
-                            )}
-                            <Button variant="secondary" onClick={() => deleteProgramOutcome(program.id, entry.id)}>Delete</Button>
+          {expandedCard.programmes ? (
+            <Card className="rounded-[20px] p-5">
+              <h2 className="mb-3 text-xl font-semibold">Department Programmes</h2>
+              <div className="space-y-4">
+                {programs.map((program) => (
+                  <div key={program.id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      {editingProgramId === program.id ? (
+                        <input value={drafts[program.id]?.name ?? program.name} onChange={(e) => setDrafts((prev) => ({ ...prev, [program.id]: { ...(prev[program.id] ?? program), name: e.target.value } }))} />
+                      ) : <p className="font-semibold">{program.name}</p>}
+                      <Button variant="secondary" onClick={() => setEditingProgramId(program.id)}>Edit</Button>
+                      <Button variant="secondary" onClick={() => updateProgram(program)}>Save</Button>
+                      <Button variant="secondary" onClick={() => deleteProgram(program.id)}>Delete</Button>
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {['PO', 'PSO'].map((type) => (
+                        <div key={`${program.id}-${type}`} className="rounded-lg border border-slate-200 p-2">
+                          <p className="mb-2 text-sm font-semibold">{type} entries</p>
+                          {(programOutcomes[program.id] ?? []).filter((entry) => entry.type === type).map((entry) => (
+                            <div key={entry.id} className="mb-2 flex gap-2">
+                              <input value={drafts[entry.id]?.value ?? entry.value} onChange={(e) => setDrafts((prev) => ({ ...prev, [entry.id]: { ...(prev[entry.id] ?? entry), value: e.target.value, type } }))} />
+                              {editingOutcomeId === entry.id ? (
+                                <Button variant="secondary" onClick={() => saveProgramOutcome(program.id, entry)}>Save</Button>
+                              ) : (
+                                <Button variant="secondary" onClick={() => setEditingOutcomeId(entry.id)}>Edit</Button>
+                              )}
+                              <Button variant="secondary" onClick={() => deleteProgramOutcome(program.id, entry.id)}>Delete</Button>
+                            </div>
+                          ))}
+                          <div className="mt-2 flex gap-2">
+                            <input placeholder={`Add ${type}`} value={drafts[`${program.id}-${type}-new`] ?? ''} onChange={(e) => setDrafts((prev) => ({ ...prev, [`${program.id}-${type}-new`]: e.target.value }))} />
+                            <Button onClick={() => addProgramOutcome(program.id, type as 'PO' | 'PSO')}>Add</Button>
                           </div>
-                        ))}
-                        <div className="mt-2 flex gap-2">
-                          <input placeholder={`Add ${type}`} value={drafts[`${program.id}-${type}-new`] ?? ''} onChange={(e) => setDrafts((prev) => ({ ...prev, [`${program.id}-${type}-new`]: e.target.value }))} />
-                          <Button onClick={() => addProgramOutcome(program.id, type as 'PO' | 'PSO')}>Add</Button>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </Card>
+                ))}
+              </div>
+            </Card>
+          ) : null}
 
           <section className="grid gap-4 lg:grid-cols-2">
             <Card className="rounded-[20px] p-5">
@@ -551,7 +570,7 @@ export default function DepartmentDashboardPage() {
                     <>
                       <p>{item.title}</p>
                       <p className="text-xs text-slate-700">{item.description}</p>
-                      <p className="text-xs text-slate-400">Category: {item.internship_category || 'FREE'} • Vacancy: {item.vacancy ?? 0} • {item.status}</p>
+                      <p className="text-xs text-slate-400">Category: {item.internship_category || 'FREE'} • Vacancy: {item.vacancy ?? 0} • {item.status} {item.industry_id ? '(industry)' : '(internal)'}</p>
                     </>
                   )}
                   <div className="mt-2 flex gap-2">
@@ -569,13 +588,66 @@ export default function DepartmentDashboardPage() {
                 <div key={item.id} className="mb-2 rounded-lg border border-slate-200 p-2">
                   {editingIdeaId === item.id ? (
                     <div className="grid gap-2">
-                      <select value={advertisementDrafts[item.id]?.programId ?? ''} onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { mappedCo: '', mappedPo: '', mappedPso: '' }), programId: e.target.value } }))}>
+                      <select value={advertisementDrafts[item.id]?.programId ?? ''} onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { mappedCo: parseMappings(item.mapped_co), mappedPo: parseMappings(item.mapped_po), mappedPso: parseMappings(item.mapped_pso) }), programId: e.target.value } }))}>
                         <option value="">Select programme</option>
                         {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
                       </select>
-                      <input placeholder="Internship CO mapping" value={advertisementDrafts[item.id]?.mappedCo ?? ''} onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { programId: '', mappedPo: '', mappedPso: '' }), mappedCo: e.target.value } }))} />
-                      <input placeholder="PO mapping" value={advertisementDrafts[item.id]?.mappedPo ?? ''} onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { programId: '', mappedCo: '', mappedPso: '' }), mappedPo: e.target.value } }))} />
-                      <input placeholder="PSO mapping" value={advertisementDrafts[item.id]?.mappedPso ?? ''} onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { programId: '', mappedCo: '', mappedPo: '' }), mappedPso: e.target.value } }))} />
+                      {(advertisementDrafts[item.id]?.programId ?? '').length ? (
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div>
+                            <p className="text-sm font-semibold">Internship COs</p>
+                            {internshipCos.map((entry) => (
+                              <label key={`${item.id}-co-${entry.id}`} className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={(advertisementDrafts[item.id]?.mappedCo ?? parseMappings(item.mapped_co)).includes(entry.code)}
+                                  onChange={() => toggleDraftSelection(item.id, 'mappedCo', entry.code)}
+                                />
+                                {entry.code}
+                              </label>
+                            ))}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold">Internship POs</p>
+                            {internshipPos.map((entry) => (
+                              <label key={`${item.id}-ipo-${entry.id}`} className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={(advertisementDrafts[item.id]?.mappedPo ?? parseMappings(item.mapped_po)).includes(entry.code)}
+                                  onChange={() => toggleDraftSelection(item.id, 'mappedPo', entry.code)}
+                                />
+                                {entry.code}
+                              </label>
+                            ))}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold">Programme POs</p>
+                            {(programOutcomes[advertisementDrafts[item.id]?.programId ?? ''] ?? []).filter((entry) => entry.type === 'PO').map((entry) => (
+                              <label key={`${item.id}-po-${entry.id}`} className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={(advertisementDrafts[item.id]?.mappedPo ?? parseMappings(item.mapped_po)).includes(entry.value)}
+                                  onChange={() => toggleDraftSelection(item.id, 'mappedPo', entry.value)}
+                                />
+                                {entry.value}
+                              </label>
+                            ))}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold">Programme PSOs</p>
+                            {(programOutcomes[advertisementDrafts[item.id]?.programId ?? ''] ?? []).filter((entry) => entry.type === 'PSO').map((entry) => (
+                              <label key={`${item.id}-pso-${entry.id}`} className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={(advertisementDrafts[item.id]?.mappedPso ?? parseMappings(item.mapped_pso)).includes(entry.value)}
+                                  onChange={() => toggleDraftSelection(item.id, 'mappedPso', entry.value)}
+                                />
+                                {entry.value}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ) : <p className="text-xs text-slate-600">Select programme to map outcomes.</p>}
                     </div>
                   ) : (
                     <>
@@ -589,7 +661,23 @@ export default function DepartmentDashboardPage() {
                     </>
                   )}
                   <div className="mt-2 flex gap-2">
-                    <Button variant="secondary" onClick={() => setEditingIdeaId(item.id)}>Edit</Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setEditingIdeaId(item.id);
+                        setAdvertisementDrafts((prev) => ({
+                          ...prev,
+                          [item.id]: prev[item.id] ?? {
+                            programId: '',
+                            mappedCo: parseMappings(item.mapped_co),
+                            mappedPo: parseMappings(item.mapped_po),
+                            mappedPso: parseMappings(item.mapped_pso),
+                          },
+                        }));
+                      }}
+                    >
+                      Edit
+                    </Button>
                     <Button variant="secondary" onClick={() => submitDepartmentAdvertisement(item.id)}>Submit</Button>
                   </div>
                 </div>
