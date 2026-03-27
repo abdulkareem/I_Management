@@ -25,7 +25,6 @@ export default function IndustryDashboardPage() {
     internshipTitle: '',
     natureOfWork: '',
     genderPreference: 'BOTH',
-    durationLabel: '60 hours',
     internshipCategory: 'FREE',
     fee: '',
     stipendAmount: '',
@@ -70,7 +69,6 @@ export default function IndustryDashboardPage() {
         internshipTitle: connectForm.internshipTitle,
         natureOfWork: connectForm.natureOfWork,
         genderPreference: connectForm.genderPreference,
-        durationLabel: connectForm.durationLabel,
         internshipCategory: connectForm.internshipCategory,
         fee: connectForm.internshipCategory === 'PAID' ? Number(connectForm.fee || 0) : null,
         stipendAmount: connectForm.internshipCategory === 'STIPEND' ? Number(connectForm.stipendAmount || 0) : null,
@@ -141,11 +139,6 @@ export default function IndustryDashboardPage() {
                 <option value="BOTH">Girls and Boys</option>
                 <option value="GIRLS">Girls only</option>
                 <option value="BOYS">Boys only</option>
-              </select>
-              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.durationLabel} onChange={(e) => setConnectForm((prev) => ({ ...prev, durationLabel: e.target.value }))}>
-                <option value="60 hours">60 hours</option>
-                <option value="120 hours">120 hours</option>
-                <option value="30 days">30 days</option>
               </select>
               <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.internshipCategory} onChange={(e) => setConnectForm((prev) => ({ ...prev, internshipCategory: e.target.value }))}>
                 <option value="FREE">Free internship</option>

@@ -996,7 +996,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const details: string[] = [
       `Nature of work: ${natureOfWork}`,
       `Preference: ${preference}`,
-      `Duration: ${durationLabel ?? '-'}`,
+      `Duration: ${durationLabel ?? (hourDuration && hourDuration > 0 ? `${hourDuration} hours` : '-')}`,
       `Internship type: ${internshipCategory}`,
       `Vacancy: ${vacancy}`,
     ];
@@ -3017,15 +3017,13 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     )`,
   ).run();
 
-  await env.DB.prepare('DROP VIEW IF EXISTS internship_provider_organizations').run();
   await env.DB.prepare(
-    `CREATE VIEW internship_provider_organizations AS
+    `CREATE VIEW IF NOT EXISTS internship_provider_organizations AS
      SELECT id, name, email, business_activity, industry_type_id, status, is_active, created_at, updated_at
      FROM industries`,
   ).run();
-  await env.DB.prepare('DROP VIEW IF EXISTS college_ipo_links').run();
   await env.DB.prepare(
-    `CREATE VIEW college_ipo_links AS
+    `CREATE VIEW IF NOT EXISTS college_ipo_links AS
      SELECT id, college_id, industry_id AS ipo_id, status, requested_by, created_at, updated_at
      FROM college_industry_links`,
   ).run();
