@@ -21,6 +21,9 @@ type IndustryIdea = {
   mapped_po?: string | null;
   mapped_pso?: string | null;
   program_name?: string | null;
+  published_internship_id?: string | null;
+  published_vacancy?: number | null;
+  published_category?: InternshipCategory | null;
 };
 type College = { id: string; name: string };
 type Department = { id: string; name: string };
@@ -55,6 +58,9 @@ export default function IndustryDashboardPage() {
   const [ipoProfile, setIpoProfile] = useState<IpoProfile | null>(null);
   const [feedbackDraft, setFeedbackDraft] = useState<Record<string, { feedback: string; score: string }>>({});
   const [ideasPage, setIdeasPage] = useState(1);
+  const [connectSubmitting, setConnectSubmitting] = useState(false);
+  const [ideaActionSubmitting, setIdeaActionSubmitting] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function load() {
     const [dashboardRes, ideasRes, collegeRes, profileRes] = await Promise.all([
@@ -88,27 +94,35 @@ export default function IndustryDashboardPage() {
       setError('Please select a college before sending.');
       return;
     }
-    await fetchWithSession('/api/industry/connect-request', {
-      method: 'POST',
-      body: JSON.stringify({
-        collegeId: selectedCollege,
-        departmentId: connectForm.departmentId || null,
-        internshipTitle: connectForm.internshipTitle,
-        natureOfWork: connectForm.natureOfWork,
-        genderPreference: connectForm.genderPreference,
-        internshipCategory: connectForm.internshipCategory,
-        fee: connectForm.internshipCategory === 'PAID' ? Number(connectForm.fee || 0) : null,
-        stipendAmount: connectForm.internshipCategory === 'STIPEND' ? Number(connectForm.stipendAmount || 0) : null,
-        stipendDuration: connectForm.internshipCategory === 'STIPEND' ? connectForm.stipendDuration : null,
-        durationLabel: `${Number(connectForm.hourDuration || 0)} hours`,
-        hourDuration: Number(connectForm.hourDuration || 0),
-        vacancy: Number(connectForm.vacancy || 0),
-      }),
-    });
-    setSelectedCollege('');
-    setConnectForm(EMPTY_CONNECT);
-    setDepartments([]);
-    await load();
+    setError(null);
+    setSuccessMessage(null);
+    setConnectSubmitting(true);
+    try {
+      await fetchWithSession('/api/industry/connect-request', {
+        method: 'POST',
+        body: JSON.stringify({
+          collegeId: selectedCollege,
+          departmentId: connectForm.departmentId || null,
+          internshipTitle: connectForm.internshipTitle,
+          natureOfWork: connectForm.natureOfWork,
+          genderPreference: connectForm.genderPreference,
+          internshipCategory: connectForm.internshipCategory,
+          fee: connectForm.internshipCategory === 'PAID' ? Number(connectForm.fee || 0) : null,
+          stipendAmount: connectForm.internshipCategory === 'STIPEND' ? Number(connectForm.stipendAmount || 0) : null,
+          stipendDuration: connectForm.internshipCategory === 'STIPEND' ? connectForm.stipendDuration : null,
+          durationLabel: `${Number(connectForm.hourDuration || 0)} hours`,
+          hourDuration: Number(connectForm.hourDuration || 0),
+          vacancy: Number(connectForm.vacancy || 0),
+        }),
+      });
+      setSelectedCollege('');
+      setConnectForm(EMPTY_CONNECT);
+      setDepartments([]);
+      setSuccessMessage('Sent to department successfully.');
+      await load();
+    } finally {
+      setConnectSubmitting(false);
+    }
   }
 
   async function updateIdea(ideaId: string, title: string, description: string) {
@@ -120,27 +134,43 @@ export default function IndustryDashboardPage() {
 
   async function acceptAndPublishIdea(idea: IndustryIdea) {
     const payload = forms[idea.id] ?? { vacancy: '1', internshipCategory: 'FREE' as InternshipCategory, fee: '', stipendAmount: '', stipendDuration: 'MONTH' as StipendDuration, minimumDays: '7', maximumDays: '30' };
-    await updateIdea(idea.id, idea.internship_title, idea.description);
-    await fetchWithSession(`/api/industry-requests/${idea.id}/respond`, { method: 'POST', body: JSON.stringify({ status: 'ACCEPTED' }) });
-    await fetchWithSession(`/api/industry/ideas/${idea.id}/publish`, {
-      method: 'POST',
-      body: JSON.stringify({
-        vacancy: Number(payload.vacancy || 0),
-        internshipCategory: payload.internshipCategory,
-        fee: payload.internshipCategory === 'PAID' ? Number(payload.fee || 0) : null,
-        stipendAmount: payload.internshipCategory === 'STIPEND' ? Number(payload.stipendAmount || 0) : null,
-        stipendDuration: payload.internshipCategory === 'STIPEND' ? payload.stipendDuration : null,
-        minimumDays: Number(payload.minimumDays || 0),
-        maximumDays: Number(payload.maximumDays || 0),
-      }),
-    });
-    setEditingIdeaId(null);
-    await load();
+    setError(null);
+    setSuccessMessage(null);
+    setIdeaActionSubmitting(idea.id);
+    try {
+      await updateIdea(idea.id, idea.internship_title, idea.description);
+      await fetchWithSession(`/api/industry-requests/${idea.id}/respond`, { method: 'POST', body: JSON.stringify({ status: 'ACCEPTED' }) });
+      await fetchWithSession(`/api/industry/ideas/${idea.id}/publish`, {
+        method: 'POST',
+        body: JSON.stringify({
+          vacancy: Number(payload.vacancy || 0),
+          internshipCategory: payload.internshipCategory,
+          fee: payload.internshipCategory === 'PAID' ? Number(payload.fee || 0) : null,
+          stipendAmount: payload.internshipCategory === 'STIPEND' ? Number(payload.stipendAmount || 0) : null,
+          stipendDuration: payload.internshipCategory === 'STIPEND' ? payload.stipendDuration : null,
+          minimumDays: Number(payload.minimumDays || 0),
+          maximumDays: Number(payload.maximumDays || 0),
+        }),
+      });
+      setEditingIdeaId(null);
+      setSuccessMessage('Idea accepted and published for student applications.');
+      await load();
+    } finally {
+      setIdeaActionSubmitting(null);
+    }
   }
 
   async function rejectIdea(ideaId: string) {
-    await fetchWithSession(`/api/industry-requests/${ideaId}/respond`, { method: 'POST', body: JSON.stringify({ status: 'REJECTED' }) });
-    await load();
+    setError(null);
+    setSuccessMessage(null);
+    setIdeaActionSubmitting(ideaId);
+    try {
+      await fetchWithSession(`/api/industry-requests/${ideaId}/respond`, { method: 'POST', body: JSON.stringify({ status: 'REJECTED' }) });
+      setSuccessMessage('Idea rejected.');
+      await load();
+    } finally {
+      setIdeaActionSubmitting(null);
+    }
   }
 
   async function acceptApplication(applicationId: string) {
@@ -194,12 +224,14 @@ export default function IndustryDashboardPage() {
     const start = (safePage - 1) * ideaPageSize;
     return { rows: visibleIdeas.slice(start, start + ideaPageSize), totalPages, safePage };
   }, [ideas, ideasPage]);
+  const acceptedIdeas = useMemo(() => ideas.filter((idea) => idea.status === 'ACCEPTED'), [ideas]);
 
   return (
     <RoleDashboardShell allowedRoles={['INDUSTRY']} title="Internship Providing Organization Dashboard" subtitle="Review department ideas, connect with colleges, publish student vacancies, and track applications.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-200">{error}</Card> : null}
+          {successMessage ? <Card className="rounded-[28px] p-4 text-emerald-200">{successMessage}</Card> : null}
           {!dashboard ? <Card className="rounded-[28px] p-4">Loading IPO data...</Card> : null}
 
           <section className="grid gap-4 md:grid-cols-3">
@@ -261,7 +293,7 @@ export default function IndustryDashboardPage() {
               ) : null}
               <Input placeholder="Duration in hours (e.g. 60/120)" value={connectForm.hourDuration} onChange={(e) => setConnectForm((prev) => ({ ...prev, hourDuration: e.target.value }))} />
               <Input placeholder="Vacancies" value={connectForm.vacancy} onChange={(e) => setConnectForm((prev) => ({ ...prev, vacancy: e.target.value }))} />
-              <Button onClick={submitConnectRequest}>Send to Department</Button>
+              <Button disabled={connectSubmitting} onClick={submitConnectRequest}>{connectSubmitting ? 'Submitting...' : 'Send to Department'}</Button>
             </div>
           </Card>
 
@@ -280,8 +312,8 @@ export default function IndustryDashboardPage() {
                     <Badge className="mt-2">{idea.status}</Badge>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button variant="secondary" onClick={() => setEditingIdeaId(isEditing ? null : idea.id)}>{isEditing ? 'Close Edit' : 'Edit'}</Button>
-                      <Button variant="secondary" onClick={() => acceptAndPublishIdea(idea)}>Accept Idea</Button>
-                      <Button variant="secondary" onClick={() => rejectIdea(idea.id)}>Reject Idea</Button>
+                      <Button variant="secondary" disabled={ideaActionSubmitting === idea.id} onClick={() => acceptAndPublishIdea(idea)}>{ideaActionSubmitting === idea.id ? 'Submitting...' : 'Accept Idea'}</Button>
+                      <Button variant="secondary" disabled={ideaActionSubmitting === idea.id} onClick={() => rejectIdea(idea.id)}>{ideaActionSubmitting === idea.id ? 'Submitting...' : 'Reject Idea'}</Button>
                     </div>
                     {isEditing ? (
                       <div className="mt-3 grid gap-2 md:grid-cols-3">
@@ -314,6 +346,44 @@ export default function IndustryDashboardPage() {
                   <Button variant="secondary" onClick={() => setIdeasPage((prev) => Math.min(paginatedIdeas.totalPages, prev + 1))} disabled={paginatedIdeas.safePage >= paginatedIdeas.totalPages}>Next</Button>
                 </div>
               </div>
+            </div>
+          </Card>
+
+          <Card className="rounded-[30px] p-6">
+            <h2 className="mt-2 text-2xl font-semibold text-white">Accepted Ideas (Published for Students)</h2>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[960px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-white/20 text-slate-300">
+                    <th className="py-2 pr-2">Internship</th>
+                    <th className="py-2 pr-2">College</th>
+                    <th className="py-2 pr-2">Department</th>
+                    <th className="py-2 pr-2">Programme</th>
+                    <th className="py-2 pr-2">Category</th>
+                    <th className="py-2 pr-2">Vacancy</th>
+                    <th className="py-2 pr-2">Status</th>
+                    <th className="py-2">Student visibility</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {acceptedIdeas.length ? acceptedIdeas.map((idea) => (
+                    <tr key={idea.id} className="border-b border-white/10">
+                      <td className="py-3 pr-2">{idea.internship_title}</td>
+                      <td className="py-3 pr-2">{idea.college_name}</td>
+                      <td className="py-3 pr-2">{idea.department_name}</td>
+                      <td className="py-3 pr-2">{idea.program_name || '-'}</td>
+                      <td className="py-3 pr-2">{idea.published_category || '-'}</td>
+                      <td className="py-3 pr-2">{idea.published_vacancy ?? '-'}</td>
+                      <td className="py-3 pr-2">{idea.status}</td>
+                      <td className="py-3">{idea.published_internship_id ? 'Visible in student dashboard' : 'Not published yet'}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td className="py-3 text-slate-300" colSpan={8}>No accepted ideas yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </Card>
 
