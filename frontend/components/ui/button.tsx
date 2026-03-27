@@ -3,9 +3,9 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 const buttonStyles = {
-  primary: 'bg-white text-slate-950 shadow-[0_20px_60px_rgba(255,255,255,0.18)] hover:bg-slate-200',
-  secondary: 'border border-white/15 bg-white/5 text-white hover:bg-white/10',
-  ghost: 'text-slate-200 hover:bg-white/5',
+  primary: 'bg-gradient-to-r from-indigo-600 to-sky-500 text-white shadow-[0_18px_50px_rgba(79,70,229,0.38)] hover:brightness-110',
+  secondary: 'border border-slate-200/90 bg-white/75 text-slate-700 hover:bg-white',
+  ghost: 'text-slate-600 hover:bg-white/65',
 } as const;
 
 const baseClass =

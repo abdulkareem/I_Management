@@ -45,24 +45,24 @@ export function LandingPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-10 px-4 py-6 sm:px-6 lg:px-8">
-      <section className="relative overflow-hidden rounded-[40px] border border-white/10 bg-slate-950/70 px-6 py-8 shadow-[0_30px_120px_rgba(15,23,42,0.45)] sm:px-10 sm:py-12">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.22),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(34,197,94,0.18),transparent_28%)]" />
+      <section className="relative overflow-hidden rounded-[40px] border border-indigo-100/70 bg-white/80 px-5 py-7 shadow-[0_35px_120px_rgba(30,64,175,0.18)] sm:px-10 sm:py-12">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(79,70,229,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.16),transparent_30%)]" />
         <div className="relative grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
           <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="space-y-6">
-            <Badge className="bg-emerald-400/10 text-emerald-200">Student-first internship platform</Badge>
+            <Badge className="bg-indigo-50 text-indigo-700">Student-first internship platform</Badge>
             <div className="space-y-4">
-              <h1 className="max-w-4xl text-4xl font-semibold tracking-tight text-white sm:text-6xl">
-                One internship platform. Three joyful journeys. Zero tenancy complexity.
+              <h1 className="max-w-4xl text-3xl font-semibold tracking-tight text-slate-900 sm:text-6xl">
+                Ultra-modern internship workspace for students, colleges, and industry teams.
               </h1>
-              <p className="max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
-                InternSuite helps students find approved internships fast, colleges approve MoUs in one click, and industries recruit without friction.
+              <p className="max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
+                Designed with a clean Figma-style visual system: clear sections, friendly typography, and quick actions that feel great on mobile and desktop.
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
               {roleCards.map((card) => {
                 const Icon = card.icon;
                 return (
-                  <ButtonLink key={card.href} href={card.href} className="justify-between rounded-[22px] px-5 py-4 text-left text-sm sm:text-base">
+                  <ButtonLink key={card.href} href={card.href} className="justify-between rounded-[18px] px-4 py-4 text-left text-sm sm:text-base">
                     <span className="flex items-center gap-3"><Icon className="h-5 w-5" /> {card.title}</span>
                     <ArrowRight className="h-4 w-4" />
                   </ButtonLink>
@@ -71,26 +71,26 @@ export function LandingPage() {
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               {[
-                ['2 clicks', 'from discovery to application'],
+                ['2 taps', 'from discovery to application'],
                 ['100%', 'MoU-filtered internship feed'],
-                ['PWA ready', 'installable on Android and iPhone'],
+                ['Responsive', 'Android, iPhone, laptop and desktops'],
               ].map(([value, label]) => (
-                <Card key={label} className="rounded-[24px] bg-white/5 p-5">
-                  <p className="text-2xl font-semibold text-white">{value}</p>
-                  <p className="mt-2 text-sm text-slate-300">{label}</p>
+                <Card key={label} className="rounded-[24px] bg-white/85 p-4 sm:p-5">
+                  <p className="text-xl font-semibold text-slate-900 sm:text-2xl">{value}</p>
+                  <p className="mt-2 text-sm text-slate-600">{label}</p>
                 </Card>
               ))}
             </div>
           </motion.div>
 
           <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.7, delay: 0.1 }}>
-            <Card className="rounded-[32px] bg-slate-950/80 p-6">
+            <Card className="rounded-[32px] border-indigo-100 bg-white/90 p-5 sm:p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.24em] text-cyan-200">Your Internship Journey</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Apply, get accepted, show up, level up.</h2>
+                  <p className="text-sm uppercase tracking-[0.24em] text-indigo-600">Your Internship Journey</p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-900 sm:text-2xl">Apply, get accepted, show up, level up.</h2>
                 </div>
-                <Sparkles className="h-6 w-6 text-cyan-300" />
+                <Sparkles className="h-6 w-6 text-sky-500" />
               </div>
               <div className="mt-6 space-y-4">
                 {[
@@ -98,16 +98,16 @@ export function LandingPage() {
                   ['Applied to UI Design Intern', 'Under review', '66%'],
                   ['Offer letter unlocked', 'Pending acceptance', '33%'],
                 ].map(([title, status, progress]) => (
-                  <div key={title} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div key={title} className="rounded-[24px] border border-slate-100 bg-white p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="font-semibold text-white">{title}</p>
-                        <p className="text-sm text-slate-300">{status}</p>
+                        <p className="font-semibold text-slate-900">{title}</p>
+                        <p className="text-sm text-slate-500">{status}</p>
                       </div>
-                      <Sparkles className="h-5 w-5 text-emerald-300" />
+                      <Sparkles className="h-5 w-5 text-indigo-500" />
                     </div>
-                    <div className="mt-4 h-2 rounded-full bg-white/10">
-                      <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{ width: progress }} />
+                    <div className="mt-4 h-2 rounded-full bg-slate-100">
+                      <div className="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-sky-500" style={{ width: progress }} />
                     </div>
                   </div>
                 ))}
@@ -128,9 +128,9 @@ export function LandingPage() {
               ['Applications Submitted', stats.applied],
               ['Internships Completed', stats.completed],
             ].map(([label, value]) => (
-              <Card key={String(label)} className="rounded-[28px] p-6">
-                <p className="text-sm text-slate-300">{label}</p>
-                <p className="mt-2 text-3xl font-bold text-white">{String(value)}</p>
+              <Card key={String(label)} className="rounded-[28px] bg-white/85 p-5 sm:p-6">
+                <p className="text-sm text-slate-500">{label}</p>
+                <p className="mt-2 text-3xl font-bold text-slate-900">{String(value)}</p>
               </Card>
             ))}
           </>
@@ -140,10 +140,10 @@ export function LandingPage() {
           { icon: Zap, title: 'Fast approvals', body: 'Coordinators review requests, sign MoUs, and unlock student access in one tap.' },
           { icon: Sparkles, title: 'Minimal typing', body: 'Big buttons, card layouts, and tap-first flows make the app feel WhatsApp simple.' },
         ].map(({ icon: Icon, title, body }) => (
-          <Card key={title} className="rounded-[28px] p-6">
-            <Icon className="h-6 w-6 text-cyan-300" />
-            <h3 className="mt-4 text-xl font-semibold text-white">{title}</h3>
-            <p className="mt-3 text-sm leading-7 text-slate-300">{body}</p>
+          <Card key={title} className="rounded-[28px] bg-white/85 p-5 sm:p-6">
+            <Icon className="h-6 w-6 text-indigo-500" />
+            <h3 className="mt-4 text-xl font-semibold text-slate-900">{title}</h3>
+            <p className="mt-3 text-sm leading-7 text-slate-600">{body}</p>
           </Card>
         ))}
       </section>
