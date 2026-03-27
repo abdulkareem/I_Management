@@ -339,6 +339,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const customProgramName = optional(body, ['custom_program_name', 'customProgramName']);
     const universityRegNumber = optional(body, ['university_reg_number', 'universityRegNumber']);
     const phone = optional(body, ['phone']);
+    const sexRaw = toText(optional(body, ['sex', 'gender'])).toUpperCase();
+    const sex = sexRaw === 'MALE' || sexRaw === 'FEMALE' ? sexRaw : null;
 
     let collegeId = providedCollegeId;
     let departmentId = providedDepartmentId;
@@ -355,7 +357,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       programId = path.programId;
     }
 
-    if (!name || !email || !password || !collegeId || !departmentId || !programId) {
+    if (!name || !email || !password || !collegeId || !departmentId || !programId || !sex) {
       return badRequest('name, email, password, and either selected IDs or custom college/department/program are required');
     }
 
@@ -378,9 +380,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         id, name, email, phone, university_reg_number,
         college_id, department_id, program_id,
         custom_college_name, custom_department_name, custom_program_name,
-        password, is_active
+        sex, password, is_active
       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     )
       .bind(
         studentId,
@@ -394,6 +396,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         customCollegeName,
         customDepartmentName,
         customProgramName,
+        sex,
         password,
       )
       .run();
@@ -1160,7 +1163,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     }
     if (department && !programme) return badRequest('programme is required when a department is selected');
     if (!department && programme) return badRequest('programme must be empty when department is no preference');
-    if (Number.isNaN(vacancy) || vacancy < 0) return badRequest('vacancy must be a non-negative number');
+    if (Number.isNaN(vacancy) || vacancy <= 0) return badRequest('vacancy must be a positive number');
     if (!['FREE', 'PAID', 'STIPEND'].includes(category.toUpperCase())) {
       return badRequest('category must be FREE, PAID or STIPEND');
     }
@@ -1190,8 +1193,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const internshipId = crypto.randomUUID();
     const result = await env.DB.prepare(
       `INSERT INTO internships (
-        id, title, description, college_id, department_id, industry_id, is_external, internship_category, vacancy, status, student_visibility, programme, duration, requirements, stipend_amount, stipend_duration, fee
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+        id, title, description, college_id, department_id, industry_id, is_external, internship_category, vacancy, total_vacancy, remaining_vacancy, status, student_visibility, programme, duration, requirements, stipend_amount, stipend_duration, fee, gender_preference
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       internshipId,
       internshipTitle.trim(),
@@ -1201,6 +1204,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       actor.id,
       category.toUpperCase(),
       Math.floor(vacancy),
+      Math.floor(vacancy),
+      Math.floor(vacancy),
       INTERNSHIP_STATUS.SENT_TO_DEPARTMENT,
       department ? (programme ?? '').trim() : null,
       hourDuration && hourDuration > 0 ? `${hourDuration} hours` : null,
@@ -1208,6 +1213,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       category.toUpperCase() === 'STIPEND' ? stipendAmount : null,
       category.toUpperCase() === 'STIPEND' ? stipendDuration : null,
       category.toUpperCase() === 'PAID' ? fee : null,
+      genderPreference,
     ).run();
 
     console.log('DB INSERT RESULT:', result);
@@ -2007,6 +2013,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const isExternal = toBoolean(required(body, ['is_external', 'isExternal'])) ?? true;
     const feeRaw = optional(body, ['fee']);
     const fee = feeRaw ? Number(feeRaw) : null;
+    const stipendAmountRaw = optional(body, ['stipend_amount', 'stipendAmount']);
+    const stipendAmount = stipendAmountRaw ? Number(stipendAmountRaw) : null;
+    const stipendDuration = toText(optional(body, ['stipend_duration', 'stipendDuration'])) || null;
+    const minimumDaysRaw = optional(body, ['minimum_days', 'minimumDays', 'hourDuration']);
+    const minimumDays = minimumDaysRaw ? Number(minimumDaysRaw) : null;
+    const genderPreference = toText(optional(body, ['gender_preference', 'genderPreference'])).toUpperCase() || 'BOTH';
     const categoryRaw = toText(optional(body, ['internship_category', 'internshipCategory'])).toUpperCase();
     const requestedCategory = ['FREE', 'PAID', 'STIPEND'].includes(categoryRaw) ? categoryRaw : null;
     const vacancyRaw = optional(body, ['vacancy']);
@@ -2016,23 +2028,35 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     if (!title || !description) return badRequest('title and description are required');
     if (isPaid && (!fee || Number.isNaN(fee) || fee <= 0)) return badRequest('Valid fee is required for paid internships');
+    if (internshipCategory === 'STIPEND' && (stipendAmount === null || Number.isNaN(stipendAmount) || stipendAmount < 0)) return badRequest('Valid stipendAmount is required for stipend internships');
     if (vacancy !== null && (Number.isNaN(vacancy) || vacancy < 0)) return badRequest('vacancy must be a non-negative number');
+    if (!['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
+
+    const department = await env.DB.prepare('SELECT college_id FROM departments WHERE id = ?').bind(actor.id).first<{ college_id: string }>();
+    if (!department) return badRequest('Department not found');
 
     const internshipId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, is_paid, fee, internship_category, vacancy, is_external, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')`,
+      `INSERT INTO internships (id, title, description, department_id, college_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, is_external, status, stipend_amount, stipend_duration, minimum_days, gender_preference)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
     )
       .bind(
         internshipId,
         title,
         description,
         actor.id,
+        department.college_id,
         isPaid ? 1 : 0,
         isPaid ? Math.round(fee ?? 0) : null,
         internshipCategory,
         vacancy === null ? 0 : Math.floor(vacancy),
+        vacancy === null ? 0 : Math.floor(vacancy),
+        vacancy === null ? 0 : Math.floor(vacancy),
         isExternal ? 1 : 0,
+        internshipCategory === 'STIPEND' ? stipendAmount : null,
+        internshipCategory === 'STIPEND' ? stipendDuration : null,
+        minimumDays === null || Number.isNaN(minimumDays) ? null : Math.floor(minimumDays),
+        genderPreference,
       )
       .run();
 
@@ -2050,6 +2074,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const fee = feeRaw ? Number(feeRaw) : null;
     const explicitIsPaidRaw = optional(body, ['is_paid', 'isPaid']);
     const explicitIsPaid = explicitIsPaidRaw ? toBoolean(explicitIsPaidRaw) : null;
+    const stipendAmountRaw = optional(body, ['stipend_amount', 'stipendAmount']);
+    const stipendAmount = stipendAmountRaw ? Number(stipendAmountRaw) : null;
+    const stipendDuration = toText(optional(body, ['stipend_duration', 'stipendDuration'])) || null;
+    const minimumDaysRaw = optional(body, ['minimum_days', 'minimumDays', 'hourDuration']);
+    const minimumDays = minimumDaysRaw ? Number(minimumDaysRaw) : null;
+    const genderPreference = toText(optional(body, ['gender_preference', 'genderPreference'])).toUpperCase() || null;
     const categoryRaw = toText(optional(body, ['internship_category', 'internshipCategory'])).toUpperCase();
     const requestedCategory = ['FREE', 'PAID', 'STIPEND'].includes(categoryRaw) ? categoryRaw : null;
     const vacancyRaw = optional(body, ['vacancy']);
@@ -2058,11 +2088,16 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const internshipCategory = isPaid ? 'PAID' : (requestedCategory ?? 'FREE');
     if (!title || !description) return badRequest('title and description are required');
     if (isPaid && (!fee || Number.isNaN(fee) || fee <= 0)) return badRequest('Valid fee is required for paid internships');
+    if (internshipCategory === 'STIPEND' && stipendAmount !== null && (Number.isNaN(stipendAmount) || stipendAmount < 0)) return badRequest('Invalid stipendAmount');
     if (vacancy !== null && (Number.isNaN(vacancy) || vacancy < 0)) return badRequest('vacancy must be a non-negative number');
+    if (genderPreference !== null && !['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
 
     const result = await env.DB.prepare(
       `UPDATE internships
-       SET title = ?, description = ?, is_paid = ?, fee = ?, internship_category = ?, vacancy = COALESCE(?, vacancy), updated_at = datetime('now')
+       SET title = ?, description = ?, is_paid = ?, fee = ?, internship_category = ?, vacancy = COALESCE(?, vacancy),
+           total_vacancy = COALESCE(?, total_vacancy), remaining_vacancy = COALESCE(?, remaining_vacancy),
+           stipend_amount = ?, stipend_duration = ?, minimum_days = ?, gender_preference = COALESCE(?, gender_preference),
+           updated_at = datetime('now')
        WHERE id = ? AND department_id = ?`,
     ).bind(
       title,
@@ -2071,6 +2106,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       isPaid ? Math.round(fee ?? 0) : null,
       internshipCategory,
       vacancy === null ? null : Math.floor(vacancy),
+      vacancy === null ? null : Math.floor(vacancy),
+      vacancy === null ? null : Math.floor(vacancy),
+      internshipCategory === 'STIPEND' ? stipendAmount : null,
+      internshipCategory === 'STIPEND' ? stipendDuration : null,
+      minimumDays === null || Number.isNaN(minimumDays) ? null : Math.floor(minimumDays),
+      genderPreference,
       updateDepartmentInternshipMatch[1],
       actor.id,
     ).run();
@@ -2129,7 +2170,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const rows = await env.DB.prepare(
-      `SELECT id, title, description, is_paid, fee, internship_category, vacancy, is_external, status, created_at
+      `SELECT id, title, description, is_paid, fee, internship_category, vacancy, is_external, status, created_at, industry_id, gender_preference, stipend_amount, stipend_duration, minimum_days
        FROM internships
        WHERE department_id = ?
        ORDER BY created_at DESC`,
@@ -3068,11 +3109,11 @@ async function getStudentApplicationEligibility(env: EnvBindings, studentId: str
 
 async function loadStudentDashboard(env: EnvBindings, studentId: string): Promise<Response> {
   const student = await env.DB.prepare(
-    `SELECT s.college_id, c.name AS college_name
+    `SELECT s.college_id, s.sex, c.name AS college_name
      FROM students s
      LEFT JOIN colleges c ON c.id = s.college_id
      WHERE s.id = ?`,
-  ).bind(studentId).first<{ college_id: string; college_name: string | null }>();
+  ).bind(studentId).first<{ college_id: string; sex: string | null; college_name: string | null }>();
   if (!student) return unauthorized('Student not found');
 
   const [legacyInternships, applications, collegeInternships, externalInternships, eligibility] = await Promise.all([
@@ -3104,8 +3145,13 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        WHERE d.college_id = ?
          AND i.status = 'ACCEPTED'
          AND COALESCE(i.student_visibility, 0) = 1
+         AND (
+           COALESCE(i.gender_preference, 'BOTH') = 'BOTH'
+           OR (COALESCE(i.gender_preference, 'BOTH') = 'BOYS' AND ? = 'MALE')
+           OR (COALESCE(i.gender_preference, 'BOTH') = 'GIRLS' AND ? = 'FEMALE')
+         )
        ORDER BY i.created_at DESC`,
-    ).bind(student.college_id).all(),
+    ).bind(student.college_id, student.sex ?? '', student.sex ?? '').all(),
     env.DB.prepare(
       `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name, i.vacancy,
               ia.id AS application_id, ia.status AS application_status, ia.industry_feedback, ia.industry_score,
@@ -3123,8 +3169,13 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        WHERE d.college_id <> ?
          AND i.status = 'ACCEPTED'
          AND COALESCE(i.student_visibility, 0) = 1
+         AND (
+           COALESCE(i.gender_preference, 'BOTH') = 'BOTH'
+           OR (COALESCE(i.gender_preference, 'BOTH') = 'BOYS' AND ? = 'MALE')
+           OR (COALESCE(i.gender_preference, 'BOTH') = 'GIRLS' AND ? = 'FEMALE')
+         )
        ORDER BY i.created_at DESC`,
-    ).bind(studentId, student.college_id).all(),
+    ).bind(studentId, student.college_id, student.sex ?? '', student.sex ?? '').all(),
     getStudentApplicationEligibility(env, studentId),
   ]);
 
@@ -3770,6 +3821,10 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
 
   const studentColumns = new Set((await getTableColumns(env, 'students')).map((column) => column.name));
   if (!studentColumns.has('is_external')) await env.DB.prepare('ALTER TABLE students ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0').run();
+  if (!studentColumns.has('sex')) await env.DB.prepare("ALTER TABLE students ADD COLUMN sex TEXT NOT NULL DEFAULT 'MALE'").run();
+  await env.DB.prepare("UPDATE students SET sex = 'MALE' WHERE sex IS NULL OR trim(sex) = ''").run();
+
+  if (!internshipColumns.has('gender_preference')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN gender_preference TEXT NOT NULL DEFAULT 'BOTH'").run();
 
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS industry_requests (
@@ -4049,6 +4104,9 @@ async function ensureStudentRegistrationSchema(env: EnvBindings): Promise<void> 
   }
   if (!studentColumns.has('custom_program_name')) {
     await env.DB.prepare('ALTER TABLE students ADD COLUMN custom_program_name TEXT').run();
+  }
+  if (!studentColumns.has('sex')) {
+    await env.DB.prepare("ALTER TABLE students ADD COLUMN sex TEXT NOT NULL DEFAULT 'MALE'").run();
   }
 }
 
