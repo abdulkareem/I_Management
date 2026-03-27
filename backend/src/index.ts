@@ -47,6 +47,15 @@ const CORS_HEADERS: Record<string, string> = {
 
 const DEFAULT_SUPERADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
 const DEFAULT_SUPERADMIN_ID = 'admin_super_psmo';
+const INTERNSHIP_STATUS = {
+  DRAFT: 'DRAFT',
+  SENT_TO_DEPARTMENT: 'SENT_TO_DEPARTMENT',
+  ACCEPTED: 'ACCEPTED',
+  REJECTED: 'REJECTED',
+} as const;
+
+type InternshipStatus = (typeof INTERNSHIP_STATUS)[keyof typeof INTERNSHIP_STATUS];
+const ALLOWED_INTERNSHIP_STATUS = new Set<InternshipStatus>(Object.values(INTERNSHIP_STATUS));
 
 export default {
   async fetch(request: Request, env: EnvBindings): Promise<Response> {
@@ -493,7 +502,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        FROM internships i
        INNER JOIN departments d ON d.id = i.department_id
        INNER JOIN colleges c ON c.id = d.college_id
-       WHERE c.status = 'approved' AND c.is_active = 1
+       WHERE c.status = 'approved'
+         AND c.is_active = 1
+         AND i.status = 'ACCEPTED'
+         AND COALESCE(i.student_visibility, 0) = 1
        ORDER BY i.created_at DESC`,
     ).all<{
       id: string;
@@ -1063,6 +1075,114 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(collegeId).all();
 
     return ok('College departments fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/industry/send-to-department') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    console.log('SEND TO DEPT:', body);
+
+    const internshipTitle = required(body, ['internship_title', 'internshipTitle']);
+    const college = required(body, ['college', 'collegeId']);
+    const department = required(body, ['department', 'departmentId']);
+    const programme = required(body, ['programme', 'program', 'programId']);
+    const category = required(body, ['category', 'internshipCategory']);
+    const vacancyRaw = optional(body, ['vacancy']);
+    const vacancy = vacancyRaw ? Number(vacancyRaw) : 0;
+    const description = optional(body, ['description', 'natureOfWork']) ?? 'Internship opportunity submitted by industry';
+
+    if (!internshipTitle || !college || !department || !programme || !category) {
+      return badRequest('internship_title, college, department, programme, category, vacancy are required');
+    }
+    if (Number.isNaN(vacancy) || vacancy < 0) return badRequest('vacancy must be a non-negative number');
+    if (!['FREE', 'PAID', 'STIPEND'].includes(category.toUpperCase())) {
+      return badRequest('category must be FREE, PAID or STIPEND');
+    }
+
+    const departmentRow = await env.DB.prepare(
+      `SELECT d.id
+       FROM departments d
+       WHERE d.id = ? AND d.college_id = ?`,
+    ).bind(department, college).first<{ id: string }>();
+    if (!departmentRow) return badRequest('Invalid college/department mapping');
+
+    const duplicate = await env.DB.prepare(
+      `SELECT id
+       FROM internships
+       WHERE industry_id = ?
+         AND department_id = ?
+         AND lower(title) = lower(?)
+         AND status IN (?, ?)`,
+    ).bind(actor.id, departmentRow.id, internshipTitle, INTERNSHIP_STATUS.DRAFT, INTERNSHIP_STATUS.SENT_TO_DEPARTMENT).first<{ id: string }>();
+    if (duplicate) return conflict('A similar internship is already pending');
+
+    const internshipId = crypto.randomUUID();
+    const result = await env.DB.prepare(
+      `INSERT INTO internships (
+        id, title, description, department_id, industry_id, is_external, internship_category, vacancy, status, student_visibility, programme
+      ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, 0, ?)`,
+    ).bind(
+      internshipId,
+      internshipTitle.trim(),
+      description,
+      departmentRow.id,
+      actor.id,
+      category.toUpperCase(),
+      Math.floor(vacancy),
+      INTERNSHIP_STATUS.SENT_TO_DEPARTMENT,
+      programme.trim(),
+    ).run();
+
+    console.log('DB INSERT RESULT:', result);
+    return created('Sent to Department', { id: internshipId, status: INTERNSHIP_STATUS.SENT_TO_DEPARTMENT });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/industry/publish') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipId = required(body, ['id', 'internship_id', 'internshipId']);
+    if (!internshipId) return badRequest('id is required');
+
+    const internship = await env.DB.prepare(
+      'SELECT id, status FROM internships WHERE id = ? AND industry_id = ?',
+    ).bind(internshipId, actor.id).first<{ id: string; status: string }>();
+    if (!internship) return errorResponse(404, 'Internship not found');
+    if (internship.status !== INTERNSHIP_STATUS.ACCEPTED) return badRequest('Only ACCEPTED internships can be published');
+
+    const result = await env.DB.prepare(
+      `UPDATE internships
+       SET student_visibility = 1,
+           updated_at = datetime('now')
+       WHERE id = ? AND industry_id = ?`,
+    ).bind(internshipId, actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(500, 'Unable to publish internship');
+    return ok('Internship published for students');
+  }
+
+  if (request.method === 'GET' && pathname === '/api/industry/internships') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const rows = await env.DB.prepare(
+      `SELECT i.id,
+              i.title AS internship_title,
+              c.id AS college_id,
+              c.name AS college_name,
+              d.id AS department_id,
+              d.name AS department_name,
+              i.programme,
+              i.internship_category AS category,
+              i.vacancy,
+              i.status,
+              COALESCE(i.student_visibility, 0) AS student_visibility
+       FROM internships i
+       INNER JOIN departments d ON d.id = i.department_id
+       INNER JOIN colleges c ON c.id = d.college_id
+       WHERE i.industry_id = ?
+       ORDER BY i.created_at DESC`,
+    ).bind(actor.id).all();
+    return ok('Industry internships fetched', rows.results ?? []);
   }
 
   if (request.method === 'POST' && pathname === '/api/industry/connect-request') {
@@ -2558,6 +2678,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
          ON ia.internship_id = i.id AND ia.student_id = ?
        LEFT JOIN industry_internships ii ON ii.title = i.title
        LEFT JOIN industries ind ON ind.id = ii.industry_id
+       WHERE i.status = 'ACCEPTED' AND COALESCE(i.student_visibility, 0) = 1
        ORDER BY i.created_at DESC`,
     ).bind(studentId).all(),
     env.DB.prepare(
@@ -2575,6 +2696,8 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        INNER JOIN departments d ON d.id = i.department_id
        INNER JOIN colleges c ON c.id = d.college_id
        WHERE d.college_id = ?
+         AND i.status = 'ACCEPTED'
+         AND COALESCE(i.student_visibility, 0) = 1
        ORDER BY i.created_at DESC`,
     ).bind(student.college_id).all(),
     env.DB.prepare(
@@ -2592,6 +2715,8 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        LEFT JOIN industries ind ON ind.id = ii.industry_id
        LEFT JOIN internship_applications ia ON ia.internship_id = i.id AND ia.student_id = ?
        WHERE d.college_id <> ?
+         AND i.status = 'ACCEPTED'
+         AND COALESCE(i.student_visibility, 0) = 1
        ORDER BY i.created_at DESC`,
     ).bind(studentId, student.college_id).all(),
     getStudentApplicationEligibility(env, studentId),
@@ -3212,7 +3337,9 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   if (!internshipColumns.has('internship_category')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN internship_category TEXT NOT NULL DEFAULT 'FREE'").run();
   if (!internshipColumns.has('vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('industry_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN industry_id TEXT').run();
-  if (!internshipColumns.has('status')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN status TEXT NOT NULL DEFAULT 'OPEN'").run();
+  if (!internshipColumns.has('status')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN status TEXT NOT NULL DEFAULT 'DRAFT'").run();
+  if (!internshipColumns.has('student_visibility')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN student_visibility INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('programme')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN programme TEXT').run();
   if (!internshipColumns.has('industry_request_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN industry_request_id TEXT').run();
   if (!internshipColumns.has('stipend_amount')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN stipend_amount INTEGER').run();
   if (!internshipColumns.has('stipend_duration')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN stipend_duration TEXT').run();
