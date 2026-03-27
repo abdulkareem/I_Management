@@ -9,12 +9,12 @@ import { Card } from '@/components/ui/card';
 import { fetchWithSession, loadSession } from '@/lib/auth';
 import type { DepartmentDashboard } from '@/lib/types';
 
-type Industry = { id: string; name: string };
+type Industry = { id: string; name: string; is_linked?: number };
 type ProgramOutcome = { id: string; type: 'PO' | 'PSO'; value: string };
 type OutcomeDefinition = { id: string; code: string; description: string };
 type DepartmentProgram = { id: string; name: string; program_outcomes: string | null; program_specific_outcomes: string | null };
 type IndustryListing = { id: string; title: string; criteria?: string | null; vacancy?: number | null };
-type IndustryDetails = { id: string; name: string; business_activity: string; category: string; listings: IndustryListing[] };
+type IndustryDetails = { id: string; name: string; business_activity: string; category: string; is_linked?: number; listings: IndustryListing[] };
 type InternshipType = 'FREE' | 'PAID' | 'STIPEND';
 type StipendFrequency = 'DAY' | 'WEEK' | 'MONTH';
 
@@ -32,6 +32,7 @@ export default function DepartmentDashboardPage() {
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [editingOutcomeId, setEditingOutcomeId] = useState<string | null>(null);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
+  const [ideasPage, setIdeasPage] = useState(1);
   const [expandedCard, setExpandedCard] = useState<Record<'external' | 'programmes' | 'ideas' | 'outcomes', boolean>>({
     external: true,
     programmes: false,
@@ -72,7 +73,7 @@ export default function DepartmentDashboardPage() {
 
     setProgramOutcomes(Object.fromEntries(outcomesEntries));
     setDashboard({ internships: internshipsRes.data, applications: applicationsRes.data, industryRequests: requestsRes.data });
-    setIndustries((industriesRes.data ?? []).map((item: any) => ({ id: item.id, name: item.name })));
+    setIndustries((industriesRes.data ?? []).map((item: any) => ({ id: item.id, name: item.name, is_linked: item.is_linked })));
     setPrograms(loadedPrograms);
     setInternshipCos(cosRes.data ?? []);
     setInternshipPos(posRes.data ?? []);
@@ -98,6 +99,14 @@ export default function DepartmentDashboardPage() {
   }, [selectedIndustry]);
 
   const selectedProgramOutcomes = useMemo(() => programOutcomes[selectedProgramForIdea] ?? [], [programOutcomes, selectedProgramForIdea]);
+  const ideaPageSize = 5;
+  const paginatedIdeas = useMemo(() => {
+    const allIdeas = dashboard?.industryRequests ?? [];
+    const totalPages = Math.max(1, Math.ceil(allIdeas.length / ideaPageSize));
+    const safePage = Math.min(ideasPage, totalPages);
+    const start = (safePage - 1) * ideaPageSize;
+    return { rows: allIdeas.slice(start, start + ideaPageSize), totalPages, safePage };
+  }, [dashboard?.industryRequests, ideasPage]);
 
   async function createInternship(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -179,6 +188,7 @@ export default function DepartmentDashboardPage() {
       event.currentTarget.reset();
       setSelectedProgramForIdea('');
       setSelectedIndustry('');
+      setIdeasPage(1);
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Failed to create industry request');
@@ -367,12 +377,13 @@ export default function DepartmentDashboardPage() {
                 <form className="mt-3 grid gap-3" onSubmit={createIndustryRequest}>
                   <select name="industryId" value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)} required>
                     <option value="">Select registered Internship Provider Organization (IPO)</option>
-                    {industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}</option>)}
+                    {industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}{industry.is_linked ? '' : ' (auto-link on submit)'}</option>)}
                   </select>
                   {industryDetails ? (
                     <div className="rounded-lg border border-white/10 p-2 text-sm text-slate-300">
                       <p>Activity: {industryDetails.business_activity}</p>
                       <p>Category: {industryDetails.category || '-'}</p>
+                      {!industryDetails.is_linked ? <p className="mt-1 text-amber-200">This IPO is registered but not linked to your college yet. It will be linked automatically when you submit this idea.</p> : null}
                       <p className="mt-1 font-semibold">Internship Provider Organization (IPO) listings & vacancies:</p>
                       {industryDetails.listings.map((listing) => (
                         <p key={listing.id}>• {listing.title} ({listing.vacancy ?? 0} vacancy)</p>
@@ -507,7 +518,7 @@ export default function DepartmentDashboardPage() {
 
             <Card className="rounded-[20px] p-5">
               <h2 className="mb-3 text-xl font-semibold">Suggested Internship Provider Organization (IPO) Ideas</h2>
-              {dashboard?.industryRequests?.map((item: any) => (
+              {paginatedIdeas.rows.map((item: any) => (
                 <div key={item.id} className="mb-2 rounded-lg border border-white/10 p-2">
                   {editingIdeaId === item.id ? (
                     <div className="grid gap-2">
@@ -532,6 +543,13 @@ export default function DepartmentDashboardPage() {
                   </div>
                 </div>
               ))}
+              <div className="mt-3 flex items-center justify-between text-sm text-slate-300">
+                <span>Page {paginatedIdeas.safePage} of {paginatedIdeas.totalPages}</span>
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={() => setIdeasPage((prev) => Math.max(1, prev - 1))} disabled={paginatedIdeas.safePage <= 1}>Previous</Button>
+                  <Button variant="secondary" onClick={() => setIdeasPage((prev) => Math.min(paginatedIdeas.totalPages, prev + 1))} disabled={paginatedIdeas.safePage >= paginatedIdeas.totalPages}>Next</Button>
+                </div>
+              </div>
             </Card>
           </section>
 

@@ -10,7 +10,18 @@ import { Input } from '@/components/ui/input';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
 
-type IndustryIdea = { id: string; internship_title: string; description: string; status: string; department_name: string; college_name: string };
+type IndustryIdea = {
+  id: string;
+  internship_title: string;
+  description: string;
+  status: string;
+  department_name: string;
+  college_name: string;
+  mapped_co?: string | null;
+  mapped_po?: string | null;
+  mapped_pso?: string | null;
+  program_name?: string | null;
+};
 type College = { id: string; name: string };
 type Department = { id: string; name: string };
 type InternshipCategory = 'FREE' | 'PAID' | 'STIPEND';
@@ -43,6 +54,7 @@ export default function IndustryDashboardPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [ipoProfile, setIpoProfile] = useState<IpoProfile | null>(null);
   const [feedbackDraft, setFeedbackDraft] = useState<Record<string, { feedback: string; score: string }>>({});
+  const [ideasPage, setIdeasPage] = useState(1);
 
   async function load() {
     const [dashboardRes, ideasRes, collegeRes, profileRes] = await Promise.all([
@@ -174,6 +186,14 @@ export default function IndustryDashboardPage() {
 
   const pendingApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'PENDING') ?? [], [dashboard]);
   const acceptedApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'ACCEPTED') ?? [], [dashboard]);
+  const ideaPageSize = 5;
+  const paginatedIdeas = useMemo(() => {
+    const visibleIdeas = ideas.filter((idea) => idea.status !== 'REJECTED');
+    const totalPages = Math.max(1, Math.ceil(visibleIdeas.length / ideaPageSize));
+    const safePage = Math.min(ideasPage, totalPages);
+    const start = (safePage - 1) * ideaPageSize;
+    return { rows: visibleIdeas.slice(start, start + ideaPageSize), totalPages, safePage };
+  }, [ideas, ideasPage]);
 
   return (
     <RoleDashboardShell allowedRoles={['INDUSTRY']} title="Internship Providing Organization Dashboard" subtitle="Review department ideas, connect with colleges, publish student vacancies, and track applications.">
@@ -248,13 +268,14 @@ export default function IndustryDashboardPage() {
           <Card className="rounded-[30px] p-6">
             <h2 className="mt-2 text-2xl font-semibold text-white">Department Suggested Ideas</h2>
             <div className="mt-5 space-y-3">
-              {ideas.length ? ideas.filter((idea) => idea.status !== 'REJECTED').map((idea) => {
+              {paginatedIdeas.rows.length ? paginatedIdeas.rows.map((idea) => {
                 const form = forms[idea.id] ?? { vacancy: '1', internshipCategory: 'FREE' as InternshipCategory, fee: '', stipendAmount: '', stipendDuration: 'MONTH' as StipendDuration, minimumDays: '7', maximumDays: '30' };
                 const isEditing = editingIdeaId === idea.id;
                 return (
                   <div key={idea.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                     <Input className="mb-2" value={idea.internship_title} disabled={!isEditing} onChange={(event) => setIdeas((prev) => prev.map((item) => (item.id === idea.id ? { ...item, internship_title: event.target.value } : item)))} />
                     <p className="mt-1 text-sm text-slate-300">{idea.college_name} • {idea.department_name}</p>
+                    <p className="mt-1 text-xs text-slate-300">Programme: {idea.program_name || '-'} • CO: {idea.mapped_co || '-'} • PO: {idea.mapped_po || '-'} • PSO: {idea.mapped_pso || '-'}</p>
                     <Input className="mt-2" value={idea.description} disabled={!isEditing} onChange={(event) => setIdeas((prev) => prev.map((item) => (item.id === idea.id ? { ...item, description: event.target.value } : item)))} />
                     <Badge className="mt-2">{idea.status}</Badge>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -286,6 +307,13 @@ export default function IndustryDashboardPage() {
                   </div>
                 );
               }) : <p className="text-slate-300">No suggested ideas found</p>}
+              <div className="mt-3 flex items-center justify-between text-sm text-slate-300">
+                <span>Page {paginatedIdeas.safePage} of {paginatedIdeas.totalPages}</span>
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={() => setIdeasPage((prev) => Math.max(1, prev - 1))} disabled={paginatedIdeas.safePage <= 1}>Previous</Button>
+                  <Button variant="secondary" onClick={() => setIdeasPage((prev) => Math.min(paginatedIdeas.totalPages, prev + 1))} disabled={paginatedIdeas.safePage >= paginatedIdeas.totalPages}>Next</Button>
+                </div>
+              </div>
             </div>
           </Card>
 
