@@ -26,7 +26,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body className="text-white antialiased">
+      <body className="text-slate-900 antialiased">
         <ServiceWorkerRegister />
         {children}
       </body>
