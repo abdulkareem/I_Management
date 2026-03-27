@@ -12,6 +12,7 @@ import { loginWithPassword } from '@/lib/auth';
 type College = { id: string; collegeName: string };
 type Department = { id: string; name: string; collegeId: string };
 type Program = { id: string; name: string; departmentId: string };
+const OTHER_COLLEGE_VALUE = '__college_not_in_list__';
 
 export default function StudentJoinPage() {
   const router = useRouter();
@@ -23,6 +24,10 @@ export default function StudentJoinPage() {
   const [collegeId, setCollegeId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [programId, setProgramId] = useState('');
+  const [customCollegeName, setCustomCollegeName] = useState('');
+  const [customDepartmentName, setCustomDepartmentName] = useState('');
+  const [customProgramName, setCustomProgramName] = useState('');
+  const isCollegeNotInList = collegeId === OTHER_COLLEGE_VALUE;
 
   useEffect(() => {
     apiRequest<College[]>('/api/colleges')
@@ -38,11 +43,26 @@ export default function StudentJoinPage() {
       setPrograms([]);
       return;
     }
+    if (collegeId === OTHER_COLLEGE_VALUE) {
+      setDepartments([]);
+      setDepartmentId('');
+      setProgramId('');
+      setPrograms([]);
+      return;
+    }
 
     apiRequest<Department[]>(`/api/departments?collegeId=${encodeURIComponent(collegeId)}`)
       .then((response) => setDepartments(response.data))
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load departments.'));
   }, [collegeId]);
+
+  useEffect(() => {
+    if (!isCollegeNotInList) {
+      setCustomCollegeName('');
+      setCustomDepartmentName('');
+      setCustomProgramName('');
+    }
+  }, [isCollegeNotInList]);
 
   useEffect(() => {
     if (!departmentId) {
@@ -75,9 +95,12 @@ export default function StudentJoinPage() {
           email: form.get('email'),
           password: form.get('password'),
           universityRegNumber: form.get('universityRegNumber'),
-          collegeId: form.get('collegeId'),
-          departmentId: form.get('departmentId'),
-          programId: form.get('programId'),
+          collegeId: isCollegeNotInList ? null : form.get('collegeId'),
+          departmentId: isCollegeNotInList ? null : form.get('departmentId'),
+          programId: isCollegeNotInList ? null : form.get('programId'),
+          customCollegeName: isCollegeNotInList ? form.get('customCollegeName') : null,
+          customDepartmentName: isCollegeNotInList ? form.get('customDepartmentName') : null,
+          customProgramName: isCollegeNotInList ? form.get('customProgramName') : null,
         }),
       });
       await loginWithPassword(String(form.get('email')), String(form.get('password')));
@@ -101,33 +124,74 @@ export default function StudentJoinPage() {
           <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
           <div className="space-y-2"><label htmlFor="universityRegNumber">University Reg Number</label><input id="universityRegNumber" name="universityRegNumber" required /></div>
           <div className="space-y-2">
-            <label htmlFor="collegeId">College</label>
+            <label htmlFor="collegeId">Your College</label>
             <select id="collegeId" name="collegeId" required value={collegeId} onChange={(event) => setCollegeId(event.target.value)}>
               <option value="" disabled>Select college</option>
               {colleges.map((college) => <option key={college.id} value={college.id}>{college.collegeName}</option>)}
+              <option value={OTHER_COLLEGE_VALUE}>My college is not in the list</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <label htmlFor="departmentId">Department</label>
-            <select
-              id="departmentId"
-              name="departmentId"
-              required
-              value={departmentId}
-              onChange={(event) => setDepartmentId(event.target.value)}
-              disabled={!collegeId}
-            >
-              <option value="" disabled>Select department</option>
-              {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="programId">Programme</label>
-            <select id="programId" name="programId" required value={programId} onChange={(event) => setProgramId(event.target.value)} disabled={!departmentId}>
-              <option value="" disabled>Select programme</option>
-              {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
-            </select>
-          </div>
+          {isCollegeNotInList ? (
+            <>
+              <div className="space-y-2">
+                <label htmlFor="customCollegeName">College Name</label>
+                <input
+                  id="customCollegeName"
+                  name="customCollegeName"
+                  required
+                  value={customCollegeName}
+                  onChange={(event) => setCustomCollegeName(event.target.value)}
+                  placeholder="Enter your college name"
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="customDepartmentName">Department</label>
+                <input
+                  id="customDepartmentName"
+                  name="customDepartmentName"
+                  required
+                  value={customDepartmentName}
+                  onChange={(event) => setCustomDepartmentName(event.target.value)}
+                  placeholder="Enter your department"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <label htmlFor="customProgramName">Programme</label>
+                <input
+                  id="customProgramName"
+                  name="customProgramName"
+                  required
+                  value={customProgramName}
+                  onChange={(event) => setCustomProgramName(event.target.value)}
+                  placeholder="Enter your programme"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <label htmlFor="departmentId">Department</label>
+                <select
+                  id="departmentId"
+                  name="departmentId"
+                  required
+                  value={departmentId}
+                  onChange={(event) => setDepartmentId(event.target.value)}
+                  disabled={!collegeId}
+                >
+                  <option value="" disabled>Select department</option>
+                  {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="programId">Programme</label>
+                <select id="programId" name="programId" required value={programId} onChange={(event) => setProgramId(event.target.value)} disabled={!departmentId}>
+                  <option value="" disabled>Select programme</option>
+                  {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
+                </select>
+              </div>
+            </>
+          )}
           <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>
           <div className="space-y-2"><label htmlFor="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" required /></div>
           {error ? <p className="md:col-span-2 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}

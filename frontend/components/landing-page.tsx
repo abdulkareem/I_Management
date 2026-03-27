@@ -29,7 +29,7 @@ const roleCards = [
   },
   {
     href: '/join/industry',
-    title: 'Join as Industry',
+    title: 'Join as Internship Providing Organization (IPO)',
     description: 'Request partnerships, publish internships in under 30 seconds, and accept students instantly.',
     icon: Factory,
   },

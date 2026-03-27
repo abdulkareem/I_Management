@@ -260,14 +260,32 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const name = required(body, ['name', 'studentName']);
     const email = normalizeEmail(required(body, ['email']));
     const password = required(body, ['password']);
-    const collegeId = required(body, ['college_id', 'collegeId']);
-    const departmentId = required(body, ['department_id', 'departmentId']);
-    const programId = required(body, ['program_id', 'courseId', 'programId']);
+    const providedCollegeId = optional(body, ['college_id', 'collegeId']);
+    const providedDepartmentId = optional(body, ['department_id', 'departmentId']);
+    const providedProgramId = optional(body, ['program_id', 'courseId', 'programId']);
+    const customCollegeName = optional(body, ['custom_college_name', 'customCollegeName']);
+    const customDepartmentName = optional(body, ['custom_department_name', 'customDepartmentName']);
+    const customProgramName = optional(body, ['custom_program_name', 'customProgramName']);
     const universityRegNumber = optional(body, ['university_reg_number', 'universityRegNumber']);
     const phone = optional(body, ['phone']);
 
+    let collegeId = providedCollegeId;
+    let departmentId = providedDepartmentId;
+    let programId = providedProgramId;
+
+    if (!collegeId && customCollegeName && customDepartmentName && customProgramName) {
+      const path = await ensureAcademicPathForUnlistedStudent(env, {
+        collegeName: customCollegeName,
+        departmentName: customDepartmentName,
+        programName: customProgramName,
+      });
+      collegeId = path.collegeId;
+      departmentId = path.departmentId;
+      programId = path.programId;
+    }
+
     if (!name || !email || !password || !collegeId || !departmentId || !programId) {
-      return badRequest('name, email, password, college_id, department_id, program_id are required');
+      return badRequest('name, email, password, and either selected IDs or custom college/department/program are required');
     }
 
     const [existing, college, department, program] = await Promise.all([
@@ -285,10 +303,28 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const studentId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO students (id, name, email, phone, university_reg_number, college_id, department_id, program_id, password, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      `INSERT INTO students (
+        id, name, email, phone, university_reg_number,
+        college_id, department_id, program_id,
+        custom_college_name, custom_department_name, custom_program_name,
+        password, is_active
+      )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     )
-      .bind(studentId, name, email, phone, universityRegNumber, collegeId, departmentId, programId, password)
+      .bind(
+        studentId,
+        name,
+        email,
+        phone,
+        universityRegNumber,
+        collegeId,
+        departmentId,
+        programId,
+        customCollegeName,
+        customDepartmentName,
+        customProgramName,
+        password,
+      )
       .run();
 
     await upsertIdentity(env, { role: 'student', entityId: studentId, email, isActive: 1 });
@@ -3065,6 +3101,77 @@ async function ensureStudentRegistrationSchema(env: EnvBindings): Promise<void> 
   if (!studentColumns.has('university_reg_number')) {
     await env.DB.prepare('ALTER TABLE students ADD COLUMN university_reg_number TEXT').run();
   }
+  if (!studentColumns.has('custom_college_name')) {
+    await env.DB.prepare('ALTER TABLE students ADD COLUMN custom_college_name TEXT').run();
+  }
+  if (!studentColumns.has('custom_department_name')) {
+    await env.DB.prepare('ALTER TABLE students ADD COLUMN custom_department_name TEXT').run();
+  }
+  if (!studentColumns.has('custom_program_name')) {
+    await env.DB.prepare('ALTER TABLE students ADD COLUMN custom_program_name TEXT').run();
+  }
+}
+
+async function ensureAcademicPathForUnlistedStudent(
+  env: EnvBindings,
+  values: { collegeName: string; departmentName: string; programName: string },
+): Promise<{ collegeId: string; departmentId: string; programId: string }> {
+  const collegeName = values.collegeName.trim();
+  const departmentName = values.departmentName.trim();
+  const programName = values.programName.trim();
+  if (!collegeName || !departmentName || !programName) throw new Error('Custom college, department and programme are required');
+
+  let collegeId = '';
+  const existingCollege = await env.DB.prepare(
+    `SELECT id FROM colleges
+     WHERE lower(name) = lower(?)
+     ORDER BY created_at DESC
+     LIMIT 1`,
+  ).bind(collegeName).first<{ id: string }>();
+  if (existingCollege?.id) {
+    collegeId = existingCollege.id;
+  } else {
+    collegeId = crypto.randomUUID();
+    const coordinatorEmail = `student-import+${collegeId.slice(0, 8)}@ipo.local`;
+    await env.DB.prepare(
+      `INSERT INTO colleges (id, name, coordinator_name, coordinator_email, password, status, is_active)
+       VALUES (?, ?, ?, ?, ?, 'approved', 1)`,
+    ).bind(collegeId, collegeName, 'Student Self Registration', coordinatorEmail, generatePassword(12)).run();
+  }
+
+  let departmentId = '';
+  const existingDepartment = await env.DB.prepare(
+    `SELECT id FROM departments
+     WHERE college_id = ? AND lower(name) = lower(?)
+     LIMIT 1`,
+  ).bind(collegeId, departmentName).first<{ id: string }>();
+  if (existingDepartment?.id) {
+    departmentId = existingDepartment.id;
+  } else {
+    departmentId = crypto.randomUUID();
+    const coordinatorEmail = `student-import+${departmentId.slice(0, 8)}@ipo.local`;
+    await env.DB.prepare(
+      `INSERT INTO departments (id, college_id, name, coordinator_name, coordinator_email, password, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+    ).bind(departmentId, collegeId, departmentName, 'Student Self Registration', coordinatorEmail, generatePassword(12)).run();
+  }
+
+  let programId = '';
+  const existingProgram = await env.DB.prepare(
+    `SELECT id FROM programs
+     WHERE department_id = ? AND lower(name) = lower(?)
+     LIMIT 1`,
+  ).bind(departmentId, programName).first<{ id: string }>();
+  if (existingProgram?.id) {
+    programId = existingProgram.id;
+  } else {
+    programId = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO programs (id, department_id, name) VALUES (?, ?, ?)')
+      .bind(programId, departmentId, programName)
+      .run();
+  }
+
+  return { collegeId, departmentId, programId };
 }
 
 async function getTableColumns(env: EnvBindings, tableName: string): Promise<Array<{ name: string }>> {
