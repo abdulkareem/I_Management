@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 const buttonStyles = {
-  primary: 'bg-primary text-white shadow-sm hover:bg-blue-700',
+  primary: 'bg-blue-600 text-white shadow-sm hover:bg-blue-700',
   secondary: 'border border-slate-300 bg-white text-slate-900 hover:bg-slate-100',
   ghost: 'text-slate-900 hover:bg-slate-100',
 } as const;
