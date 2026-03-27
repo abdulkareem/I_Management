@@ -720,7 +720,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const [industry, internships, applications] = await Promise.all([
       env.DB.prepare('SELECT id, name, business_activity FROM industries WHERE id = ?').bind(actor.id).first(),
-      env.DB.prepare('SELECT id, title, criteria FROM industry_internships WHERE industry_id = ? ORDER BY created_at DESC').bind(actor.id).all(),
+      env.DB.prepare(
+        `SELECT id, title, description
+         FROM internships
+         WHERE industry_id = ?
+         ORDER BY created_at DESC`,
+      ).bind(actor.id).all(),
       env.DB.prepare(
         `SELECT ia.id,
                 ia.status,
@@ -752,6 +757,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         acceptedApplications: appRows.filter((a: any) => a.status === 'accepted').length,
         attendanceToday: 0,
       },
+      opportunities: (internships.results ?? []).map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        applications: appRows.filter((a: any) => a.opportunity_title === row.title).length,
+      })),
       applications: appRows.map((row: any) => ({
         id: row.id,
         studentName: row.student_name,

@@ -13,6 +13,8 @@ import { fetchWithSession } from '@/lib/auth';
 type IndustryIdea = { id: string; internship_title: string; description: string; status: string; department_name: string; college_name: string };
 type College = { id: string; name: string };
 type Department = { id: string; name: string };
+type InternshipCategory = 'FREE' | 'PAID' | 'STIPEND';
+type StipendDuration = 'DAY' | 'WEEK' | 'MONTH';
 
 export default function IndustryDashboardPage() {
   const [dashboard, setDashboard] = useState<IndustryDashboard | null>(null);
@@ -25,15 +27,15 @@ export default function IndustryDashboardPage() {
     internshipTitle: '',
     natureOfWork: '',
     genderPreference: 'BOTH',
-    internshipCategory: 'FREE',
+    internshipCategory: 'FREE' as InternshipCategory,
     fee: '',
     stipendAmount: '',
-    stipendDuration: 'MONTH',
+    stipendDuration: 'MONTH' as StipendDuration,
     hourDuration: '60',
     vacancy: '1',
   });
   const [error, setError] = useState<string | null>(null);
-  const [forms, setForms] = useState<Record<string, { vacancy: string; internshipCategory: 'FREE' | 'PAID' | 'STIPEND'; fee: string; stipendAmount: string; stipendDuration: string; minimumDays: string; maximumDays: string }>>({});
+  const [forms, setForms] = useState<Record<string, { vacancy: string; internshipCategory: InternshipCategory; fee: string; stipendAmount: string; stipendDuration: StipendDuration; minimumDays: string; maximumDays: string }>>({});
 
   async function load() {
     const [dashboardRes, ideasRes, collegeRes] = await Promise.all([
@@ -61,6 +63,10 @@ export default function IndustryDashboardPage() {
   }, [selectedCollege]);
 
   async function submitConnectRequest() {
+    if (!selectedCollege || !connectForm.departmentId) {
+      setError('Please select both college and department before sending.');
+      return;
+    }
     await fetchWithSession('/api/industry/connect-request', {
       method: 'POST',
       body: JSON.stringify({
@@ -73,6 +79,7 @@ export default function IndustryDashboardPage() {
         fee: connectForm.internshipCategory === 'PAID' ? Number(connectForm.fee || 0) : null,
         stipendAmount: connectForm.internshipCategory === 'STIPEND' ? Number(connectForm.stipendAmount || 0) : null,
         stipendDuration: connectForm.internshipCategory === 'STIPEND' ? connectForm.stipendDuration : null,
+        durationLabel: `${Number(connectForm.hourDuration || 0)} hours`,
         hourDuration: Number(connectForm.hourDuration || 0),
         vacancy: Number(connectForm.vacancy || 0),
       }),
@@ -82,10 +89,18 @@ export default function IndustryDashboardPage() {
   }
 
   async function publishIdea(ideaId: string) {
-    const payload = forms[ideaId] ?? { vacancy: '1', internshipCategory: 'FREE', fee: '', stipendAmount: '', stipendDuration: 'week', minimumDays: '7', maximumDays: '30' };
+    const payload = forms[ideaId] ?? { vacancy: '1', internshipCategory: 'FREE' as InternshipCategory, fee: '', stipendAmount: '', stipendDuration: 'MONTH' as StipendDuration, minimumDays: '7', maximumDays: '30' };
     await fetchWithSession(`/api/industry/ideas/${ideaId}/publish`, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        vacancy: Number(payload.vacancy || 0),
+        internshipCategory: payload.internshipCategory,
+        fee: payload.internshipCategory === 'PAID' ? Number(payload.fee || 0) : null,
+        stipendAmount: payload.internshipCategory === 'STIPEND' ? Number(payload.stipendAmount || 0) : null,
+        stipendDuration: payload.internshipCategory === 'STIPEND' ? payload.stipendDuration : null,
+        minimumDays: Number(payload.minimumDays || 0),
+        maximumDays: Number(payload.maximumDays || 0),
+      }),
     });
     await load();
   }
@@ -140,7 +155,7 @@ export default function IndustryDashboardPage() {
                 <option value="GIRLS">Girls only</option>
                 <option value="BOYS">Boys only</option>
               </select>
-              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.internshipCategory} onChange={(e) => setConnectForm((prev) => ({ ...prev, internshipCategory: e.target.value }))}>
+              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.internshipCategory} onChange={(e) => setConnectForm((prev) => ({ ...prev, internshipCategory: e.target.value as InternshipCategory }))}>
                 <option value="FREE">Free internship</option>
                 <option value="PAID">Paid internship</option>
                 <option value="STIPEND">Internship with stipend</option>
@@ -148,7 +163,7 @@ export default function IndustryDashboardPage() {
               {connectForm.internshipCategory === 'PAID' ? <Input placeholder="Fee amount" value={connectForm.fee} onChange={(e) => setConnectForm((prev) => ({ ...prev, fee: e.target.value }))} /> : null}
               {connectForm.internshipCategory === 'STIPEND' ? <Input placeholder="Stipend amount" value={connectForm.stipendAmount} onChange={(e) => setConnectForm((prev) => ({ ...prev, stipendAmount: e.target.value }))} /> : null}
               {connectForm.internshipCategory === 'STIPEND' ? (
-                <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.stipendDuration} onChange={(e) => setConnectForm((prev) => ({ ...prev, stipendDuration: e.target.value }))}>
+                <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.stipendDuration} onChange={(e) => setConnectForm((prev) => ({ ...prev, stipendDuration: e.target.value as StipendDuration }))}>
                   <option value="DAY">Per day</option>
                   <option value="WEEK">Per week</option>
                   <option value="MONTH">Per month</option>
@@ -164,7 +179,7 @@ export default function IndustryDashboardPage() {
             <h2 className="mt-2 text-2xl font-semibold text-white">Department Suggested Ideas</h2>
             <div className="mt-5 space-y-3">
               {ideas.length ? ideas.filter((idea) => idea.status !== 'REJECTED').map((idea) => {
-                const form = forms[idea.id] ?? { vacancy: '1', internshipCategory: 'FREE', fee: '', stipendAmount: '', stipendDuration: 'week', minimumDays: '7', maximumDays: '30' };
+                const form = forms[idea.id] ?? { vacancy: '1', internshipCategory: 'FREE' as InternshipCategory, fee: '', stipendAmount: '', stipendDuration: 'MONTH' as StipendDuration, minimumDays: '7', maximumDays: '30' };
                 return (
                   <div key={idea.id} className="rounded-[24px] border border-white/10 bg-white/5 p-4">
                     <p className="font-semibold text-white">{idea.internship_title}</p>
@@ -178,14 +193,20 @@ export default function IndustryDashboardPage() {
                     {idea.status === 'ACCEPTED' ? (
                       <div className="mt-3 grid gap-2 md:grid-cols-3">
                         <Input placeholder="Vacancies" value={form.vacancy} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, vacancy: e.target.value } }))} />
-                        <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={form.internshipCategory} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, internshipCategory: e.target.value as 'FREE' | 'PAID' | 'STIPEND' } }))}>
+                        <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={form.internshipCategory} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, internshipCategory: e.target.value as InternshipCategory } }))}>
                           <option value="FREE">Free</option>
                           <option value="PAID">Paid</option>
                           <option value="STIPEND">With Stipend</option>
                         </select>
                         {form.internshipCategory === 'PAID' ? <Input placeholder="Fee" value={form.fee} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, fee: e.target.value } }))} /> : null}
                         {form.internshipCategory === 'STIPEND' ? <Input placeholder="Stipend amount" value={form.stipendAmount} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, stipendAmount: e.target.value } }))} /> : null}
-                        {form.internshipCategory === 'STIPEND' ? <Input placeholder="Stipend period (day/week/month)" value={form.stipendDuration} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, stipendDuration: e.target.value } }))} /> : null}
+                        {form.internshipCategory === 'STIPEND' ? (
+                          <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={form.stipendDuration} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, stipendDuration: e.target.value as StipendDuration } }))}>
+                            <option value="DAY">Per day</option>
+                            <option value="WEEK">Per week</option>
+                            <option value="MONTH">Per month</option>
+                          </select>
+                        ) : null}
                         <Input placeholder="Minimum days" value={form.minimumDays} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, minimumDays: e.target.value } }))} />
                         <Input placeholder="Maximum days" value={form.maximumDays} onChange={(e) => setForms((p) => ({ ...p, [idea.id]: { ...form, maximumDays: e.target.value } }))} />
                         <Button onClick={() => publishIdea(idea.id)}>Publish Vacancy</Button>
