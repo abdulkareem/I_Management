@@ -1342,9 +1342,34 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     for (const department of departmentRows) {
       const id = crypto.randomUUID();
       await env.DB.prepare(
-        `INSERT INTO industry_requests (id, department_id, industry_id, internship_title, description, status)
-         VALUES (?, ?, ?, ?, ?, 'PENDING')`,
-      ).bind(id, department.id, actor.id, internshipTitle, details.join(' | ')).run();
+        `INSERT INTO industry_requests (
+          id,
+          department_id,
+          industry_id,
+          internship_title,
+          description,
+          status,
+          suggested_vacancy,
+          suggested_internship_category,
+          suggested_fee,
+          suggested_stipend_amount,
+          suggested_stipend_duration,
+          gender_preference
+        )
+         VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        department.id,
+        actor.id,
+        internshipTitle,
+        details.join(' | '),
+        Math.floor(vacancy),
+        internshipCategory,
+        internshipCategory === 'PAID' ? fee : null,
+        internshipCategory === 'STIPEND' ? stipendAmount : null,
+        internshipCategory === 'STIPEND' ? stipendDuration : null,
+        preference,
+      ).run();
       createdIds.push(id);
     }
 
@@ -3008,24 +3033,54 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference.toUpperCase())) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
 
     const requestRow = await env.DB.prepare(
-      `SELECT id, department_id, internship_title, description
-       FROM industry_requests
-       WHERE id = ? AND industry_id = ? AND status = 'ACCEPTED'`,
-    ).bind(requestId, actor.id).first<{ id: string; department_id: string; internship_title: string; description: string }>();
+      `SELECT ir.id,
+              ir.department_id,
+              d.college_id,
+              ir.internship_title,
+              ir.description
+       FROM industry_requests ir
+       INNER JOIN departments d ON d.id = ir.department_id
+       WHERE ir.id = ? AND ir.industry_id = ? AND ir.status = 'ACCEPTED'`,
+    ).bind(requestId, actor.id).first<{ id: string; department_id: string; college_id: string; internship_title: string; description: string }>();
     if (!requestRow) return badRequest('Accepted idea not found');
 
     const already = await env.DB.prepare('SELECT id FROM internships WHERE industry_request_id = ?').bind(requestId).first<{ id: string }>();
     if (already) return conflict('This idea is already published');
 
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, filled_vacancy, remaining_vacancy, is_external, status, industry_request_id, stipend_amount, stipend_duration, minimum_days, maximum_days)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 'OPEN', ?, ?, ?, ?, ?)`,
+      `INSERT INTO internships (
+        id,
+        title,
+        description,
+        department_id,
+        college_id,
+        industry_id,
+        is_paid,
+        fee,
+        internship_category,
+        vacancy,
+        total_vacancy,
+        filled_vacancy,
+        remaining_vacancy,
+        is_external,
+        status,
+        published,
+        student_visibility,
+        industry_request_id,
+        stipend_amount,
+        stipend_duration,
+        minimum_days,
+        maximum_days,
+        gender_preference
+      )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 'ACCEPTED', 1, 1, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         crypto.randomUUID(),
         requestRow.internship_title,
         requestRow.description,
         requestRow.department_id,
+        requestRow.college_id,
         actor.id,
         internshipCategory === 'PAID' ? 1 : 0,
         internshipCategory === 'PAID' ? fee : null,
