@@ -29,16 +29,17 @@ export default function CollegeDashboardPage() {
   });
 
   async function loadAll() {
+    setError(null);
     const [d, i, ia, ea] = await Promise.all([
       fetchWithSession<Department[]>('/api/department/list'),
       fetchWithSession<IndustryLink[]>('/api/college/industries'),
       fetchWithSession<Application[]>('/api/applications/internal'),
       fetchWithSession<Application[]>('/api/applications/external'),
     ]);
-    setDepartments(d.data);
-    setIndustries(i.data);
-    setInternalApps(ia.data);
-    setExternalApps(ea.data);
+    setDepartments(d.data ?? []);
+    setIndustries(i.data ?? []);
+    setInternalApps(ia.data ?? []);
+    setExternalApps(ea.data ?? []);
   }
 
   useEffect(() => {
@@ -67,23 +68,43 @@ export default function CollegeDashboardPage() {
 
   async function editDepartment(row: Department) {
     const name = prompt('Department name', row.name) ?? row.name;
-    await fetchWithSession('/api/department/update', { method: 'PUT', body: JSON.stringify({ id: row.id, name }) });
-    await loadAll();
+    try {
+      setError(null);
+      await fetchWithSession('/api/department/update', { method: 'PUT', body: JSON.stringify({ id: row.id, name }) });
+      await loadAll();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to update department.');
+    }
   }
 
   async function deleteDepartment(id: string) {
-    await fetchWithSession(`/api/department/delete?id=${id}`, { method: 'DELETE' });
-    await loadAll();
+    try {
+      setError(null);
+      await fetchWithSession(`/api/department/delete?id=${id}`, { method: 'DELETE' });
+      await loadAll();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to delete department.');
+    }
   }
 
   async function removeIndustry(linkId: string) {
-    await fetchWithSession(`/api/college/industries?link_id=${linkId}`, { method: 'DELETE' });
-    await loadAll();
+    try {
+      setError(null);
+      await fetchWithSession(`/api/college/industries?link_id=${linkId}`, { method: 'DELETE' });
+      await loadAll();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to remove Internship Provider Organization (IPO).');
+    }
   }
 
   async function decideApplication(id: string, action: 'accept' | 'reject') {
-    await fetchWithSession(`/api/college/applications/${id}/${action}`, { method: 'POST' });
-    await loadAll();
+    try {
+      setError(null);
+      await fetchWithSession(`/api/college/applications/${id}/${action}`, { method: 'POST' });
+      await loadAll();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : `Unable to ${action} application.`);
+    }
   }
 
   return (
