@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { IndustryDashboard } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
@@ -27,12 +27,27 @@ type IndustryIdea = {
 };
 type College = { id: string; name: string };
 type Department = { id: string; name: string };
+type Program = { id: string; name: string };
 type InternshipCategory = 'FREE' | 'PAID' | 'STIPEND';
 type StipendDuration = 'DAY' | 'WEEK' | 'MONTH';
 type IpoProfile = { id: string; name: string; email: string; company_address?: string | null; contact_number?: string | null; registration_number?: string | null; registration_year?: number | null };
+type IndustryInternship = {
+  id: string;
+  internship_title: string;
+  college_id: string;
+  college_name: string;
+  department_id: string;
+  department_name: string;
+  programme?: string | null;
+  category?: InternshipCategory | null;
+  vacancy?: number | null;
+  status: string;
+  student_visibility: number;
+};
 
 const EMPTY_CONNECT = {
   departmentId: '',
+  programme: '',
   internshipTitle: '',
   natureOfWork: '',
   genderPreference: 'BOTH',
@@ -49,6 +64,8 @@ export default function IndustryDashboardPage() {
   const [ideas, setIdeas] = useState<IndustryIdea[]>([]);
   const [colleges, setColleges] = useState<College[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [industryInternships, setIndustryInternships] = useState<IndustryInternship[]>([]);
   const [selectedCollege, setSelectedCollege] = useState('');
   const [connectForm, setConnectForm] = useState(EMPTY_CONNECT);
   const [error, setError] = useState<string | null>(null);
@@ -62,18 +79,21 @@ export default function IndustryDashboardPage() {
   const [connectSubmitted, setConnectSubmitted] = useState(false);
   const [ideaActionSubmitting, setIdeaActionSubmitting] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const connectFormRef = useRef<HTMLFormElement | null>(null);
 
   async function load() {
-    const [dashboardRes, ideasRes, collegeRes, profileRes] = await Promise.all([
+    const [dashboardRes, ideasRes, collegeRes, profileRes, internshipsRes] = await Promise.all([
       fetchWithSession<IndustryDashboard>('/industry/dashboard'),
       fetchWithSession<IndustryIdea[]>('/api/industry/ideas'),
       fetchWithSession<College[]>('/api/industry/colleges'),
       fetchWithSession<IpoProfile>('/api/industry/profile'),
+      fetchWithSession<IndustryInternship[]>('/api/industry/internships'),
     ]);
     setDashboard(dashboardRes.data);
     setIdeas(ideasRes.data);
     setColleges(collegeRes.data ?? []);
     setIpoProfile(profileRes.data ?? null);
+    setIndustryInternships(internshipsRes.data ?? []);
   }
 
   useEffect(() => {
@@ -83,12 +103,23 @@ export default function IndustryDashboardPage() {
   useEffect(() => {
     if (!selectedCollege) {
       setDepartments([]);
+      setPrograms([]);
       return;
     }
     fetchWithSession<Department[]>(`/api/industry/colleges/${selectedCollege}/departments`)
       .then((res) => setDepartments(res.data ?? []))
       .catch(() => setDepartments([]));
   }, [selectedCollege]);
+
+  useEffect(() => {
+    if (!connectForm.departmentId) {
+      setPrograms([]);
+      return;
+    }
+    fetchWithSession<Program[]>(`/api/programs?departmentId=${connectForm.departmentId}`)
+      .then((res) => setPrograms(res.data ?? []))
+      .catch(() => setPrograms([]));
+  }, [connectForm.departmentId]);
 
   async function submitConnectRequest() {
     if (!selectedCollege) {
@@ -100,28 +131,28 @@ export default function IndustryDashboardPage() {
     setConnectSubmitted(false);
     setConnectSubmitting(true);
     try {
-      await fetchWithSession('/api/industry/connect-request', {
+      const payload = {
+        internship_title: connectForm.internshipTitle,
+        college: selectedCollege,
+        department: connectForm.departmentId,
+        programme: connectForm.programme,
+        category: connectForm.internshipCategory,
+        vacancy: Number(connectForm.vacancy || 0),
+        description: connectForm.natureOfWork,
+      };
+      console.log('SEND TO DEPT PAYLOAD:', payload);
+      const response = await fetchWithSession('/api/industry/send-to-department', {
         method: 'POST',
-        body: JSON.stringify({
-          collegeId: selectedCollege,
-          departmentId: connectForm.departmentId || null,
-          internshipTitle: connectForm.internshipTitle,
-          natureOfWork: connectForm.natureOfWork,
-          genderPreference: connectForm.genderPreference,
-          internshipCategory: connectForm.internshipCategory,
-          fee: connectForm.internshipCategory === 'PAID' ? Number(connectForm.fee || 0) : null,
-          stipendAmount: connectForm.internshipCategory === 'STIPEND' ? Number(connectForm.stipendAmount || 0) : null,
-          stipendDuration: connectForm.internshipCategory === 'STIPEND' ? connectForm.stipendDuration : null,
-          durationLabel: `${Number(connectForm.hourDuration || 0)} hours`,
-          hourDuration: Number(connectForm.hourDuration || 0),
-          vacancy: Number(connectForm.vacancy || 0),
-        }),
+        body: JSON.stringify(payload),
       });
+      console.log('API RESPONSE:', response);
       setSelectedCollege('');
       setConnectForm(EMPTY_CONNECT);
       setDepartments([]);
+      setPrograms([]);
+      connectFormRef.current?.reset();
       setConnectSubmitted(true);
-      setSuccessMessage('Sent to department successfully.');
+      setSuccessMessage('Sent to Department');
       await load();
     } finally {
       setConnectSubmitting(false);
@@ -217,6 +248,23 @@ export default function IndustryDashboardPage() {
     await load();
   }
 
+  async function publishInternship(internshipId: string) {
+    setError(null);
+    setSuccessMessage(null);
+    setIdeaActionSubmitting(internshipId);
+    try {
+      const response = await fetchWithSession('/api/industry/publish', {
+        method: 'POST',
+        body: JSON.stringify({ id: internshipId }),
+      });
+      console.log('API RESPONSE:', response);
+      setSuccessMessage('Published for students.');
+      await load();
+    } finally {
+      setIdeaActionSubmitting(null);
+    }
+  }
+
   const pendingApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'PENDING') ?? [], [dashboard]);
   const acceptedApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'ACCEPTED') ?? [], [dashboard]);
   const ideaPageSize = 5;
@@ -227,7 +275,6 @@ export default function IndustryDashboardPage() {
     const start = (safePage - 1) * ideaPageSize;
     return { rows: visibleIdeas.slice(start, start + ideaPageSize), totalPages, safePage };
   }, [ideas, ideasPage]);
-  const acceptedIdeas = useMemo(() => ideas.filter((idea) => idea.status === 'ACCEPTED'), [ideas]);
 
   return (
     <RoleDashboardShell allowedRoles={['INDUSTRY']} title="Internship Providing Organization Dashboard" subtitle="Review department ideas, connect with colleges, publish student vacancies, and track applications.">
@@ -264,14 +311,18 @@ export default function IndustryDashboardPage() {
 
           <Card className="rounded-[30px] p-6">
             <h2 className="mt-2 text-2xl font-semibold text-white">Connect to College</h2>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={selectedCollege} onChange={(e) => { setSelectedCollege(e.target.value); setConnectForm((prev) => ({ ...prev, departmentId: '' })); }}>
+            <form ref={connectFormRef} className="mt-5 grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); void submitConnectRequest(); }}>
+              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={selectedCollege} onChange={(e) => { setSelectedCollege(e.target.value); setConnectForm((prev) => ({ ...prev, departmentId: '', programme: '' })); }}>
                 <option value="">Select college</option>
                 {colleges.map((college) => <option key={college.id} value={college.id}>{college.name}</option>)}
               </select>
-              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.departmentId} onChange={(e) => setConnectForm((prev) => ({ ...prev, departmentId: e.target.value }))}>
+              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.departmentId} onChange={(e) => setConnectForm((prev) => ({ ...prev, departmentId: e.target.value, programme: '' }))}>
                 <option value="">No preference (all departments)</option>
                 {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+              </select>
+              <select className="rounded-md border border-white/20 bg-slate-900 px-3 py-2" value={connectForm.programme} onChange={(e) => setConnectForm((prev) => ({ ...prev, programme: e.target.value }))}>
+                <option value="">Select programme</option>
+                {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
               </select>
               <Input placeholder="Internship title" value={connectForm.internshipTitle} onChange={(e) => setConnectForm((prev) => ({ ...prev, internshipTitle: e.target.value }))} />
               <Input placeholder="Nature of internship work" value={connectForm.natureOfWork} onChange={(e) => setConnectForm((prev) => ({ ...prev, natureOfWork: e.target.value }))} />
@@ -296,10 +347,10 @@ export default function IndustryDashboardPage() {
               ) : null}
               <Input placeholder="Duration in hours (e.g. 60/120)" value={connectForm.hourDuration} onChange={(e) => setConnectForm((prev) => ({ ...prev, hourDuration: e.target.value }))} />
               <Input placeholder="Vacancies" value={connectForm.vacancy} onChange={(e) => setConnectForm((prev) => ({ ...prev, vacancy: e.target.value }))} />
-              <Button disabled={connectSubmitting} onClick={submitConnectRequest}>
+              <Button type="submit" disabled={connectSubmitting}>
                 {connectSubmitting ? 'Submitting...' : connectSubmitted ? 'Submitted' : 'Send to Department'}
               </Button>
-            </div>
+            </form>
           </Card>
 
           <Card className="rounded-[30px] p-6">
@@ -355,7 +406,10 @@ export default function IndustryDashboardPage() {
           </Card>
 
           <Card className="rounded-[30px] p-6">
-            <h2 className="mt-2 text-2xl font-semibold text-white">Accepted Ideas (Published for Students)</h2>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <h2 className="text-2xl font-semibold text-white">Accepted Ideas (Published for Students)</h2>
+              <Button variant="secondary" onClick={() => { void load(); }}>Refresh</Button>
+            </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[960px] text-left text-sm">
                 <thead>
@@ -368,23 +422,33 @@ export default function IndustryDashboardPage() {
                     <th className="py-2 pr-2">Vacancy</th>
                     <th className="py-2 pr-2">Status</th>
                     <th className="py-2">Student visibility</th>
+                    <th className="py-2">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {acceptedIdeas.length ? acceptedIdeas.map((idea) => (
-                    <tr key={idea.id} className="border-b border-white/10">
-                      <td className="py-3 pr-2">{idea.internship_title}</td>
-                      <td className="py-3 pr-2">{idea.college_name}</td>
-                      <td className="py-3 pr-2">{idea.department_name}</td>
-                      <td className="py-3 pr-2">{idea.program_name || '-'}</td>
-                      <td className="py-3 pr-2">{idea.published_category || '-'}</td>
-                      <td className="py-3 pr-2">{idea.published_vacancy ?? '-'}</td>
-                      <td className="py-3 pr-2">{idea.status}</td>
-                      <td className="py-3">{idea.published_internship_id ? 'Visible in student dashboard' : 'Not published yet'}</td>
+                  {industryInternships.length ? industryInternships.map((item) => (
+                    <tr key={item.id} className="border-b border-white/10">
+                      <td className="py-3 pr-2">{item.internship_title || '-'}</td>
+                      <td className="py-3 pr-2">{item.college_name || '-'}</td>
+                      <td className="py-3 pr-2">{item.department_name || '-'}</td>
+                      <td className="py-3 pr-2">{item.programme || '-'}</td>
+                      <td className="py-3 pr-2">{item.category || '-'}</td>
+                      <td className="py-3 pr-2">{item.vacancy ?? '-'}</td>
+                      <td className="py-3 pr-2">
+                        <Badge className={item.status === 'DRAFT' ? 'bg-slate-600' : item.status === 'SENT_TO_DEPARTMENT' ? 'bg-blue-600' : item.status === 'ACCEPTED' ? (item.student_visibility ? 'bg-purple-600' : 'bg-green-600') : 'bg-slate-600'}>{item.status}</Badge>
+                      </td>
+                      <td className="py-3">{item.status === 'ACCEPTED' && item.student_visibility ? 'Visible in student dashboard' : 'Not published yet'}</td>
+                      <td className="py-3">
+                        {item.status === 'ACCEPTED' && !item.student_visibility ? (
+                          <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void publishInternship(item.id)}>
+                            {ideaActionSubmitting === item.id ? 'Publishing...' : 'Publish'}
+                          </Button>
+                        ) : '-'}
+                      </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td className="py-3 text-slate-300" colSpan={8}>No accepted ideas yet.</td>
+                      <td className="py-3 text-slate-300" colSpan={9}>No internships yet.</td>
                     </tr>
                   )}
                 </tbody>

@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Internship {
+  id                String   @id @default(cuid())
+  title             String
+  college           String
+  department        String
+  programme         String
+  category          String?
+  vacancy           Int      @default(0)
+  status            String   @default("DRAFT")
+  studentVisibility Boolean  @default(false) @map("student_visibility")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("internships")
+}
