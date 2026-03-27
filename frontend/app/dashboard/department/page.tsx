@@ -48,6 +48,7 @@ export default function DepartmentDashboardPage() {
   const [ideaSubmitting, setIdeaSubmitting] = useState(false);
   const [internshipSubmitting, setInternshipSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [advertisementDrafts, setAdvertisementDrafts] = useState<Record<string, { programId: string; mappedCo: string; mappedPo: string; mappedPso: string }>>({});
 
   async function load() {
     const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes] = await Promise.all([
@@ -170,6 +171,22 @@ export default function DepartmentDashboardPage() {
 
   async function deleteInternship(id: string) {
     await fetchWithSession(`/api/department/internships/${id}`, { method: 'DELETE' });
+    await load();
+  }
+
+  async function submitDepartmentAdvertisement(internshipId: string) {
+    const draft = advertisementDrafts[internshipId] ?? { programId: '', mappedCo: '', mappedPo: '', mappedPso: '' };
+    await fetchWithSession(`/api/department/internships/${internshipId}/submit-advertisement`, {
+      method: 'POST',
+      body: JSON.stringify({
+        programId: draft.programId || null,
+        mappedCo: draft.mappedCo || null,
+        mappedPo: draft.mappedPo || null,
+        mappedPso: draft.mappedPso || null,
+      }),
+    });
+    setEditingInternshipId(null);
+    setSuccessMessage('Advertisement published for students.');
     await load();
   }
 
@@ -327,6 +344,7 @@ export default function DepartmentDashboardPage() {
   const metrics = useMemo(() => ({ internships: dashboard?.internships.length ?? 0, pendingApplications: dashboard?.applications.filter((item) => item.status === 'pending').length ?? 0, industryIdeas: dashboard?.industryRequests.length ?? 0, programs: programs.length }), [dashboard, programs]);
   const session = loadSession();
   const dashboardTitle = `${session?.user?.email?.split('@')[0] ?? 'Department'} Dashboard`;
+  const industryAdvertisements = (dashboard?.internships ?? []).filter((item: any) => item.status === 'SENT_TO_DEPARTMENT');
   const internalApps = (dashboard?.applications ?? []).filter((item) => item.is_external !== 1 && item.status !== 'rejected');
   const externalApps = (dashboard?.applications ?? []).filter((item) => item.is_external === 1 && item.status !== 'rejected');
 
@@ -370,6 +388,7 @@ export default function DepartmentDashboardPage() {
                     </select>
                   ) : null}
                   <input name="hourDuration" type="number" min={0} placeholder="Duration in hours (e.g. 60 or 120)" />
+                  <input name="vacancy" type="number" min={0} placeholder="Vacancy" required />
                   <Button disabled={internshipSubmitting}>{internshipSubmitting ? 'Submitting...' : 'Create Internship'}</Button>
                 </form>
               ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and create internships for external students.</p>}
@@ -387,7 +406,7 @@ export default function DepartmentDashboardPage() {
             </Card>
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, ideas: !prev.ideas }))}>
-                Suggest Internship Provider Organization (IPO) Internship Idea
+                Suggest Internship Idea to Internship Provider Organization (IPO)
               </button>
               {expandedCard.ideas ? (
                 <form className="mt-3 grid gap-3" onSubmit={createIndustryRequest}>
@@ -545,19 +564,24 @@ export default function DepartmentDashboardPage() {
             </Card>
 
             <Card className="rounded-[20px] p-5">
-              <h2 className="mb-3 text-xl font-semibold">Suggested Internship Provider Organization (IPO) Ideas</h2>
-              {paginatedIdeas.rows.map((item: any) => (
+              <h2 className="mb-3 text-xl font-semibold">Internship advertisement</h2>
+              {industryAdvertisements.length ? industryAdvertisements.map((item: any) => (
                 <div key={item.id} className="mb-2 rounded-lg border border-slate-200 p-2">
                   {editingIdeaId === item.id ? (
                     <div className="grid gap-2">
-                      <input value={drafts[item.id]?.internship_title ?? item.internship_title} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), internship_title: e.target.value } }))} />
-                      <textarea value={drafts[item.id]?.description ?? item.description} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), description: e.target.value } }))} />
+                      <select value={advertisementDrafts[item.id]?.programId ?? ''} onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { mappedCo: '', mappedPo: '', mappedPso: '' }), programId: e.target.value } }))}>
+                        <option value="">Select programme</option>
+                        {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
+                      </select>
+                      <input placeholder="Internship CO mapping" value={advertisementDrafts[item.id]?.mappedCo ?? ''} onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { programId: '', mappedPo: '', mappedPso: '' }), mappedCo: e.target.value } }))} />
+                      <input placeholder="PO mapping" value={advertisementDrafts[item.id]?.mappedPo ?? ''} onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { programId: '', mappedCo: '', mappedPso: '' }), mappedPo: e.target.value } }))} />
+                      <input placeholder="PSO mapping" value={advertisementDrafts[item.id]?.mappedPso ?? ''} onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { programId: '', mappedCo: '', mappedPo: '' }), mappedPso: e.target.value } }))} />
                     </div>
                   ) : (
                     <>
                       <button type="button" className="w-full text-left" onClick={() => setSelectedIdeaId((prev) => prev === item.id ? null : item.id)}>
-                        <p>{item.internship_title} • {item.industry_name}</p>
-                        <p className="text-xs text-slate-700">Programme: {item.program_name || '-'} • {item.status}</p>
+                        <p>{item.title}</p>
+                        <p className="text-xs text-slate-700">Programme: {item.programme || '-'} • Vacancy: {item.vacancy ?? 0} • {item.status}</p>
                       </button>
                       {selectedIdeaId === item.id ? (
                         <p className="mt-1 text-xs text-slate-700">CO Mapping: {item.mapped_co || '-'} • PO Mapping: {item.mapped_po || '-'} • PSO Mapping: {item.mapped_pso || '-'}</p>
@@ -566,18 +590,10 @@ export default function DepartmentDashboardPage() {
                   )}
                   <div className="mt-2 flex gap-2">
                     <Button variant="secondary" onClick={() => setEditingIdeaId(item.id)}>Edit</Button>
-                    <Button variant="secondary" onClick={() => saveIdea(item)}>Save</Button>
-                    <Button variant="secondary" onClick={() => deleteIdea(item.id)}>Delete</Button>
+                    <Button variant="secondary" onClick={() => submitDepartmentAdvertisement(item.id)}>Submit</Button>
                   </div>
                 </div>
-              ))}
-              <div className="mt-3 flex items-center justify-between text-sm text-slate-700">
-                <span>Page {paginatedIdeas.safePage} of {paginatedIdeas.totalPages}</span>
-                <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => setIdeasPage((prev) => Math.max(1, prev - 1))} disabled={paginatedIdeas.safePage <= 1}>Previous</Button>
-                  <Button variant="secondary" onClick={() => setIdeasPage((prev) => Math.min(paginatedIdeas.totalPages, prev + 1))} disabled={paginatedIdeas.safePage >= paginatedIdeas.totalPages}>Next</Button>
-                </div>
-              </div>
+              )) : <p className="text-sm text-slate-700">No IPO advertisements pending for mapping.</p>}
             </Card>
           </section>
 

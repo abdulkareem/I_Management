@@ -134,11 +134,16 @@ export default function IndustryDashboardPage() {
       const payload = {
         internship_title: connectForm.internshipTitle,
         college: selectedCollege,
-        department: connectForm.departmentId,
-        programme: connectForm.programme,
+        department: connectForm.departmentId || null,
+        programme: connectForm.departmentId ? connectForm.programme || null : null,
         category: connectForm.internshipCategory,
         vacancy: Number(connectForm.vacancy || 0),
         description: connectForm.natureOfWork,
+        genderPreference: connectForm.genderPreference,
+        hourDuration: Number(connectForm.hourDuration || 0),
+        fee: connectForm.internshipCategory === 'PAID' ? Number(connectForm.fee || 0) : null,
+        stipendAmount: connectForm.internshipCategory === 'STIPEND' ? Number(connectForm.stipendAmount || 0) : null,
+        stipendDuration: connectForm.internshipCategory === 'STIPEND' ? connectForm.stipendDuration : null,
       };
       console.log('SEND TO DEPT PAYLOAD:', payload);
       const response = await fetchWithSession('/api/industry/send-to-department', {
@@ -320,8 +325,8 @@ export default function IndustryDashboardPage() {
                 <option value="">No preference (all departments)</option>
                 {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
               </select>
-              <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={connectForm.programme} onChange={(e) => setConnectForm((prev) => ({ ...prev, programme: e.target.value }))}>
-                <option value="">Select programme</option>
+              <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={connectForm.programme} disabled={!connectForm.departmentId} onChange={(e) => setConnectForm((prev) => ({ ...prev, programme: e.target.value }))}>
+                <option value="">{connectForm.departmentId ? 'Select programme' : 'No preference'}</option>
                 {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
               </select>
               <Input placeholder="Internship title" value={connectForm.internshipTitle} onChange={(e) => setConnectForm((prev) => ({ ...prev, internshipTitle: e.target.value }))} />
