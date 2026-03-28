@@ -16,91 +16,314 @@ enum UserRole {
   STUDENT
 }
 
-enum InternshipStatus {
-  DRAFT
-  SENT
-  PUBLISHED
-}
-
 enum ApplicationStatus {
   APPLIED
-  SHORTLISTED
-  REJECTED
   SELECTED
+  ALLOTTED
+  REJECTED
+  COMPLETED
+}
+
+enum TargetType {
+  COLLEGE
+  DEPARTMENT
+}
+
+enum InternshipCreatedBy {
+  INDUSTRY
+  COLLEGE
+  DEPARTMENT
+}
+
+enum InternshipVisibilityType {
+  ALL_TARGETS
+  OTHER_COLLEGES
+  TARGETED_ONLY
+}
+
+model User {
+  id             String      @id @default(cuid())
+  name           String
+  email          String      @unique
+  passwordHash   String      @map("password_hash")
+  role           UserRole
+  collegeId      String?     @map("college_id")
+  departmentId   String?     @map("department_id")
+  industryId     String?     @map("industry_id")
+  isActive       Boolean     @default(true) @map("is_active")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  college        College?    @relation(fields: [collegeId], references: [id], onDelete: SetNull)
+  department     Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  industry       Industry?   @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  applications   Application[]
+  evaluations    Evaluation[]
+  progressLogs   InternshipProgress[]
+  notifications  Notification[]
+
+  @@map("users")
 }
 
 model College {
-  id          String       @id @default(cuid())
-  name        String
-  departments Department[]
-  students    Student[]
-  internships Internship[]
+  id           String       @id @default(cuid())
+  name         String
+  code         String?      @unique
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  departments  Department[]
+  users        User[]
+  internships  Internship[]
+  targets      InternshipTarget[]
+  results      Result[]
 
   @@map("colleges")
 }
 
 model Department {
-  id          String       @id @default(cuid())
-  name        String
-  collegeId   String       @map("college_id")
-  college     College      @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  students    Student[]
-  internships Internship[]
+  id           String       @id @default(cuid())
+  collegeId    String       @map("college_id")
+  name         String
+  code         String?
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  college      College      @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  users        User[]
+  internships  Internship[]
+  targets      InternshipTarget[]
+  results      Result[]
 
+  @@unique([collegeId, name])
   @@map("departments")
 }
 
 model Industry {
-  id          String       @id @default(cuid())
-  name        String
-  internships Internship[]
+  id           String       @id @default(cuid())
+  name         String
+  email        String?      @unique
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  users        User[]
+  internships  Internship[]
+  results      Result[]
 
   @@map("industries")
 }
 
-model Student {
-  id           String        @id @default(cuid())
-  departmentId String        @map("department_id")
-  collegeId    String        @map("college_id")
-  department   Department    @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  college      College       @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  applications Application[]
-
-  @@map("students")
-}
-
 model Internship {
-  id               String           @id @default(cuid())
-  title            String
-  description      String
-  type             String
-  departmentId     String           @map("department_id")
-  collegeId        String           @map("college_id")
-  industryId       String?          @map("industry_id")
-  status           InternshipStatus @default(DRAFT)
-  vacancy          Int
-  gender           String           @default("BOTH")
-  internshipType   String           @map("internship_type")
-  feeAmount        Float?           @map("fee_amount")
-  stipendAmount    Float?           @map("stipend_amount")
-  stipendFrequency String?          @map("stipend_frequency")
-  durationHours    Int?             @map("duration_hours")
-  department       Department       @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  college          College          @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  industry         Industry?        @relation(fields: [industryId], references: [id], onDelete: SetNull)
-  applications     Application[]
+  id             String               @id @default(cuid())
+  title          String
+  description    String
+  type           String?              @default("external")
+  category       String?
+  duration       String?
+  skillsRequired String?              @map("skills_required")
+  stipend        Float?
+  vacancy        Int                  @default(0)
+  totalVacancy   Int                  @default(0) @map("total_vacancy")
+  filledVacancy  Int                  @default(0) @map("filled_vacancy")
+  remainingVacancy Int                @default(0) @map("remaining_vacancy")
+  availableVacancy Int                @default(0) @map("available_vacancy")
+  createdByType  InternshipCreatedBy  @default(INDUSTRY) @map("created_by")
+  sourceType     String               @default("INDUSTRY") @map("source_type")
+  visibilityType InternshipVisibilityType @default(ALL_TARGETS) @map("visibility_type")
+  isExternal     Boolean              @default(false) @map("is_external")
+  status         String               @default("DRAFT")
+  durationHours  Int?                 @map("duration_hours")
+  internshipType String?              @map("internship_type")
+  feeAmount      Float?               @map("fee_amount")
+  stipendAmount  Float?               @map("stipend_amount")
+  stipendFrequency String?            @map("stipend_frequency")
+  gender         String?
+  internshipPo   Json                 @default("[]") @map("internship_po")
+  internshipCo   Json                 @default("[]") @map("internship_co")
+  collegeId      String?              @map("college_id")
+  departmentId   String?              @map("department_id")
+  industryId     String?              @map("industry_id")
+  createdById    String?              @map("created_by_id")
+  publishedAt    DateTime?            @map("published_at")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  college        College?             @relation(fields: [collegeId], references: [id], onDelete: SetNull)
+  department     Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  industry       Industry?            @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  createdBy      User?                @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  targets        InternshipTarget[]
+  applications   Application[]
+  progress       InternshipProgress[]
+  evaluations    Evaluation[]
+  mappings       CoPoMapping[]
+  results        Result[]
+  outcomeMappings InternshipOutcomeMapping[]
+  coMappings      InternshipCoMapping[]
+  poMappings      InternshipPoMapping[]
 
   @@map("internships")
 }
 
-model Application {
-  id           String            @id @default(cuid())
-  studentId    String            @map("student_id")
-  internshipId String            @map("internship_id")
-  status       ApplicationStatus @default(APPLIED)
-  student      Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  internship   Internship        @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+model InternshipOutcomeMapping {
+  id           String      @id @default(cuid())
+  internshipId String      @map("internship_id")
+  poId         String?     @map("po_id")
+  psoId        String?     @map("pso_id")
+  coId         String?     @map("co_id")
+  ipoId        String?     @map("ipo_id")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  internship   Internship  @relation(fields: [internshipId], references: [id], onDelete: Cascade)
 
-  @@unique([studentId, internshipId])
+  @@map("internship_outcome_mappings")
+}
+
+model InternshipCoMapping {
+  id           String     @id @default(cuid())
+  internshipId String     @map("internship_id")
+  coCode       String     @map("co_code")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  internship   Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+
+  @@unique([internshipId, coCode])
+  @@map("internship_co_mapping")
+}
+
+model InternshipPoMapping {
+  id           String     @id @default(cuid())
+  internshipId String     @map("internship_id")
+  poCode       String     @map("po_code")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  internship   Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+
+  @@unique([internshipId, poCode])
+  @@map("internship_po_mapping")
+}
+
+model InternshipTarget {
+  id            String      @id @default(cuid())
+  internshipId  String      @map("internship_id")
+  targetType    TargetType  @map("target_type")
+  collegeId     String?     @map("college_id")
+  departmentId  String?     @map("department_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  internship    Internship  @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  college       College?    @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  department    Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@map("internship_targets")
+}
+
+model Application {
+  id              String            @id @default(cuid())
+  internshipId    String            @map("internship_id")
+  studentId       String            @map("student_id")
+  status          ApplicationStatus @default(APPLIED)
+  selectedAt      DateTime?         @map("selected_at")
+  allottedAt      DateTime?         @map("allotted_at")
+  completedAt     DateTime?         @map("completed_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  internship      Internship        @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  student         User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  selection       Selection?
+  evaluations     Evaluation[]
+  progressLogs    InternshipProgress[]
+  results         Result[]
+
+  @@unique([internshipId, studentId])
   @@map("applications")
+}
+
+model Selection {
+  id            String       @id @default(cuid())
+  applicationId String       @unique @map("application_id")
+  selectedById  String?      @map("selected_by_id")
+  remarks       String?
+  createdAt     DateTime     @default(now()) @map("created_at")
+  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  selectedBy    User?        @relation(fields: [selectedById], references: [id], onDelete: SetNull)
+
+  @@map("selections")
+}
+
+model InternshipProgress {
+  id             String       @id @default(cuid())
+  internshipId   String       @map("internship_id")
+  applicationId  String       @map("application_id")
+  studentId      String       @map("student_id")
+  attendance     Float?       @default(0)
+  taskSubmission String?      @map("task_submission")
+  mentorFeedback String?      @map("mentor_feedback")
+  progressPct    Float?       @default(0) @map("progress_pct")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  internship     Internship   @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  application    Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  student        User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("internship_progress")
+}
+
+model Evaluation {
+  id              String       @id @default(cuid())
+  internshipId    String       @map("internship_id")
+  applicationId   String       @map("application_id")
+  evaluatorId     String?      @map("evaluator_id")
+  metricsJson     String       @default("{}") @map("metrics_json")
+  coPoScoreJson   String       @default("{}") @map("co_po_score_json")
+  totalScore      Float        @default(0) @map("total_score")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  internship      Internship   @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  application     Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  evaluator       User?        @relation(fields: [evaluatorId], references: [id], onDelete: SetNull)
+
+  @@map("evaluations")
+}
+
+model CoPoMapping {
+  id             String      @id @default(cuid())
+  internshipId   String      @map("internship_id")
+  coCode         String      @map("co_code")
+  poCode         String      @map("po_code")
+  weightage      Float       @default(1)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  internship     Internship  @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+
+  @@unique([internshipId, coCode, poCode])
+  @@map("co_po_mapping")
+}
+
+model Result {
+  id              String       @id @default(cuid())
+  internshipId    String       @map("internship_id")
+  applicationId   String       @map("application_id")
+  studentId       String       @map("student_id")
+  collegeId       String?      @map("college_id")
+  departmentId    String?      @map("department_id")
+  industryId      String?      @map("industry_id")
+  finalScore      Float        @default(0) @map("final_score")
+  grade           String?
+  isPublished     Boolean      @default(false) @map("is_published")
+  publishedAt     DateTime?    @map("published_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  internship      Internship   @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  application     Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  student         User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  college         College?     @relation(fields: [collegeId], references: [id], onDelete: SetNull)
+  department      Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  industry        Industry?    @relation(fields: [industryId], references: [id], onDelete: SetNull)
+
+  @@map("results")
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  title       String
+  message     String
+  isRead      Boolean   @default(false) @map("is_read")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  readAt      DateTime? @map("read_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
 }
