@@ -42,6 +42,10 @@ export interface StudentDashboard {
     industryFeedback?: string | null;
     evaluationMarks?: number | null;
     outcomeMarks?: number | null;
+    isExternal?: boolean;
+    sameCollege?: boolean;
+    eligible?: boolean;
+    eligibilityMessage?: string;
   }>;
   applications: Array<{ id: string; internshipTitle: string; industryName: string; status: string; acceptanceUrl?: string | null }>;
   activeApplicationLock?: boolean;

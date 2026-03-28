@@ -160,14 +160,14 @@ export default function StudentDashboardPage() {
           {selectedTab === 'college' ? (
             <Card className="rounded-[30px] p-6">
               <h2 className="text-xl font-semibold text-slate-900">Internships from {dashboard?.studentCollegeName ?? 'your college'}</h2>
-              <p className="mt-2 text-sm text-amber-700">You can view these internships, but cannot apply as per university rule (mother institute restriction).</p>
+              <p className="mt-2 text-sm text-slate-600">Internal and industry internships are visible here. External-only postings from your own college are blocked.</p>
               <div className="mt-4 space-y-3">
                 {dashboard?.collegeInternships?.length ? dashboard.collegeInternships.map((item) => (
                   <div key={item.id} className="rounded-xl border border-slate-200 bg-white/80 p-4">
                     <p className="font-semibold text-slate-900">{item.title}</p>
                     <p className="text-sm text-slate-600">{item.collegeName} • {item.departmentName}</p>
                     <p className="mt-2 text-sm text-slate-600">{item.description}</p>
-                    <Button className="mt-3" disabled>You cannot apply</Button>
+                    <Button className="mt-3" disabled>View on External tab for apply status</Button>
                   </div>
                 )) : <p className="text-slate-600">No college-hosted internships found.</p>}
               </div>
@@ -199,7 +199,8 @@ export default function StudentDashboardPage() {
                   </thead>
                   <tbody>
                     {dashboard?.externalInternships?.length ? dashboard.externalInternships.map((item) => {
-                      const disabled = item.applied || !canApply;
+                      const disabledByRule = item.eligible === false;
+                      const disabled = item.applied || !canApply || disabledByRule;
                       return (
                         <tr key={item.id} className="border-b border-slate-200">
                           <td className="py-3 pr-2">
@@ -215,6 +216,9 @@ export default function StudentDashboardPage() {
                           <td className="py-3 pr-2">{item.vacancy ?? 0}</td>
                           <td className="py-3">
                             <StatusBadge status={item.applied ? item.status ?? 'PUBLISHED' : 'PUBLISHED'} />
+                            <p className={`mt-1 text-xs ${disabledByRule ? 'text-rose-600' : 'text-emerald-700'}`}>
+                              {item.eligibilityMessage ?? (disabled ? 'Application limit reached' : 'You are eligible')}
+                            </p>
                           </td>
                           <td className="py-3 pr-2 text-slate-600">{item.industryFeedback ?? (item.applied ? 'Pending feedback' : '-')}</td>
                           <td className="py-3 pr-2">{item.evaluationMarks ?? (item.applied ? 'Pending' : '-')}</td>
