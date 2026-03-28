@@ -162,6 +162,13 @@ export default function StudentDashboardPage() {
           {loading ? <Card className="rounded-[28px] p-4 text-slate-700">Loading student data...</Card> : null}
 
           <Card className="rounded-[30px] p-6">
+            <p className="text-sm uppercase tracking-[0.24em] text-indigo-700">Student profile</p>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">{dashboard?.studentName ?? 'Student'}</h2>
+            <p className="mt-2 text-sm text-slate-600">University Registration No: {dashboard?.studentUniversityRegNumber || '-'}</p>
+            <p className="text-sm text-slate-600">College: {dashboard?.studentCollegeName || '-'}</p>
+          </Card>
+
+          <Card className="rounded-[30px] p-6">
             <p className="text-sm uppercase tracking-[0.24em] text-indigo-700">Application rules</p>
             <h2 className="mt-3 text-xl font-semibold text-slate-900">Internship policy status</h2>
             <p className="mt-2 text-sm text-slate-600">{dashboard?.policyNote ?? 'University policy applies.'}</p>

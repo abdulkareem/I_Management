@@ -22,10 +22,10 @@ export default function LoginPage() {
     try {
       const response = await loginWithPassword(email, password);
       if (response.data.user.role === 'DEPARTMENT_COORDINATOR' && response.data.mustChangePassword) {
-        router.push('/dashboard/department/change-password');
+        window.location.replace('/dashboard/department/change-password');
         return;
       }
-      router.push(dashboardPathFor(response.data.user.role));
+      window.location.replace(dashboardPathFor(response.data.user.role));
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Login failed.';
       if (message.toLowerCase().includes('register')) {

@@ -360,6 +360,12 @@ export default function IndustryDashboardPage() {
           {successMessage ? <Card className="rounded-[28px] p-4 text-emerald-800">{successMessage}</Card> : null}
           {!dashboard ? <Card className="rounded-[28px] p-4">Loading IPO data...</Card> : null}
 
+          <Card className="rounded-[28px] p-5">
+            <p className="text-sm uppercase tracking-[0.24em] text-indigo-700">Industry details</p>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">{ipoProfile?.name ?? dashboard?.industry?.name ?? 'Industry'}</h2>
+            <p className="mt-2 text-sm text-slate-600">Address: {ipoProfile?.company_address || '-'}</p>
+          </Card>
+
           <section className="grid gap-4 md:grid-cols-3">
             <Card className="rounded-[28px] p-5">Published Internships: {dashboard?.stats.liveOpportunities ?? 0}</Card>
             <Card className="rounded-[28px] p-5">Pending applications: {dashboard?.stats.pendingApplications ?? 0}</Card>

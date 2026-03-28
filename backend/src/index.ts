@@ -2185,6 +2185,20 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Department internships fetched', rows.results ?? []);
   }
 
+  if (request.method === 'GET' && pathname === '/api/department/profile') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+
+    const profile = await env.DB.prepare(
+      `SELECT id, name, coordinator_name
+       FROM departments
+       WHERE id = ?`,
+    ).bind(actor.id).first<{ id: string; name: string; coordinator_name: string }>();
+
+    if (!profile) return errorResponse(404, 'Department profile not found');
+    return ok('Department profile fetched', profile);
+  }
+
   if (request.method === 'POST' && pathname === '/api/department/map-internship') {
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
@@ -3837,11 +3851,11 @@ async function runAtomic(
 
 async function loadStudentDashboard(env: EnvBindings, studentId: string): Promise<Response> {
   const student = await env.DB.prepare(
-    `SELECT s.college_id, s.sex, c.name AS college_name
+    `SELECT s.college_id, s.sex, s.name AS student_name, s.university_reg_number, c.name AS college_name
      FROM students s
      LEFT JOIN colleges c ON c.id = s.college_id
      WHERE s.id = ?`,
-  ).bind(studentId).first<{ college_id: string; sex: string | null; college_name: string | null }>();
+  ).bind(studentId).first<{ college_id: string; sex: string | null; college_name: string | null; student_name: string | null; university_reg_number: string | null }>();
   if (!student) return unauthorized('Student not found');
 
   const [legacyInternships, applications, collegeInternships, externalInternships, eligibility] = await Promise.all([
@@ -3922,6 +3936,8 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
   const externalRows = externalInternships.results ?? [];
 
   return ok('Student dashboard loaded', {
+    studentName: student.student_name ?? 'Student',
+    studentUniversityRegNumber: student.university_reg_number ?? '',
     studentCollegeName: student.college_name ?? 'Your College',
     internships: internshipRows.map((row: any) => ({
       id: row.id,
