@@ -2833,17 +2833,28 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const internship = await env.DB.prepare(
-      `SELECT i.id, COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS available_vacancy, COALESCE(i.is_external, 0) AS is_external, d.college_id
+      `SELECT i.id,
+              COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS available_vacancy,
+              COALESCE(i.is_external, 0) AS is_external,
+              COALESCE(i.created_by, 'INDUSTRY') AS created_by,
+              i.department_id,
+              d.college_id
        FROM internships i
        INNER JOIN departments d ON d.id = i.department_id
        WHERE i.id = ?`,
-    ).bind(internshipId).first<{ id: string; available_vacancy: number | null; is_external: number; college_id: string }>();
+    ).bind(internshipId).first<{ id: string; available_vacancy: number | null; is_external: number; created_by: string; department_id: string | null; college_id: string }>();
     if (!internship) return badRequest('Invalid internship_id');
     if (actor.role === 'STUDENT') {
-      const student = await env.DB.prepare('SELECT college_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string }>();
+      const student = await env.DB.prepare('SELECT college_id, department_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string; department_id: string }>();
       if (!student) return unauthorized('Student not found');
-      if (Number(internship.is_external) === 1 && student.college_id === internship.college_id) {
+      const externalOnlyForOtherColleges = Number(internship.is_external) === 1
+        && String(internship.created_by).toUpperCase() !== 'INDUSTRY'
+        && student.college_id === internship.college_id;
+      if (externalOnlyForOtherColleges) {
         return forbidden('This internship is open only to external college students');
+      }
+      if (internship.department_id && student.department_id !== internship.department_id) {
+        return forbidden('This internship is only available to students in the mapped department');
       }
       if (internship.available_vacancy !== null && Number(internship.available_vacancy) <= 0) return forbidden('No vacancy available for this internship');
     }
@@ -3934,11 +3945,11 @@ async function runAtomic(
 
 async function loadStudentDashboard(env: EnvBindings, studentId: string): Promise<Response> {
   const student = await env.DB.prepare(
-    `SELECT s.college_id, s.sex, s.name AS student_name, s.university_reg_number, c.name AS college_name
+    `SELECT s.college_id, s.department_id, s.sex, s.name AS student_name, s.university_reg_number, c.name AS college_name
      FROM students s
      LEFT JOIN colleges c ON c.id = s.college_id
      WHERE s.id = ?`,
-  ).bind(studentId).first<{ college_id: string; sex: string | null; college_name: string | null; student_name: string | null; university_reg_number: string | null }>();
+  ).bind(studentId).first<{ college_id: string; department_id: string; sex: string | null; college_name: string | null; student_name: string | null; university_reg_number: string | null }>();
   if (!student) return unauthorized('Student not found');
 
   const [legacyInternships, applications, collegeInternships, externalInternships, eligibility] = await Promise.all([
@@ -3968,6 +3979,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        INNER JOIN departments d ON d.id = i.department_id
        INNER JOIN colleges c ON c.id = d.college_id
        WHERE d.college_id = ?
+         AND d.id = ?
          AND i.status = 'ACCEPTED'
          AND COALESCE(i.student_visibility, 0) = 1
          AND NOT (
@@ -3980,10 +3992,11 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
            OR (COALESCE(i.gender_preference, 'BOTH') = 'GIRLS' AND ? = 'FEMALE')
          )
        ORDER BY i.created_at DESC`,
-    ).bind(student.college_id, student.sex ?? '', student.sex ?? '').all(),
+    ).bind(student.college_id, student.department_id, student.sex ?? '', student.sex ?? '').all(),
     env.DB.prepare(
       `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name, c.id AS college_id,
               COALESCE(i.is_external, 0) AS is_external,
+              COALESCE(i.created_by, 'INDUSTRY') AS created_by,
               COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS vacancy,
               ia.id AS application_id, ia.status AS application_status, ia.industry_feedback, ia.industry_score,
               (
@@ -3998,6 +4011,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        LEFT JOIN industries ind ON ind.id = ii.industry_id
        LEFT JOIN internship_applications ia ON ia.internship_id = i.id AND ia.student_id = ?
        WHERE i.status = 'ACCEPTED'
+         AND d.id = ?
          AND COALESCE(i.student_visibility, 0) = 1
          AND (
            COALESCE(i.created_by, 'INDUSTRY') = 'INDUSTRY'
@@ -4009,7 +4023,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
            OR (COALESCE(i.gender_preference, 'BOTH') = 'GIRLS' AND ? = 'FEMALE')
          )
        ORDER BY i.created_at DESC`,
-    ).bind(studentId, student.sex ?? '', student.sex ?? '').all(),
+    ).bind(studentId, student.department_id, student.sex ?? '', student.sex ?? '').all(),
     getStudentApplicationEligibility(env, studentId),
   ]);
 
@@ -4047,7 +4061,9 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
     })),
     externalInternships: externalRows.map((row: any) => {
       const sameCollege = String(row.college_id ?? '') === String(student.college_id ?? '');
-      const externalOnlyBlocked = Number(row.is_external ?? 0) === 1 && sameCollege;
+      const externalOnlyBlocked = Number(row.is_external ?? 0) === 1
+        && sameCollege
+        && String(row.created_by ?? 'INDUSTRY').toUpperCase() !== 'INDUSTRY';
       const limitReached = eligibility.openApplications >= MAX_ACTIVE_APPLICATIONS || eligibility.activeLock;
       return {
       id: row.id,
