@@ -227,6 +227,7 @@ export default function StudentDashboardPage() {
                       <th className="py-2 pr-2">Industry feedback</th>
                       <th className="py-2 pr-2">Evaluation marks</th>
                       <th className="py-2 pr-2">Outcome marks</th>
+                      <th className="py-2 pr-2">Apply</th>
                       <th className="py-2">Marksheet</th>
                     </tr>
                   </thead>
@@ -256,6 +257,19 @@ export default function StudentDashboardPage() {
                           <td className="py-3 pr-2 text-slate-600">{item.industryFeedback ?? (item.applied ? 'Pending feedback' : '-')}</td>
                           <td className="py-3 pr-2">{item.evaluationMarks ?? (item.applied ? 'Pending' : '-')}</td>
                           <td className="py-3 pr-2">{item.outcomeMarks ?? (item.applied ? 'Pending' : '-')}</td>
+                          <td className="py-3 pr-2">
+                            {item.applied ? (
+                              <Button variant="secondary" disabled>Applied</Button>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                disabled={disabled || submitting}
+                                onClick={() => toggleSelection(item.id)}
+                              >
+                                {selectedIds.includes(item.id) ? 'Selected' : 'Apply'}
+                              </Button>
+                            )}
+                          </td>
                           <td className="py-3">
                             <div className="flex flex-wrap gap-2">
                               <Button variant="secondary" disabled={!item.applied} onClick={() => downloadMarksheet(item)}>Download PDF</Button>
@@ -269,7 +283,7 @@ export default function StudentDashboardPage() {
                       );
                     }) : (
                       <tr>
-                        <td className="py-3 text-slate-600" colSpan={12}>No internships from other organizations available right now.</td>
+                        <td className="py-3 text-slate-600" colSpan={13}>No internships from other organizations available right now.</td>
                       </tr>
                     )}
                   </tbody>
