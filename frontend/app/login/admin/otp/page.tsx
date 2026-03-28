@@ -1,14 +1,13 @@
 'use client';
 
 import { FormEvent, Suspense, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { verifyAdminOtp } from '@/lib/auth';
 
 function AdminOtpForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const email = useMemo(() => (searchParams.get('email') ?? '').trim(), [searchParams]);
   const [otp, setOtp] = useState('');
@@ -21,7 +20,7 @@ function AdminOtpForm() {
     setLoading(true);
     try {
       await verifyAdminOtp(email, otp);
-      router.push('/superadmin/dashboard');
+      window.location.replace('/superadmin/dashboard');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to verify OTP');
     } finally {

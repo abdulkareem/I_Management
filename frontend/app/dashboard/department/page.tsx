@@ -17,6 +17,7 @@ type OutcomeDefinition = { id: string; code: string; description: string };
 type DepartmentProgram = { id: string; name: string; program_outcomes: string | null; program_specific_outcomes: string | null };
 type IndustryListing = { id: string; title: string; criteria?: string | null; vacancy?: number | null };
 type IndustryDetails = { id: string; name: string; business_activity: string; category: string; is_linked?: number; listings: IndustryListing[] };
+type DepartmentProfile = { id: string; name: string; coordinator_name: string };
 type InternshipType = 'FREE' | 'PAID' | 'STIPEND';
 type StipendFrequency = 'DAY' | 'WEEK' | 'MONTH';
 type ApplicableTo = 'INTERNAL' | 'EXTERNAL';
@@ -24,6 +25,7 @@ type ApplicableTo = 'INTERNAL' | 'EXTERNAL';
 export default function DepartmentDashboardPage() {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<DepartmentDashboard | null>(null);
+  const [departmentProfile, setDepartmentProfile] = useState<DepartmentProfile | null>(null);
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [programs, setPrograms] = useState<DepartmentProgram[]>([]);
   const [programOutcomes, setProgramOutcomes] = useState<Record<string, ProgramOutcome[]>>({});
@@ -67,7 +69,7 @@ export default function DepartmentDashboardPage() {
   const [docPreview, setDocPreview] = useState<string | null>(null);
 
   async function load() {
-    const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes, docsRes] = await Promise.all([
+    const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes, docsRes, profileRes] = await Promise.all([
       fetchWithSession<DepartmentDashboard['internships']>('/api/department/internships'),
       fetchWithSession<DepartmentDashboard['applications']>('/api/department/applications'),
       fetchWithSession<DepartmentDashboard['industryRequests']>('/api/department/industry-requests'),
@@ -76,6 +78,7 @@ export default function DepartmentDashboardPage() {
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-cos'),
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-pos'),
       fetchWithSession<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>('/api/documents/my'),
+      fetchWithSession<DepartmentProfile>('/api/department/profile'),
     ]);
 
     const loadedPrograms = (programsRes.data ?? []).map((item: any) => ({
@@ -99,6 +102,7 @@ export default function DepartmentDashboardPage() {
     setInternshipCos(cosRes.data ?? []);
     setInternshipPos(posRes.data ?? []);
     setDocuments(docsRes.data ?? []);
+    setDepartmentProfile(profileRes.data ?? null);
   }
 
   async function downloadDocument(documentId: string) {
@@ -450,6 +454,8 @@ export default function DepartmentDashboardPage() {
           {error ? <Card className="rounded-[20px] p-4 text-rose-800">{error}</Card> : null}
           {successMessage ? <Card className="rounded-[20px] p-4 text-emerald-800">{successMessage}</Card> : null}
           <section className="grid gap-4 md:grid-cols-4">
+            <Card className="rounded-[20px] p-4">Department: {departmentProfile?.name ?? '-'}</Card>
+            <Card className="rounded-[20px] p-4">Coordinator: {departmentProfile?.coordinator_name ?? '-'}</Card>
             <Card className="rounded-[20px] p-4">Internships: {metrics.internships}</Card>
             <Card className="rounded-[20px] p-4">Pending: {metrics.pendingApplications}</Card>
             <Card className="rounded-[20px] p-4">Ideas: {metrics.industryIdeas}</Card>
@@ -565,7 +571,7 @@ export default function DepartmentDashboardPage() {
             </Card>
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, ideas: !prev.ideas }))}>
-                Suggest Internship Idea to Internship Provider Organization (IPO)
+                Internship Suggestions Received from Industry
               </button>
               {expandedCard.ideas ? (
                 <form className="mt-3 grid gap-3" onSubmit={createIndustryRequest}>
@@ -725,6 +731,69 @@ export default function DepartmentDashboardPage() {
             </Card>
 
           </section>
+
+          <Card className="rounded-[20px] p-5">
+            <h2 className="mb-3 text-xl font-semibold">Department Suggested Ideas from Industry (Add PO/CO and Publish)</h2>
+            <p className="mb-3 text-sm text-slate-600">When IPO sends an internship to department, review here, map PO/CO/PSO and publish to internal students.</p>
+            <div className="space-y-3">
+              {industryAdvertisements.length ? industryAdvertisements.map((item: any) => {
+                const draft = advertisementDrafts[item.id] ?? {
+                  programId: '',
+                  mappedCo: parseMappings(item.mapped_co),
+                  mappedPo: parseMappings(item.mapped_po),
+                  mappedPso: parseMappings(item.mapped_pso),
+                };
+                return (
+                  <div key={item.id} className="rounded-xl border border-slate-200 p-4">
+                    <p className="font-semibold text-slate-900">{item.title}</p>
+                    <p className="mt-1 text-sm text-slate-700">{item.description}</p>
+                    <p className="mt-1 text-xs text-slate-500">Category: {item.internship_category || 'FREE'} • Vacancy: {item.vacancy ?? 0}</p>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <select
+                        className="rounded-md border border-slate-300 bg-white px-3 py-2"
+                        value={draft.programId}
+                        onChange={(e) => setAdvertisementDrafts((prev) => ({ ...prev, [item.id]: { ...draft, programId: e.target.value } }))}
+                      >
+                        <option value="">Select programme</option>
+                        {programs.map((program) => <option key={`${item.id}-${program.id}`} value={program.id}>{program.name}</option>)}
+                      </select>
+                      <div className="text-sm text-slate-600">Status: {item.status}</div>
+                      <div>
+                        <p className="text-sm font-semibold">Map Internship CO</p>
+                        {internshipCos.map((entry) => (
+                          <label key={`${item.id}-co-${entry.id}`} className="flex items-center gap-2 text-sm">
+                            <input type="checkbox" checked={draft.mappedCo.includes(entry.code)} onChange={() => toggleDraftSelection(item.id, 'mappedCo', entry.code)} />
+                            {entry.code}
+                          </label>
+                        ))}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">Map Internship PO</p>
+                        {internshipPos.map((entry) => (
+                          <label key={`${item.id}-po-${entry.id}`} className="flex items-center gap-2 text-sm">
+                            <input type="checkbox" checked={draft.mappedPo.includes(entry.code)} onChange={() => toggleDraftSelection(item.id, 'mappedPo', entry.code)} />
+                            {entry.code}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="md:col-span-2">
+                        <p className="text-sm font-semibold">Map Programme PSO</p>
+                        {(programOutcomes[draft.programId] ?? []).filter((entry) => entry.type === 'PSO').map((entry) => (
+                          <label key={`${item.id}-pso-${entry.id}`} className="mr-3 inline-flex items-center gap-2 text-sm">
+                            <input type="checkbox" checked={draft.mappedPso.includes(entry.value)} onChange={() => toggleDraftSelection(item.id, 'mappedPso', entry.value)} />
+                            {entry.value}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <Button onClick={() => submitDepartmentAdvertisement(item.id)}>Submit & Publish to Internal Students</Button>
+                    </div>
+                  </div>
+                );
+              }) : <p className="text-sm text-slate-700">No new internship suggestions received from industry.</p>}
+            </div>
+          </Card>
 
           <Card className="rounded-[20px] p-5">
             <h2 className="mb-3 text-xl font-semibold">Applications Submitted by Internal Students</h2>

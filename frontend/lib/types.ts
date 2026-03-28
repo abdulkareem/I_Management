@@ -24,6 +24,8 @@ export interface SessionProfile {
 }
 
 export interface StudentDashboard {
+  studentName?: string;
+  studentUniversityRegNumber?: string;
   studentCollegeName?: string;
   internships: Array<{ id: string; title: string; description: string; industryName: string; applied: boolean; status?: string }>;
   collegeInternships?: Array<{ id: string; title: string; description: string; departmentName: string; collegeName: string }>;
