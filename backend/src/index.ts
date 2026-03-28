@@ -174,6 +174,247 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('API healthy', { now: new Date().toISOString() });
   }
 
+  if (pathname.startsWith('/api/internship') || pathname === '/api/internships' || pathname.endsWith('/overview')) {
+    await ensureUnifiedInternshipSchema(env);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/internship/create') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const title = toText(required(body, ['title']));
+    const description = toText(required(body, ['description']));
+    const internshipType = toText(body.internshipType || 'FREE').toUpperCase();
+    const type = toText(body.type || 'EXTERNAL').toUpperCase();
+    const vacancy = Number(body.vacancy ?? 0);
+    const durationHours = Number(body.durationHours ?? 0);
+    const gender = toText(body.gender || 'BOTH').toUpperCase();
+    if (!title || !description) return badRequest('title and description are required');
+    if (!['INTERNAL', 'EXTERNAL'].includes(type)) return badRequest('type must be INTERNAL or EXTERNAL');
+    if (!['FREE', 'PAID', 'STIPEND'].includes(internshipType)) return badRequest('internshipType is invalid');
+    if (!Number.isFinite(vacancy) || vacancy < 1) return badRequest('vacancy must be at least 1');
+
+    const department = await env.DB.prepare('SELECT id, college_id FROM departments WHERE id = ?').bind(actor.id).first<{ id: string; college_id: string }>();
+    if (!department) return unauthorized('Department not found');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO internships (
+        id, title, description, type, department_id, college_id, industry_id, status,
+        vacancy, total_vacancy, remaining_vacancy, gender, internship_type, fee_amount,
+        stipend_amount, stipend_frequency, duration_hours, is_external, created_by, source_type, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DEPARTMENT', 'DEPARTMENT', datetime('now'), datetime('now'))`,
+    ).bind(
+      id,
+      title,
+      description,
+      type.toLowerCase(),
+      actor.id,
+      department.college_id,
+      toText(body.industryId),
+      type === 'INTERNAL' ? 'SENT' : 'PUBLISHED',
+      vacancy,
+      vacancy,
+      vacancy,
+      gender,
+      internshipType,
+      body.feeAmount == null ? null : Number(body.feeAmount),
+      body.stipendAmount == null ? null : Number(body.stipendAmount),
+      toText(body.stipendFrequency),
+      durationHours > 0 ? durationHours : null,
+      type === 'EXTERNAL' ? 1 : 0,
+    ).run();
+
+    return created('Internship created', { id, status: type === 'INTERNAL' ? 'SENT' : 'PUBLISHED' });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/internship/send-to-industry') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipId = toText(required(body, ['internshipId']));
+    const industryId = toText(required(body, ['industryId']));
+    if (!internshipId || !industryId) return badRequest('internshipId and industryId are required');
+    const result = await env.DB.prepare(
+      `UPDATE internships
+       SET industry_id = ?, status = 'SENT', type = 'internal', is_external = 0, updated_at = datetime('now')
+       WHERE id = ? AND department_id = ?`,
+    ).bind(industryId, internshipId, actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Internship not found');
+    return ok('Internship sent to industry');
+  }
+
+  if (request.method === 'POST' && pathname === '/api/internship/publish') {
+    const actor = requireRole(request, ['INDUSTRY', 'DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipId = toText(required(body, ['internshipId']));
+    if (!internshipId) return badRequest('internshipId is required');
+    const ownershipClause = actor.role === 'INDUSTRY' ? 'industry_id = ?' : 'department_id = ?';
+    const result = await env.DB.prepare(
+      `UPDATE internships
+       SET status = 'PUBLISHED', published = 1,
+           vacancy = COALESCE(?, vacancy),
+           total_vacancy = COALESCE(?, total_vacancy, vacancy),
+           remaining_vacancy = COALESCE(?, remaining_vacancy, vacancy),
+           stipend_amount = COALESCE(?, stipend_amount),
+           fee_amount = COALESCE(?, fee_amount),
+           duration_hours = COALESCE(?, duration_hours),
+           updated_at = datetime('now')
+       WHERE id = ? AND ${ownershipClause}`,
+    ).bind(
+      body.vacancy == null ? null : Number(body.vacancy),
+      body.vacancy == null ? null : Number(body.vacancy),
+      body.vacancy == null ? null : Number(body.vacancy),
+      body.stipendAmount == null ? null : Number(body.stipendAmount),
+      body.feeAmount == null ? null : Number(body.feeAmount),
+      body.durationHours == null ? null : Number(body.durationHours),
+      internshipId,
+      actor.id,
+    ).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Internship not found');
+    return ok('Internship published');
+  }
+
+  if (request.method === 'POST' && pathname === '/api/internship/apply') {
+    const actor = requireRole(request, ['STUDENT']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipId = toText(required(body, ['internshipId']));
+    if (!internshipId) return badRequest('internshipId is required');
+
+    const existing = await env.DB.prepare('SELECT id FROM applications WHERE internship_id = ? AND student_id = ?').bind(internshipId, actor.id).first<{ id: string }>();
+    if (existing?.id) return conflict('Already applied');
+
+    const vacancyResult = await env.DB.prepare(
+      `UPDATE internships
+       SET vacancy = CASE WHEN COALESCE(vacancy, 0) > 0 THEN vacancy - 1 ELSE vacancy END,
+           remaining_vacancy = CASE WHEN COALESCE(remaining_vacancy, COALESCE(vacancy, 0)) > 0 THEN COALESCE(remaining_vacancy, vacancy) - 1 ELSE COALESCE(remaining_vacancy, vacancy) END,
+           filled_vacancy = COALESCE(filled_vacancy, 0) + CASE WHEN COALESCE(vacancy, 0) > 0 THEN 1 ELSE 0 END,
+           updated_at = datetime('now')
+       WHERE id = ? AND status = 'PUBLISHED' AND COALESCE(vacancy, 0) > 0`,
+    ).bind(internshipId).run();
+
+    if ((vacancyResult.meta.changes ?? 0) === 0) return forbidden('No vacancy available or internship is not published');
+
+    try {
+      const applicationId = crypto.randomUUID();
+      await env.DB.prepare(
+        `INSERT INTO applications (id, student_id, internship_id, status, created_at, updated_at)
+         VALUES (?, ?, ?, 'APPLIED', datetime('now'), datetime('now'))`,
+      ).bind(applicationId, actor.id, internshipId).run();
+      return created('Application submitted', { id: applicationId });
+    } catch (error) {
+      await env.DB.prepare(
+        `UPDATE internships
+         SET vacancy = COALESCE(vacancy, 0) + 1,
+             remaining_vacancy = COALESCE(remaining_vacancy, 0) + 1,
+             filled_vacancy = CASE WHEN COALESCE(filled_vacancy, 0) > 0 THEN filled_vacancy - 1 ELSE 0 END,
+             updated_at = datetime('now')
+         WHERE id = ?`,
+      ).bind(internshipId).run();
+      throw error;
+    }
+  }
+
+  if (request.method === 'GET' && pathname === '/api/internships') {
+    const actor = requireRole(request, ['COLLEGE', 'DEPARTMENT_COORDINATOR', 'COORDINATOR', 'INDUSTRY', 'STUDENT']);
+    if (actor instanceof Response) return actor;
+
+    let rows: any[] = [];
+    if (actor.role === 'COLLEGE') {
+      const res = await env.DB.prepare(
+        `SELECT i.*, d.name AS department_name, ind.name AS industry_name,
+                (SELECT COUNT(*) FROM applications a WHERE a.internship_id = i.id) AS application_count
+         FROM internships i
+         LEFT JOIN departments d ON d.id = i.department_id
+         LEFT JOIN industries ind ON ind.id = i.industry_id
+         WHERE i.college_id = ?
+         ORDER BY i.created_at DESC`,
+      ).bind(actor.id).all<any>();
+      rows = res.results ?? [];
+    } else if (actor.role === 'DEPARTMENT_COORDINATOR' || actor.role === 'COORDINATOR') {
+      const res = await env.DB.prepare(
+        `SELECT i.*, d.name AS department_name, ind.name AS industry_name,
+                (SELECT COUNT(*) FROM applications a WHERE a.internship_id = i.id) AS application_count
+         FROM internships i
+         LEFT JOIN departments d ON d.id = i.department_id
+         LEFT JOIN industries ind ON ind.id = i.industry_id
+         WHERE i.department_id = ?
+         ORDER BY i.created_at DESC`,
+      ).bind(actor.id).all<any>();
+      rows = res.results ?? [];
+    } else if (actor.role === 'INDUSTRY') {
+      const res = await env.DB.prepare(
+        `SELECT i.*, d.name AS department_name, ind.name AS industry_name,
+                (SELECT COUNT(*) FROM applications a WHERE a.internship_id = i.id) AS application_count
+         FROM internships i
+         LEFT JOIN departments d ON d.id = i.department_id
+         LEFT JOIN industries ind ON ind.id = i.industry_id
+         WHERE i.industry_id = ? OR i.status = 'SENT'
+         ORDER BY i.created_at DESC`,
+      ).bind(actor.id).all<any>();
+      rows = res.results ?? [];
+    } else {
+      const student = await env.DB.prepare('SELECT college_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string | null }>();
+      const res = await env.DB.prepare(
+        `SELECT i.*, d.name AS department_name, c.name AS college_name, ind.name AS industry_name,
+                a.id AS application_id, a.status AS application_status
+         FROM internships i
+         LEFT JOIN departments d ON d.id = i.department_id
+         LEFT JOIN colleges c ON c.id = i.college_id
+         LEFT JOIN industries ind ON ind.id = i.industry_id
+         LEFT JOIN applications a ON a.internship_id = i.id AND a.student_id = ?
+         WHERE i.status = 'PUBLISHED' AND COALESCE(i.vacancy, 0) >= 0
+         ORDER BY i.created_at DESC`,
+      ).bind(actor.id).all<any>();
+      rows = (res.results ?? []).map((row) => ({ ...row, sameCollege: Boolean(student?.college_id && row.college_id && student.college_id === row.college_id) }));
+    }
+    return ok('Internships fetched', rows);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/dashboard/college/overview') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const [departments, internshipStats, activeInternships, studentParticipation] = await Promise.all([
+      env.DB.prepare('SELECT id, name FROM departments WHERE college_id = ? ORDER BY name ASC').bind(actor.id).all<any>(),
+      env.DB.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'PUBLISHED' THEN 1 ELSE 0 END) AS published FROM internships WHERE college_id = ?`).bind(actor.id).first<any>(),
+      env.DB.prepare(`SELECT id, title, status, vacancy FROM internships WHERE college_id = ? AND status = 'PUBLISHED' ORDER BY updated_at DESC LIMIT 10`).bind(actor.id).all<any>(),
+      env.DB.prepare(`SELECT COUNT(DISTINCT a.student_id) AS participatingStudents, COUNT(*) AS applications FROM applications a INNER JOIN internships i ON i.id = a.internship_id WHERE i.college_id = ?`).bind(actor.id).first<any>(),
+    ]);
+    return ok('College overview loaded', { departments: departments.results ?? [], internshipStats: internshipStats ?? { total: 0, published: 0 }, activeInternships: activeInternships.results ?? [], studentParticipation: studentParticipation ?? { participatingStudents: 0, applications: 0 } });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/dashboard/department/overview') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const [internships, applications] = await Promise.all([
+      env.DB.prepare(`SELECT id, title, status, vacancy, industry_id FROM internships WHERE department_id = ? ORDER BY created_at DESC`).bind(actor.id).all<any>(),
+      env.DB.prepare(`SELECT a.id, a.status, a.internship_id, s.name AS student_name, i.title AS internship_title FROM applications a INNER JOIN internships i ON i.id = a.internship_id LEFT JOIN students s ON s.id = a.student_id WHERE i.department_id = ? ORDER BY a.created_at DESC`).bind(actor.id).all<any>(),
+    ]);
+    return ok('Department overview loaded', { internships: internships.results ?? [], applications: applications.results ?? [] });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/dashboard/industry/overview') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const [received, published] = await Promise.all([
+      env.DB.prepare(`SELECT id, title, description, status, vacancy, stipend_amount, fee_amount, duration_hours FROM internships WHERE industry_id = ? AND status IN ('SENT','DRAFT') ORDER BY created_at DESC`).bind(actor.id).all<any>(),
+      env.DB.prepare(`SELECT id, title, status, vacancy FROM internships WHERE industry_id = ? AND status = 'PUBLISHED' ORDER BY updated_at DESC`).bind(actor.id).all<any>(),
+    ]);
+    return ok('Industry overview loaded', { receivedInternships: received.results ?? [], publishedInternships: published.results ?? [] });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/dashboard/student/overview') {
+    const actor = requireRole(request, ['STUDENT']);
+    if (actor instanceof Response) return actor;
+    const [available, applications] = await Promise.all([
+      env.DB.prepare(`SELECT i.id, i.title, i.description, i.vacancy, i.status, d.name AS department_name, c.name AS college_name, ind.name AS industry_name, a.id AS application_id, a.status AS application_status FROM internships i LEFT JOIN departments d ON d.id = i.department_id LEFT JOIN colleges c ON c.id = i.college_id LEFT JOIN industries ind ON ind.id = i.industry_id LEFT JOIN applications a ON a.internship_id = i.id AND a.student_id = ? WHERE i.status = 'PUBLISHED' ORDER BY i.created_at DESC`).bind(actor.id).all<any>(),
+      env.DB.prepare(`SELECT a.id, a.status, a.internship_id, i.title AS internship_title FROM applications a INNER JOIN internships i ON i.id = a.internship_id WHERE a.student_id = ? ORDER BY a.created_at DESC`).bind(actor.id).all<any>(),
+    ]);
+    return ok('Student overview loaded', { availableInternships: available.results ?? [], applications: applications.results ?? [] });
+  }
+
   if (request.method === 'GET' && pathname === '/api/colleges') {
     const rows = await env.DB.prepare(
       `SELECT id, name
@@ -5348,6 +5589,52 @@ async function ensureAcademicPathForUnlistedStudent(
   }
 
   return { collegeId, departmentId, programId };
+}
+
+
+async function ensureUnifiedInternshipSchema(env: EnvBindings): Promise<void> {
+  const internshipColumns = new Set((await getTableColumns(env, 'internships')).map((column) => column.name));
+  if (!internshipColumns.has('type')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN type TEXT NOT NULL DEFAULT 'external'").run();
+  if (!internshipColumns.has('college_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN college_id TEXT').run();
+  if (!internshipColumns.has('department_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN department_id TEXT').run();
+  if (!internshipColumns.has('industry_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN industry_id TEXT').run();
+  if (!internshipColumns.has('status')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN status TEXT NOT NULL DEFAULT 'DRAFT'").run();
+  if (!internshipColumns.has('vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('gender')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN gender TEXT NOT NULL DEFAULT 'BOTH'").run();
+  if (!internshipColumns.has('internship_type')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN internship_type TEXT').run();
+  if (!internshipColumns.has('fee_amount')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN fee_amount REAL').run();
+  if (!internshipColumns.has('stipend_amount')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN stipend_amount REAL').run();
+  if (!internshipColumns.has('stipend_frequency')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN stipend_frequency TEXT').run();
+  if (!internshipColumns.has('duration_hours')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN duration_hours INTEGER').run();
+  if (!internshipColumns.has('total_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN total_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('filled_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN filled_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('remaining_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN remaining_vacancy INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('published')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN published INTEGER NOT NULL DEFAULT 0').run();
+  if (!internshipColumns.has('created_by')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN created_by TEXT NOT NULL DEFAULT 'DEPARTMENT'").run();
+  if (!internshipColumns.has('source_type')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN source_type TEXT NOT NULL DEFAULT 'DEPARTMENT'").run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS applications (
+      id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL,
+      internship_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'APPLIED',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(student_id, internship_id)
+    )`,
+  ).run();
+
+  const studentColumns = new Set((await getTableColumns(env, 'students')).map((column) => column.name));
+  if (!studentColumns.has('college_id')) await env.DB.prepare('ALTER TABLE students ADD COLUMN college_id TEXT').run();
+  if (!studentColumns.has('department_id')) await env.DB.prepare('ALTER TABLE students ADD COLUMN department_id TEXT').run();
+
+  await Promise.all([
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_unified_internships_department ON internships(department_id, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_unified_internships_industry ON internships(industry_id, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_unified_applications_student ON applications(student_id, status)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_unified_applications_internship ON applications(internship_id, status)').run(),
+  ]);
 }
 
 async function getTableColumns(env: EnvBindings, tableName: string): Promise<Array<{ name: string }>> {
