@@ -423,7 +423,10 @@ export default function DepartmentDashboardPage() {
   const metrics = useMemo(() => ({ internships: dashboard?.internships.length ?? 0, pendingApplications: dashboard?.applications.filter((item) => item.status === 'pending').length ?? 0, industryIdeas: dashboard?.industryRequests.length ?? 0, programs: programs.length }), [dashboard, programs]);
   const session = loadSession();
   const dashboardTitle = `${session?.user?.email?.split('@')[0] ?? 'Department'} Dashboard`;
-  const industryAdvertisements = (dashboard?.internships ?? []).filter((item: any) => item.status === 'SENT_TO_DEPARTMENT');
+  const industryAdvertisements = (dashboard?.internships ?? []).filter((item: any) => {
+    const normalizedStatus = String(item.status ?? '').toUpperCase();
+    return normalizedStatus === 'SENT_TO_DEPARTMENT' || normalizedStatus === 'SENT_TO_DEPT';
+  });
   const internalApps = (dashboard?.applications ?? []).filter((item: any) => item.is_internal_student === 1 && item.status !== 'rejected');
   const externalApps = (dashboard?.applications ?? []).filter((item: any) => {
     const differentCollege = item.is_external_by_college === 1;
