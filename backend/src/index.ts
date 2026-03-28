@@ -1513,6 +1513,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const stipendAmount = optional(body, ['stipend_amount', 'stipendAmount']) ? Number(optional(body, ['stipend_amount', 'stipendAmount'])) : null;
     const stipendDuration = toText(optional(body, ['stipend_duration', 'stipendDuration'])) || null;
     const hourDuration = optional(body, ['hour_duration', 'hourDuration', 'durationHours']) ? Number(optional(body, ['hour_duration', 'hourDuration', 'durationHours'])) : null;
+    const maximumDays = optional(body, ['maximum_days', 'maximumDays']) ? Number(optional(body, ['maximum_days', 'maximumDays'])) : null;
     if (!internshipId) return badRequest('id is required');
 
     const internship = await env.DB.prepare(
@@ -1523,6 +1524,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!Number.isFinite(vacancy) || vacancy <= 0) return badRequest('vacancy must be greater than 0');
     if (!['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
     if (hourDuration !== null && hourDuration < 60) return badRequest('duration must be at least 60 hours');
+    if (maximumDays !== null && maximumDays <= 0) return badRequest('maximumDays must be greater than 0');
     if (internshipCategory && !['FREE', 'PAID', 'STIPEND'].includes(internshipCategory)) return badRequest('internshipCategory must be FREE, PAID or STIPEND');
     if ((internshipCategory === 'PAID' || (internshipCategory === null && fee !== null)) && (!fee || fee <= 0)) return badRequest('fee is required for paid internship');
     if (internshipCategory === 'STIPEND' && (!stipendAmount || stipendAmount < 0)) return badRequest('stipendAmount is required for stipend internship');
@@ -1541,6 +1543,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            stipend_amount = CASE WHEN COALESCE(?, internship_category) = 'STIPEND' THEN ? ELSE NULL END,
            stipend_duration = CASE WHEN COALESCE(?, internship_category) = 'STIPEND' THEN ? ELSE NULL END,
            minimum_days = COALESCE(?, minimum_days),
+           maximum_days = COALESCE(?, maximum_days),
            updated_at = datetime('now')
        WHERE id = ? AND industry_id = ?`,
     ).bind(
@@ -1557,6 +1560,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       internshipCategory,
       stipendDuration,
       hourDuration ? Math.floor(hourDuration) : null,
+      maximumDays ? Math.floor(maximumDays) : null,
       internshipId,
       actor.id,
     ).run();
@@ -1575,8 +1579,15 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               d.id AS department_id,
               d.name AS department_name,
               i.programme,
+              i.description,
               i.internship_category AS category,
               COALESCE(i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS vacancy,
+              COALESCE(i.minimum_days, 0) AS minimum_days,
+              COALESCE(i.maximum_days, 0) AS maximum_days,
+              COALESCE(i.gender_preference, 'BOTH') AS gender_preference,
+              COALESCE(i.fee, 0) AS fee,
+              COALESCE(i.stipend_amount, 0) AS stipend_amount,
+              i.stipend_duration,
               i.status,
               COALESCE(i.student_visibility, 0) AS student_visibility
        FROM internships i
@@ -1586,6 +1597,78 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        ORDER BY i.created_at DESC`,
     ).bind(actor.id).all();
     return ok('Industry internships fetched', rows.results ?? []);
+  }
+
+  const updateIndustryInternshipMatch = pathname.match(/^\/api\/industry\/internships\/([^/]+)$/);
+  if (updateIndustryInternshipMatch && request.method === 'PUT') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const title = required(body, ['title', 'internship_title', 'internshipTitle']);
+    const description = required(body, ['description']);
+    const vacancy = Number(required(body, ['vacancy']));
+    const categoryRaw = toText(optional(body, ['internship_category', 'internshipCategory'])).toUpperCase() || 'FREE';
+    const internshipCategory = ['FREE', 'PAID', 'STIPEND'].includes(categoryRaw) ? categoryRaw : null;
+    const feeRaw = optional(body, ['fee']);
+    const fee = feeRaw !== null && feeRaw !== undefined && feeRaw !== '' ? Number(feeRaw) : null;
+    const stipendAmountRaw = optional(body, ['stipend_amount', 'stipendAmount']);
+    const stipendAmount = stipendAmountRaw !== null && stipendAmountRaw !== undefined && stipendAmountRaw !== '' ? Number(stipendAmountRaw) : null;
+    const stipendDuration = toText(optional(body, ['stipend_duration', 'stipendDuration'])) || null;
+    const minimumDaysRaw = optional(body, ['minimum_days', 'minimumDays']);
+    const maximumDaysRaw = optional(body, ['maximum_days', 'maximumDays']);
+    const minimumDays = minimumDaysRaw !== null && minimumDaysRaw !== undefined && minimumDaysRaw !== '' ? Number(minimumDaysRaw) : null;
+    const maximumDays = maximumDaysRaw !== null && maximumDaysRaw !== undefined && maximumDaysRaw !== '' ? Number(maximumDaysRaw) : null;
+    const genderPreference = toText(optional(body, ['gender_preference', 'genderPreference'])).toUpperCase() || 'BOTH';
+    if (!title || !description) return badRequest('title and description are required');
+    if (!internshipCategory) return badRequest('internship_category must be FREE, PAID or STIPEND');
+    if (!Number.isFinite(vacancy) || vacancy <= 0) return badRequest('vacancy must be greater than 0');
+    if (!['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
+    if (internshipCategory === 'PAID' && (!fee || Number.isNaN(fee) || fee <= 0)) return badRequest('Valid fee is required for paid internships');
+    if (internshipCategory === 'STIPEND' && (stipendAmount === null || Number.isNaN(stipendAmount) || stipendAmount < 0)) return badRequest('Valid stipendAmount is required for stipend internships');
+    if (minimumDays !== null && (Number.isNaN(minimumDays) || minimumDays <= 0)) return badRequest('minimumDays must be a positive number');
+    if (maximumDays !== null && (Number.isNaN(maximumDays) || maximumDays <= 0)) return badRequest('maximumDays must be a positive number');
+
+    const result = await env.DB.prepare(
+      `UPDATE internships
+       SET title = ?,
+           description = ?,
+           internship_category = ?,
+           vacancy = ?,
+           total_vacancy = ?,
+           remaining_vacancy = ?,
+           available_vacancy = ?,
+           fee = CASE WHEN ? = 'PAID' THEN ? ELSE NULL END,
+           stipend_amount = CASE WHEN ? = 'STIPEND' THEN ? ELSE NULL END,
+           stipend_duration = CASE WHEN ? = 'STIPEND' THEN ? ELSE NULL END,
+           minimum_days = ?,
+           maximum_days = ?,
+           gender_preference = ?,
+           updated_at = datetime('now')
+       WHERE id = ?
+         AND industry_id = ?
+         AND status = 'SENT_TO_INDUSTRY'`,
+    ).bind(
+      title,
+      description,
+      internshipCategory,
+      Math.floor(vacancy),
+      Math.floor(vacancy),
+      Math.floor(vacancy),
+      Math.floor(vacancy),
+      internshipCategory,
+      fee,
+      internshipCategory,
+      stipendAmount,
+      internshipCategory,
+      stipendDuration,
+      minimumDays === null ? null : Math.floor(minimumDays),
+      maximumDays === null ? null : Math.floor(maximumDays),
+      genderPreference,
+      updateIndustryInternshipMatch[1],
+      actor.id,
+    ).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry internship not found or not editable');
+    return ok('Industry internship updated');
   }
 
   if (request.method === 'POST' && pathname === '/api/industry/connect-request') {

@@ -43,6 +43,7 @@ type IpoProfile = { id: string; name: string; email: string; company_address?: s
 type IndustryInternship = {
   id: string;
   internship_title: string;
+  description?: string | null;
   college_id: string;
   college_name: string;
   department_id: string;
@@ -50,6 +51,12 @@ type IndustryInternship = {
   programme?: string | null;
   category?: InternshipCategory | null;
   vacancy?: number | null;
+  minimum_days?: number | null;
+  maximum_days?: number | null;
+  gender_preference?: 'BOTH' | 'BOYS' | 'GIRLS' | null;
+  fee?: number | null;
+  stipend_amount?: number | null;
+  stipend_duration?: StipendDuration | null;
   status: string;
   student_visibility: number;
 };
@@ -88,6 +95,7 @@ export default function IndustryDashboardPage() {
   const [connectSubmitted, setConnectSubmitted] = useState(false);
   const [ideaActionSubmitting, setIdeaActionSubmitting] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [internshipForms, setInternshipForms] = useState<Record<string, { title: string; description: string; vacancy: string; internshipCategory: InternshipCategory; fee: string; stipendAmount: string; stipendDuration: StipendDuration; minimumDays: string; maximumDays: string; genderPreference: 'BOTH' | 'BOYS' | 'GIRLS' }>>({});
   const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>([]);
   const [docPreview, setDocPreview] = useState<string | null>(null);
   const connectFormRef = useRef<HTMLFormElement | null>(null);
@@ -329,9 +337,20 @@ export default function IndustryDashboardPage() {
     setSuccessMessage(null);
     setIdeaActionSubmitting(internshipId);
     try {
+      const payload = internshipForms[internshipId];
       const response = await fetchWithSession('/api/industry/publish', {
         method: 'POST',
-        body: JSON.stringify({ id: internshipId }),
+        body: JSON.stringify({
+          id: internshipId,
+          vacancy: payload ? Number(payload.vacancy || 0) : undefined,
+          internshipCategory: payload?.internshipCategory,
+          fee: payload?.internshipCategory === 'PAID' ? Number(payload.fee || 0) : null,
+          stipendAmount: payload?.internshipCategory === 'STIPEND' ? Number(payload.stipendAmount || 0) : null,
+          stipendDuration: payload?.internshipCategory === 'STIPEND' ? payload.stipendDuration : null,
+          hourDuration: payload ? Number(payload.minimumDays || 0) : undefined,
+          maximumDays: payload ? Number(payload.maximumDays || 0) : undefined,
+          genderPreference: payload?.genderPreference,
+        }),
       });
       console.log('API RESPONSE:', response);
       setSuccessMessage('Published for students.');
@@ -341,8 +360,41 @@ export default function IndustryDashboardPage() {
     }
   }
 
+  async function saveDepartmentSuggestedInternship(internshipId: string) {
+    const payload = internshipForms[internshipId];
+    if (!payload) return;
+    setError(null);
+    setSuccessMessage(null);
+    setIdeaActionSubmitting(internshipId);
+    try {
+      await fetchWithSession(`/api/industry/internships/${internshipId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          title: payload.title,
+          description: payload.description,
+          vacancy: Number(payload.vacancy || 0),
+          internshipCategory: payload.internshipCategory,
+          fee: payload.internshipCategory === 'PAID' ? Number(payload.fee || 0) : null,
+          stipendAmount: payload.internshipCategory === 'STIPEND' ? Number(payload.stipendAmount || 0) : null,
+          stipendDuration: payload.internshipCategory === 'STIPEND' ? payload.stipendDuration : null,
+          minimumDays: Number(payload.minimumDays || 0),
+          maximumDays: Number(payload.maximumDays || 0),
+          genderPreference: payload.genderPreference,
+        }),
+      });
+      setSuccessMessage('Department suggested internship updated.');
+      await load();
+    } finally {
+      setIdeaActionSubmitting(null);
+    }
+  }
+
   const pendingApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'PENDING') ?? [], [dashboard]);
   const acceptedApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'ACCEPTED') ?? [], [dashboard]);
+  const departmentSuggestedInternships = useMemo(
+    () => industryInternships.filter((item) => item.status === 'SENT_TO_INDUSTRY'),
+    [industryInternships],
+  );
   const ideaPageSize = 5;
   const paginatedIdeas = useMemo(() => {
     const visibleIdeas = ideas.filter((idea) => idea.status === 'PENDING');
@@ -438,6 +490,64 @@ export default function IndustryDashboardPage() {
           <Card className="rounded-[30px] p-6">
             <h2 className="mt-2 text-2xl font-semibold text-slate-900">Department Suggested Ideas</h2>
             <div className="mt-5 space-y-3">
+              {departmentSuggestedInternships.length ? (
+                <div className="space-y-3">
+                  {departmentSuggestedInternships.map((item) => {
+                    const form = internshipForms[item.id] ?? {
+                      title: item.internship_title ?? '',
+                      description: item.description ?? '',
+                      vacancy: String(item.vacancy ?? 1),
+                      internshipCategory: item.category ?? 'FREE',
+                      fee: item.fee ? String(item.fee) : '',
+                      stipendAmount: item.stipend_amount ? String(item.stipend_amount) : '',
+                      stipendDuration: item.stipend_duration ?? 'MONTH',
+                      minimumDays: String(item.minimum_days ?? 60),
+                      maximumDays: String(item.maximum_days ?? 90),
+                      genderPreference: item.gender_preference ?? 'BOTH',
+                    };
+                    return (
+                      <div key={item.id} className="rounded-[24px] border border-indigo-200 bg-indigo-50/40 p-4">
+                        <p className="text-sm font-semibold text-indigo-700">Sent from department for industry publish</p>
+                        <p className="mt-1 text-sm text-slate-700">{item.college_name} • {item.department_name} • {item.programme || '-'}</p>
+                        <div className="mt-3 grid gap-2 md:grid-cols-3">
+                          <Input placeholder="Internship title" value={form.title} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, title: e.target.value } }))} />
+                          <Input type="number" min={1} placeholder="Vacancies" value={form.vacancy} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, vacancy: e.target.value } }))} />
+                          <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={form.internshipCategory} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, internshipCategory: e.target.value as InternshipCategory } }))}>
+                            <option value="FREE">Free</option>
+                            <option value="PAID">Paid</option>
+                            <option value="STIPEND">With Stipend</option>
+                          </select>
+                          <Input placeholder="Description" value={form.description} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, description: e.target.value } }))} />
+                          <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={form.genderPreference} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, genderPreference: e.target.value as 'BOTH' | 'BOYS' | 'GIRLS' } }))}>
+                            <option value="BOTH">Girls and Boys</option>
+                            <option value="GIRLS">Girls only</option>
+                            <option value="BOYS">Boys only</option>
+                          </select>
+                          <Input placeholder="Minimum hours/days" value={form.minimumDays} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, minimumDays: e.target.value } }))} />
+                          <Input placeholder="Maximum days" value={form.maximumDays} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, maximumDays: e.target.value } }))} />
+                          {form.internshipCategory === 'PAID' ? <Input placeholder="Fee" value={form.fee} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, fee: e.target.value } }))} /> : null}
+                          {form.internshipCategory === 'STIPEND' ? <Input placeholder="Stipend amount" value={form.stipendAmount} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, stipendAmount: e.target.value } }))} /> : null}
+                          {form.internshipCategory === 'STIPEND' ? (
+                            <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={form.stipendDuration} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, stipendDuration: e.target.value as StipendDuration } }))}>
+                              <option value="DAY">Per day</option>
+                              <option value="WEEK">Per week</option>
+                              <option value="MONTH">Per month</option>
+                            </select>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void saveDepartmentSuggestedInternship(item.id)}>
+                            {ideaActionSubmitting === item.id ? 'Saving...' : 'Save'}
+                          </Button>
+                          <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void publishInternship(item.id)}>
+                            {ideaActionSubmitting === item.id ? 'Publishing...' : 'Publish'}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
               {paginatedIdeas.rows.length ? paginatedIdeas.rows.map((idea) => {
                 const form = forms[idea.id] ?? { vacancy: String(idea.suggested_vacancy ?? 1), internshipCategory: idea.suggested_internship_category ?? 'FREE' as InternshipCategory, fee: idea.suggested_fee ? String(idea.suggested_fee) : '', stipendAmount: idea.suggested_stipend_amount ? String(idea.suggested_stipend_amount) : '', stipendDuration: idea.suggested_stipend_duration ?? 'MONTH' as StipendDuration, minimumDays: String(idea.suggested_minimum_days ?? 7), maximumDays: String(idea.suggested_maximum_days ?? 30), genderPreference: idea.gender_preference ?? 'BOTH' };
                 const isEditing = editingIdeaId === idea.id;
