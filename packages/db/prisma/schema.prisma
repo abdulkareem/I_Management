@@ -113,6 +113,7 @@ model Internship {
   id             String               @id @default(cuid())
   title          String
   description    String
+  type           String?              @default("external")
   category       String?
   duration       String?
   skillsRequired String?              @map("skills_required")
@@ -126,6 +127,12 @@ model Internship {
   visibilityType InternshipVisibilityType @default(ALL_TARGETS) @map("visibility_type")
   isExternal     Boolean              @default(false) @map("is_external")
   status         String               @default("DRAFT")
+  durationHours  Int?                 @map("duration_hours")
+  internshipType String?              @map("internship_type")
+  feeAmount      Float?               @map("fee_amount")
+  stipendAmount  Float?               @map("stipend_amount")
+  stipendFrequency String?            @map("stipend_frequency")
+  gender         String?
   collegeId      String?              @map("college_id")
   departmentId   String?              @map("department_id")
   industryId     String?              @map("industry_id")
@@ -143,8 +150,22 @@ model Internship {
   evaluations    Evaluation[]
   mappings       CoPoMapping[]
   results        Result[]
+  outcomeMappings InternshipOutcomeMapping[]
 
   @@map("internships")
+}
+
+model InternshipOutcomeMapping {
+  id           String      @id @default(cuid())
+  internshipId String      @map("internship_id")
+  poId         String?     @map("po_id")
+  psoId        String?     @map("pso_id")
+  coId         String?     @map("co_id")
+  ipoId        String?     @map("ipo_id")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  internship   Internship  @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+
+  @@map("internship_outcome_mappings")
 }
 
 model InternshipTarget {
