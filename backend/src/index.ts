@@ -18,6 +18,7 @@ type Role =
   | 'external_student';
 
 type JsonMap = Record<string, unknown>;
+type DocumentType = 'approval' | 'reply' | 'allotment' | 'feedback';
 
 type AuthSession = {
   token: string;
@@ -136,6 +137,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   if (
     pathname.startsWith('/api/department')
     || pathname.startsWith('/api/industry')
+    || pathname.startsWith('/api/documents')
     || pathname.startsWith('/api/dashboard/industry')
     || pathname === '/industry/dashboard'
     || pathname.startsWith('/api/ipo')
@@ -158,8 +160,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     || pathname === '/api/ipo/application/accept'
     || pathname === '/api/ipo/complete'
     || pathname === '/api/department/evaluate'
+    || pathname.startsWith('/api/documents')
   ) {
     await ensureInternshipWorkflowSchema(env);
+    await ensureDocumentSchema(env);
   }
   if (pathname === '/api/student/register') {
     await ensureStudentRegistrationSchema(env);
@@ -919,6 +923,81 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         { label: 'Applied to internship', done: applicationRows.length > 0 },
       ],
     });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/documents/generate/approval') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipId = required(body, ['internshipId', 'internship_id']);
+    if (!internshipId) return badRequest('internshipId is required');
+    const generated = await generateDocument(env, { type: 'approval', internshipId, actor });
+    return ok('Approval letter generated', generated);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/documents/generate/reply') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipId = required(body, ['internshipId', 'internship_id']);
+    const supervisorName = required(body, ['supervisorName', 'supervisor_name']);
+    const supervisorDesignation = required(body, ['supervisorDesignation', 'supervisor_designation']);
+    if (!internshipId || !supervisorName || !supervisorDesignation) return badRequest('internshipId, supervisorName, supervisorDesignation are required');
+    const generated = await generateDocument(env, { type: 'reply', internshipId, actor, supervisorName, supervisorDesignation });
+    return ok('Industry reply letter generated', generated);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/documents/generate/allotment') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipId = required(body, ['internshipId', 'internship_id']);
+    const studentId = required(body, ['studentId', 'student_id']);
+    if (!internshipId || !studentId) return badRequest('internshipId and studentId are required');
+    const generated = await generateDocument(env, { type: 'allotment', internshipId, studentId, actor });
+    return ok('Allotment letter generated', generated);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/documents/generate/feedback') {
+    const actor = requireRole(request, ['INDUSTRY', 'DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const internshipId = required(body, ['internshipId', 'internship_id']);
+    const studentId = required(body, ['studentId', 'student_id']);
+    if (!internshipId || !studentId) return badRequest('internshipId and studentId are required');
+    const generated = await generateDocument(env, { type: 'feedback', internshipId, studentId, actor });
+    return ok('Performance feedback form generated', generated);
+  }
+
+  const downloadDocumentMatch = pathname.match(/^\/api\/documents\/([^/]+)\/download$/);
+  if (request.method === 'GET' && downloadDocumentMatch) {
+    const actor = requireRole(request, ['INDUSTRY', 'STUDENT', 'EXTERNAL_STUDENT', 'DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    return downloadDocument(env, downloadDocumentMatch[1], actor);
+  }
+
+  const previewDocumentMatch = pathname.match(/^\/api\/documents\/([^/]+)\/preview$/);
+  if (request.method === 'GET' && previewDocumentMatch) {
+    const actor = requireRole(request, ['INDUSTRY', 'STUDENT', 'EXTERNAL_STUDENT', 'DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const payload = await fetchDocumentPayload(env, previewDocumentMatch[1], actor);
+    if (!payload) return errorResponse(404, 'Document not found');
+    return ok('Document preview loaded', payload);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/documents/student-bundle') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const studentId = toText(url.searchParams.get('studentId'));
+    if (!studentId) return badRequest('studentId is required');
+    return downloadStudentBundle(env, studentId, actor);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/documents/my') {
+    const actor = requireRole(request, ['INDUSTRY', 'STUDENT', 'EXTERNAL_STUDENT', 'DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const docs = await listDocumentsForActor(env, actor);
+    return ok('Documents loaded', docs);
   }
 
 
@@ -2345,6 +2424,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(programId ?? null, mappedCo, mappedPo, mappedPso, INTERNSHIP_STATUS.ACCEPTED, submitDepartmentAdvertisementMatch[1], actor.id, actor.id).run();
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry internship not found for this department');
+    await generateDocument(env, { type: 'approval', internshipId: submitDepartmentAdvertisementMatch[1], actor });
     return ok('Internship advertisement published for students');
   }
 
@@ -2475,6 +2555,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const statusClause = ['pending', 'accepted', 'rejected'].includes(statusFilter) ? ' AND ia.status = ? ' : '';
     const stmt = env.DB.prepare(
       `SELECT ia.id, ia.status, ia.created_at, ia.is_external, ia.completed_at, ia.industry_feedback, ia.industry_score,
+              ia.student_id, ia.external_student_id,
               i.id AS internship_id, i.title AS internship_title, i.is_paid, i.fee,
               d.name AS department_name, d.college_id AS department_college_id,
               COALESCE(es.name, s.name) AS student_name,
@@ -2508,6 +2589,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       `SELECT ia.id,
               ia.student_id,
               ia.external_student_id,
+              ia.internship_id,
               COALESCE(es.email, s.email) AS student_email,
               COALESCE(es.name, s.name) AS student_name,
               i.title AS internship_title,
@@ -2574,6 +2656,11 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       joiningInstructions: 'Please report to the department office with valid ID proof within 3 working days.',
       template: 'external-acceptance',
     });
+
+    if (app.student_id) {
+      await generateDocument(env, { type: 'allotment', internshipId: app.internship_id, studentId: app.student_id, actor });
+      await generateDocument(env, { type: 'feedback', internshipId: app.internship_id, studentId: app.student_id, actor });
+    }
 
     return ok('Application accepted and notification sent');
   }
@@ -3277,6 +3364,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const already = await env.DB.prepare('SELECT id FROM internships WHERE industry_request_id = ?').bind(requestId).first<{ id: string }>();
     if (already) return conflict('This idea is already published');
 
+    const createdInternshipId = crypto.randomUUID();
     await env.DB.prepare(
       `INSERT INTO internships (
         id,
@@ -3306,7 +3394,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 'ACCEPTED', 1, 1, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
-        crypto.randomUUID(),
+        createdInternshipId,
         requestRow.internship_title,
         requestRow.description,
         requestRow.department_id,
@@ -3326,6 +3414,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         genderPreference.toUpperCase(),
       )
       .run();
+
+    await generateDocument(env, {
+      type: 'reply',
+      internshipId: createdInternshipId,
+      actor,
+      supervisorName: 'To be assigned by industry',
+      supervisorDesignation: 'Industry Supervisor',
+    });
 
     return created('Idea published as internship');
   }
@@ -4506,6 +4602,369 @@ async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_applications_internship ON applications(internship_id, status)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_feedback_internship ON internship_feedback(internship_id)').run(),
   ]);
+}
+
+async function ensureDocumentSchema(env: EnvBindings): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY,
+      internship_id TEXT NOT NULL,
+      student_id TEXT,
+      type TEXT NOT NULL CHECK (type IN ('approval', 'reply', 'allotment', 'feedback')),
+      generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      file_url TEXT NOT NULL,
+      generated_by TEXT NOT NULL DEFAULT 'system',
+      content_hash TEXT NOT NULL,
+      metadata_json TEXT,
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL,
+      UNIQUE (internship_id, student_id, type)
+    )`,
+  ).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_documents_student_type ON documents(student_id, type)').run();
+}
+
+async function generateDocument(
+  env: EnvBindings,
+  params: { type: DocumentType; internshipId: string; studentId?: string; actor: { id: string; role: AuthSession['user']['role'] }; supervisorName?: string; supervisorDesignation?: string },
+): Promise<{ id: string; internshipId: string; studentId: string | null; type: DocumentType; generatedAt: string; fileUrl: string; generatedBy: string; regenerated: boolean }> {
+  const data = await buildDocumentData(env, params);
+  const contentHash = await sha256Hex(`${params.type}::${JSON.stringify(data)}`);
+  const existing = await env.DB.prepare(
+    `SELECT id, content_hash, generated_at, file_url, generated_by
+     FROM documents WHERE internship_id = ? AND ifnull(student_id, '') = ifnull(?, '') AND type = ?`,
+  ).bind(params.internshipId, params.studentId ?? null, params.type).first<any>();
+
+  if (existing?.id && existing.content_hash === contentHash) {
+    return {
+      id: String(existing.id),
+      internshipId: params.internshipId,
+      studentId: params.studentId ?? null,
+      type: params.type,
+      generatedAt: String(existing.generated_at),
+      fileUrl: String(existing.file_url),
+      generatedBy: String(existing.generated_by ?? 'system'),
+      regenerated: false,
+    };
+  }
+
+  const id = existing?.id ? String(existing.id) : crypto.randomUUID();
+  const generatedAt = new Date().toISOString();
+  const fileUrl = `/api/documents/${id}/download`;
+  const metadataJson = JSON.stringify({
+    supervisorName: params.supervisorName ?? null,
+    supervisorDesignation: params.supervisorDesignation ?? null,
+  });
+  if (existing?.id) {
+    await env.DB.prepare(
+      `UPDATE documents
+       SET generated_at = ?, file_url = ?, generated_by = 'system', content_hash = ?, metadata_json = ?
+       WHERE id = ?`,
+    ).bind(generatedAt, fileUrl, contentHash, metadataJson, id).run();
+  } else {
+    await env.DB.prepare(
+      `INSERT INTO documents (id, internship_id, student_id, type, generated_at, file_url, generated_by, content_hash, metadata_json)
+       VALUES (?, ?, ?, ?, ?, ?, 'system', ?, ?)`,
+    ).bind(id, params.internshipId, params.studentId ?? null, params.type, generatedAt, fileUrl, contentHash, metadataJson).run();
+  }
+  return { id, internshipId: params.internshipId, studentId: params.studentId ?? null, type: params.type, generatedAt, fileUrl, generatedBy: 'system', regenerated: true };
+}
+
+async function buildDocumentData(
+  env: EnvBindings,
+  params: { type: DocumentType; internshipId: string; studentId?: string; actor: { id: string; role: AuthSession['user']['role'] }; supervisorName?: string; supervisorDesignation?: string },
+) {
+  const internship = await env.DB.prepare(
+    `SELECT i.id, i.title, i.duration, i.internship_category, i.created_at, i.updated_at, i.department_id, i.industry_id,
+            d.name AS department_name, c.name AS college_name, ind.name AS industry_name
+     FROM internships i
+     LEFT JOIN departments d ON d.id = i.department_id
+     LEFT JOIN colleges c ON c.id = d.college_id
+     LEFT JOIN industries ind ON ind.id = i.industry_id
+     WHERE i.id = ?`,
+  ).bind(params.internshipId).first<any>();
+  if (!internship) throw new Error('Internship not found');
+  if (!internship.department_name || !internship.college_name || !internship.industry_name || !internship.title || !internship.duration) {
+    throw new Error('Missing required internship master data for document generation');
+  }
+
+  let student: any = null;
+  if (params.studentId) {
+    student = await env.DB.prepare(
+      `SELECT s.id, s.name, s.university_reg_number, s.email
+       FROM students s
+       WHERE s.id = ?`,
+    ).bind(params.studentId).first<any>();
+    if (!student?.id || !student?.name || !student?.university_reg_number) throw new Error('Student details are incomplete for document generation');
+  }
+
+  const app = params.studentId
+    ? await env.DB.prepare(
+      `SELECT ia.created_at, ia.updated_at, ia.completed_at
+       FROM internship_applications ia
+       WHERE ia.internship_id = ? AND ia.student_id = ?
+       ORDER BY ia.created_at DESC LIMIT 1`,
+    ).bind(params.internshipId, params.studentId).first<any>()
+    : null;
+
+  const now = new Date().toISOString();
+  return {
+    internship,
+    student,
+    app,
+    systemLog: {
+      internshipId: params.internshipId,
+      studentId: params.studentId ?? 'N/A',
+      generatedOn: now,
+      generatedBy: 'System',
+      approvalTimestamp: internship.updated_at ?? internship.created_at ?? now,
+      industryConfirmationTimestamp: app?.updated_at ?? internship.updated_at ?? now,
+      publicationTimestamp: app?.created_at ?? internship.created_at ?? now,
+    },
+    supervisorName: params.supervisorName ?? null,
+    supervisorDesignation: params.supervisorDesignation ?? null,
+  };
+}
+
+async function fetchDocumentPayload(env: EnvBindings, documentId: string, actor: { id: string; role: AuthSession['user']['role'] }) {
+  const row = await env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(documentId).first<any>();
+  if (!row) return null;
+  const access = await canAccessDocument(env, actor, row);
+  if (!access) return null;
+  const metadata = row.metadata_json ? JSON.parse(String(row.metadata_json)) : {};
+  const data = await buildDocumentData(env, {
+    type: row.type,
+    internshipId: row.internship_id,
+    studentId: row.student_id ?? undefined,
+    actor,
+    supervisorName: metadata.supervisorName ?? undefined,
+    supervisorDesignation: metadata.supervisorDesignation ?? undefined,
+  });
+  const html = renderDocumentHtml(row.type, data);
+  return {
+    id: row.id,
+    type: row.type,
+    internshipId: row.internship_id,
+    studentId: row.student_id,
+    generatedAt: row.generated_at,
+    generatedBy: row.generated_by,
+    fileUrl: row.file_url,
+    html,
+  };
+}
+
+async function downloadDocument(env: EnvBindings, documentId: string, actor: { id: string; role: AuthSession['user']['role'] }): Promise<Response> {
+  const payload = await fetchDocumentPayload(env, documentId, actor);
+  if (!payload) return forbidden('Document unavailable for this user');
+  return new Response(payload.html, {
+    status: 200,
+    headers: {
+      ...CORS_HEADERS,
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${payload.type}-${payload.internshipId}-${payload.studentId ?? 'na'}.html"`,
+    },
+  });
+}
+
+async function downloadStudentBundle(env: EnvBindings, studentId: string, actor: { id: string; role: AuthSession['user']['role'] }): Promise<Response> {
+  const rows = await env.DB.prepare('SELECT id, type FROM documents WHERE student_id = ? ORDER BY generated_at DESC').bind(studentId).all<any>();
+  const docs = rows.results ?? [];
+  if (!docs.length) return errorResponse(404, 'No documents found for student');
+  const files: Array<{ name: string; content: Uint8Array }> = [];
+  for (const doc of docs) {
+    const payload = await fetchDocumentPayload(env, String(doc.id), actor);
+    if (!payload) continue;
+    files.push({
+      name: `${payload.type}-${payload.internshipId}-${payload.studentId ?? 'na'}.html`,
+      content: new TextEncoder().encode(payload.html),
+    });
+  }
+  const zipBytes = createZip(files);
+  return new Response(zipBytes.buffer as ArrayBuffer, {
+    status: 200,
+    headers: {
+      ...CORS_HEADERS,
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="student-${studentId}-documents.zip"`,
+    },
+  });
+}
+
+async function canAccessDocument(env: EnvBindings, actor: { id: string; role: AuthSession['user']['role'] }, row: any): Promise<boolean> {
+  if (actor.role === 'DEPARTMENT_COORDINATOR' || actor.role === 'COORDINATOR') {
+    const match = await env.DB.prepare('SELECT id FROM internships WHERE id = ? AND department_id = ?').bind(row.internship_id, actor.id).first();
+    return Boolean(match);
+  }
+  if (actor.role === 'INDUSTRY') {
+    const match = await env.DB.prepare('SELECT id FROM internships WHERE id = ? AND industry_id = ?').bind(row.internship_id, actor.id).first();
+    return Boolean(match) && ['approval', 'reply', 'feedback'].includes(String(row.type));
+  }
+  if (actor.role === 'STUDENT') {
+    return row.student_id === actor.id && ['allotment', 'feedback'].includes(String(row.type));
+  }
+  return false;
+}
+
+async function listDocumentsForActor(env: EnvBindings, actor: { id: string; role: AuthSession['user']['role'] }) {
+  if (actor.role === 'STUDENT') {
+    const rows = await env.DB.prepare(
+      `SELECT id, internship_id, student_id, type, generated_at, file_url, generated_by
+       FROM documents WHERE student_id = ? AND type IN ('allotment', 'feedback')
+       ORDER BY generated_at DESC`,
+    ).bind(actor.id).all<any>();
+    return rows.results ?? [];
+  }
+  if (actor.role === 'INDUSTRY') {
+    const rows = await env.DB.prepare(
+      `SELECT d.id, d.internship_id, d.student_id, d.type, d.generated_at, d.file_url, d.generated_by
+       FROM documents d INNER JOIN internships i ON i.id = d.internship_id
+       WHERE i.industry_id = ? AND d.type IN ('approval', 'reply')
+       ORDER BY d.generated_at DESC`,
+    ).bind(actor.id).all<any>();
+    return rows.results ?? [];
+  }
+  if (actor.role === 'DEPARTMENT_COORDINATOR' || actor.role === 'COORDINATOR') {
+    const rows = await env.DB.prepare(
+      `SELECT d.id, d.internship_id, d.student_id, d.type, d.generated_at, d.file_url, d.generated_by
+       FROM documents d INNER JOIN internships i ON i.id = d.internship_id
+       WHERE i.department_id = ?
+       ORDER BY d.generated_at DESC`,
+    ).bind(actor.id).all<any>();
+    return rows.results ?? [];
+  }
+  return [];
+}
+
+function renderDocumentHtml(type: DocumentType, data: any): string {
+  const commonDeclaration = `
+    <h3>System Generated Declaration</h3>
+    <p>This document is automatically generated by the Internship Management System.</p>
+    <ul>
+      <li>No manual signature is required</li>
+      <li>All details are auto-filled from verified system records</li>
+      <li>This document is valid for academic and audit purposes</li>
+    </ul>
+    <h3>System Log Reference</h3>
+    <ul>
+      <li>Internship ID: ${escapeHtml(data.systemLog.internshipId)}</li>
+      <li>Student ID: ${escapeHtml(data.systemLog.studentId)}</li>
+      <li>Generated On: ${escapeHtml(data.systemLog.generatedOn)}</li>
+      <li>Generated By: System</li>
+      <li>Approval Timestamp: ${escapeHtml(data.systemLog.approvalTimestamp)}</li>
+      <li>Industry Confirmation Timestamp: ${escapeHtml(data.systemLog.industryConfirmationTimestamp)}</li>
+      <li>Publication Timestamp: ${escapeHtml(data.systemLog.publicationTimestamp)}</li>
+    </ul>`;
+
+  const base = `
+    <html><head><meta charset="utf-8" /><title>${type}</title></head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.5; padding: 24px;">
+      <h2 style="margin:0;">${escapeHtml(data.internship.college_name)}</h2>
+      <p style="margin-top:4px;">System Generated • Audit Compliant</p>
+      {{BODY}}
+      <p><strong>This is a system-generated document. No signature is required.</strong></p>
+      ${commonDeclaration}
+    </body></html>`;
+
+  const period = `${escapeHtml(data.internship.duration)}`;
+  if (type === 'approval') {
+    return base.replace('{{BODY}}', `<h1>Internship Approval Letter</h1>
+      <p>To: ${escapeHtml(data.internship.industry_name)}</p>
+      <p>Department: ${escapeHtml(data.internship.department_name)}</p>
+      <p>College: ${escapeHtml(data.internship.college_name)}</p>
+      <p>Internship Title: ${escapeHtml(data.internship.title)}</p>
+      <p>Duration: ${period}</p>
+      <p>Type: ${escapeHtml(data.internship.internship_category ?? 'FREE')}</p>`);
+  }
+  if (type === 'reply') {
+    return base.replace('{{BODY}}', `<h1>Industry Reply Letter</h1>
+      <p>Internship Title: ${escapeHtml(data.internship.title)}</p>
+      <p>Department Name: ${escapeHtml(data.internship.department_name)}</p>
+      <p>College Name: ${escapeHtml(data.internship.college_name)}</p>
+      <p>Assigned Supervisor: ${escapeHtml(data.supervisorName ?? 'Not specified')}</p>
+      <p>Designation: ${escapeHtml(data.supervisorDesignation ?? 'Not specified')}</p>
+      <p>Confirmation: We confirm support for monitoring and evaluation.</p>
+      <p><strong>Supervisor assigned for monitoring and evaluation.</strong></p>`);
+  }
+  if (type === 'allotment') {
+    return base.replace('{{BODY}}', `<h1>Student Internship Allotment Letter</h1>
+      <p>Student Name: ${escapeHtml(data.student?.name ?? '-')}</p>
+      <p>Register Number: ${escapeHtml(data.student?.university_reg_number ?? '-')}</p>
+      <p>Organization: ${escapeHtml(data.internship.industry_name)}</p>
+      <p>Duration: ${period}</p>
+      <p>Period: ${period}</p>
+      <p><strong>Instructions:</strong></p>
+      <ul><li>No direct communication with industry</li><li>Follow department instructions</li></ul>`);
+  }
+  return base.replace('{{BODY}}', `<h1>Performance Feedback Form (Industry)</h1>
+    <p>Student Name: ${escapeHtml(data.student?.name ?? '-')}</p>
+    <p>Register Number: ${escapeHtml(data.student?.university_reg_number ?? '-')}</p>
+    <p>Internship Title: ${escapeHtml(data.internship.title)}</p>
+    <p>Department: ${escapeHtml(data.internship.department_name)}</p>
+    <p>Organization: ${escapeHtml(data.internship.industry_name)}</p>
+    <p>Status: Digitally filled by industry and stored in DB.</p>`);
+}
+
+function escapeHtml(value: string): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function createZip(files: Array<{ name: string; content: Uint8Array }>): Uint8Array {
+  const encoder = new TextEncoder();
+  const crcTable = new Uint32Array(256).map((_, i) => {
+    let c = i;
+    for (let j = 0; j < 8; j += 1) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    return c >>> 0;
+  });
+  const crc32 = (bytes: Uint8Array) => {
+    let c = 0 ^ (-1);
+    for (const byte of bytes) c = (c >>> 8) ^ crcTable[(c ^ byte) & 0xff];
+    return (c ^ (-1)) >>> 0;
+  };
+  const chunks: Uint8Array[] = [];
+  const central: Uint8Array[] = [];
+  let offset = 0;
+  for (const file of files) {
+    const nameBytes = encoder.encode(file.name);
+    const crc = crc32(file.content);
+    const local = new Uint8Array(30 + nameBytes.length + file.content.length);
+    const v = new DataView(local.buffer);
+    v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(8, 0, true); v.setUint16(10, 0, true);
+    v.setUint32(14, crc, true); v.setUint32(18, file.content.length, true); v.setUint32(22, file.content.length, true);
+    v.setUint16(26, nameBytes.length, true); v.setUint16(28, 0, true);
+    local.set(nameBytes, 30); local.set(file.content, 30 + nameBytes.length);
+    chunks.push(local);
+    const c = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(c.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(10, 0, true);
+    cv.setUint32(16, crc, true); cv.setUint32(20, file.content.length, true); cv.setUint32(24, file.content.length, true);
+    cv.setUint16(28, nameBytes.length, true); cv.setUint32(42, offset, true);
+    c.set(nameBytes, 46);
+    central.push(c);
+    offset += local.length;
+  }
+  const centralSize = central.reduce((sum, c) => sum + c.length, 0);
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralSize, true); ev.setUint32(16, offset, true);
+  const total = offset + centralSize + end.length;
+  const out = new Uint8Array(total);
+  let cursor = 0;
+  for (const c of chunks) { out.set(c, cursor); cursor += c.length; }
+  for (const c of central) { out.set(c, cursor); cursor += c.length; }
+  out.set(end, cursor);
+  return out;
 }
 
 async function ensureStudentRegistrationSchema(env: EnvBindings): Promise<void> {
