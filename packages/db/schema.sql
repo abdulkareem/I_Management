@@ -141,14 +141,30 @@ CREATE INDEX IF NOT EXISTS idx_college_industry_links_status ON college_industry
 
 CREATE TABLE IF NOT EXISTS internships (
   id TEXT PRIMARY KEY,
-  department_id TEXT NOT NULL,
+  department_id TEXT,
+  college_id TEXT,
+  industry_id TEXT,
   title TEXT NOT NULL,
   description TEXT NOT NULL,
+  created_by TEXT NOT NULL DEFAULT 'INDUSTRY',
+  source_type TEXT NOT NULL DEFAULT 'INDUSTRY',
+  visibility_type TEXT NOT NULL DEFAULT 'ALL_TARGETS',
+  status TEXT NOT NULL DEFAULT 'DRAFT',
+  is_external INTEGER NOT NULL DEFAULT 0 CHECK (is_external IN (0, 1)),
+  vacancy INTEGER NOT NULL DEFAULT 0,
+  total_vacancy INTEGER NOT NULL DEFAULT 0,
+  filled_vacancy INTEGER NOT NULL DEFAULT 0,
+  remaining_vacancy INTEGER NOT NULL DEFAULT 0,
+  available_vacancy INTEGER NOT NULL DEFAULT 0,
   po_mapping TEXT,
   pso_mapping TEXT,
+  internship_po TEXT,
+  internship_co TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+  FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+  FOREIGN KEY (college_id) REFERENCES colleges(id) ON DELETE SET NULL,
+  FOREIGN KEY (industry_id) REFERENCES industries(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_internships_department_id ON internships(department_id);

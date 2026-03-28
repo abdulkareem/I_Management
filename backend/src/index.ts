@@ -148,6 +148,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     || pathname.startsWith('/api/dashboard/student')
     || pathname === '/student/dashboard'
     || pathname.startsWith('/api/student/applications')
+    || pathname.startsWith('/api/dashboard/college/control-center')
   ) {
     await ensureDepartmentDashboardSchema(env);
   }
@@ -776,6 +777,200 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         createdAtLabel: row.created_at,
       })),
       approvedIndustries: approvedIndustries.results ?? [],
+    });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/dashboard/college/control-center') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+
+    const collegeId = actor.id;
+    const [summary, departmentPerformance, internships, approvalQueue, applications, evaluationStatus, ipoSummary, alerts] = await Promise.all([
+      env.DB.prepare(
+        `SELECT
+          COUNT(DISTINCT i.id) AS total_internships,
+          SUM(CASE WHEN UPPER(COALESCE(i.status, '')) IN ('PUBLISHED','ACCEPTED') THEN 1 ELSE 0 END) AS active_internships,
+          COUNT(DISTINCT a.id) AS total_students_applied,
+          SUM(CASE WHEN UPPER(COALESCE(a.status, '')) IN ('ALLOTTED','SELECTED','COMPLETED','ACCEPTED') THEN 1 ELSE 0 END) AS students_placed,
+          SUM(CASE WHEN UPPER(COALESCE(a.status, '')) IN ('APPLIED','PENDING') THEN 1 ELSE 0 END) AS pending_allocations,
+          SUM(CASE WHEN COALESCE(a.is_external, 0) = 1 THEN 1 ELSE 0 END) AS external_applications_count
+         FROM internships i
+         LEFT JOIN applications a ON a.internship_id = i.id
+         WHERE i.college_id = ?`,
+      ).bind(collegeId).first<any>(),
+      env.DB.prepare(
+        `SELECT
+          d.id,
+          d.name AS department_name,
+          COUNT(DISTINCT s.id) AS total_students,
+          COUNT(DISTINCT a.id) AS applications_submitted,
+          SUM(CASE WHEN UPPER(COALESCE(a.status, '')) IN ('SELECTED','ALLOTTED','COMPLETED','ACCEPTED') THEN 1 ELSE 0 END) AS students_selected,
+          ROUND(
+            CASE WHEN COUNT(DISTINCT s.id) = 0 THEN 0
+              ELSE (SUM(CASE WHEN UPPER(COALESCE(a.status, '')) IN ('COMPLETED','ACCEPTED') THEN 1 ELSE 0 END) * 100.0) / COUNT(DISTINCT s.id)
+            END, 2
+          ) AS completion_rate,
+          CASE
+            WHEN SUM(CASE WHEN ie.id IS NULL AND UPPER(COALESCE(a.status, '')) IN ('COMPLETED','ACCEPTED') THEN 1 ELSE 0 END) > 0 THEN 'PENDING'
+            ELSE 'SUBMITTED'
+          END AS evaluation_status
+         FROM departments d
+         LEFT JOIN students s ON s.department_id = d.id
+         LEFT JOIN applications a ON a.student_id = s.id
+         LEFT JOIN internship_evaluations ie ON ie.application_id = a.id
+         WHERE d.college_id = ?
+         GROUP BY d.id, d.name
+         ORDER BY d.name ASC`,
+      ).bind(collegeId).all<any>(),
+      env.DB.prepare(
+        `SELECT
+          i.id,
+          i.title,
+          COALESCE(i.created_by, i.source_type, 'INDUSTRY') AS created_by,
+          COALESCE(d.name, 'All Departments') AS target_department,
+          printf('%d / %d', COALESCE(i.filled_vacancy, 0), COALESCE(i.total_vacancy, COALESCE(i.vacancy, 0))) AS vacancy,
+          COUNT(DISTINCT a.id) AS applications_count,
+          COALESCE(i.status, 'DRAFT') AS status,
+          CASE
+            WHEN COALESCE(i.total_vacancy, COALESCE(i.vacancy, 0)) <= COALESCE(i.filled_vacancy, 0) AND COALESCE(i.total_vacancy, COALESCE(i.vacancy, 0)) > 0 THEN 'Vacancy full'
+            WHEN COUNT(DISTINCT a.id) = 0 THEN 'No applicants'
+            ELSE 'Healthy'
+          END AS alert
+         FROM internships i
+         LEFT JOIN departments d ON d.id = i.department_id
+         LEFT JOIN applications a ON a.internship_id = i.id
+         WHERE i.college_id = ?
+         GROUP BY i.id, i.title, i.created_by, i.source_type, d.name, i.filled_vacancy, i.total_vacancy, i.vacancy, i.status
+         ORDER BY i.created_at DESC`,
+      ).bind(collegeId).all<any>(),
+      env.DB.prepare(
+        `SELECT
+          i.id,
+          i.title,
+          ind.name AS industry_name,
+          COALESCE(d.name, 'Unassigned') AS assigned_department,
+          i.status,
+          i.created_at
+         FROM internships i
+         LEFT JOIN industries ind ON ind.id = i.industry_id
+         LEFT JOIN departments d ON d.id = i.department_id
+         WHERE i.college_id = ?
+           AND UPPER(COALESCE(i.created_by, i.source_type, 'INDUSTRY')) = 'INDUSTRY'
+           AND UPPER(COALESCE(i.status, 'DRAFT')) IN ('DRAFT', 'SENT_TO_DEPARTMENT', 'SENT_TO_DEPT')
+         ORDER BY i.created_at DESC`,
+      ).bind(collegeId).all<any>(),
+      env.DB.prepare(
+        `SELECT
+          a.id,
+          a.status,
+          a.created_at,
+          i.title AS internship_title,
+          CASE WHEN COALESCE(a.is_external, 0) = 1 THEN 'EXTERNAL' ELSE 'INTERNAL' END AS application_type,
+          COALESCE(s.name, 'Student') AS student_name,
+          COALESCE(s.email, '') AS student_email
+         FROM applications a
+         INNER JOIN internships i ON i.id = a.internship_id
+         LEFT JOIN students s ON s.id = a.student_id
+         WHERE i.college_id = ?
+         ORDER BY a.created_at DESC`,
+      ).bind(collegeId).all<any>(),
+      env.DB.prepare(
+        `SELECT
+          d.name AS department,
+          SUM(CASE WHEN ie.id IS NOT NULL THEN 1 ELSE 0 END) AS students_evaluated,
+          SUM(CASE WHEN ie.id IS NULL AND UPPER(COALESCE(a.status, '')) IN ('COMPLETED','ACCEPTED') THEN 1 ELSE 0 END) AS pending_evaluations,
+          CASE
+            WHEN SUM(CASE WHEN ie.id IS NULL AND UPPER(COALESCE(a.status, '')) IN ('COMPLETED','ACCEPTED') THEN 1 ELSE 0 END) > 0 THEN 'Pending'
+            ELSE 'Submitted'
+          END AS submission_status
+         FROM departments d
+         LEFT JOIN students s ON s.department_id = d.id
+         LEFT JOIN applications a ON a.student_id = s.id
+         LEFT JOIN internship_evaluations ie ON ie.application_id = a.id
+         WHERE d.college_id = ?
+         GROUP BY d.id, d.name
+         ORDER BY d.name ASC`,
+      ).bind(collegeId).all<any>(),
+      env.DB.prepare(
+        `SELECT
+          ind.id AS ipo_id,
+          ind.name AS ipo_name,
+          COUNT(DISTINCT i.id) AS internship_count,
+          SUM(CASE WHEN UPPER(COALESCE(i.status, '')) IN ('PUBLISHED','ACCEPTED') THEN 1 ELSE 0 END) AS active_engagements
+         FROM industries ind
+         INNER JOIN college_industry_links cil ON cil.industry_id = ind.id AND cil.college_id = ?
+         LEFT JOIN internships i ON i.industry_id = ind.id AND i.college_id = ?
+         GROUP BY ind.id, ind.name
+         ORDER BY ind.name ASC`,
+      ).bind(collegeId, collegeId).all<any>(),
+      env.DB.prepare(
+        `SELECT message, level, created_at FROM compliance_violations
+         WHERE college_id = ?
+         ORDER BY created_at DESC
+         LIMIT 10`,
+      ).bind(collegeId).all<any>(),
+    ]);
+
+    const appRows = applications.results ?? [];
+    const internalApplications = appRows.filter((row: any) => row.application_type === 'INTERNAL');
+    const externalApplications = appRows.filter((row: any) => row.application_type === 'EXTERNAL');
+    const byStatus = (rows: any[], status: string) => rows.filter((row) => String(row.status ?? '').toUpperCase() === status.toUpperCase()).length;
+
+    return ok('College control center loaded', {
+      summary: {
+        totalInternships: Number(summary?.total_internships ?? 0),
+        activeInternships: Number(summary?.active_internships ?? 0),
+        totalStudentsApplied: Number(summary?.total_students_applied ?? 0),
+        studentsPlaced: Number(summary?.students_placed ?? 0),
+        pendingAllocations: Number(summary?.pending_allocations ?? 0),
+        externalApplicationsCount: Number(summary?.external_applications_count ?? 0),
+      },
+      approvalQueue: approvalQueue.results ?? [],
+      departmentPerformance: departmentPerformance.results ?? [],
+      internships: internships.results ?? [],
+      applications: {
+        internal: internalApplications,
+        external: externalApplications,
+        internalByStatus: {
+          pending: byStatus(internalApplications, 'APPLIED'),
+          approved: byStatus(internalApplications, 'ACCEPTED'),
+          rejected: byStatus(internalApplications, 'REJECTED'),
+          allotted: byStatus(internalApplications, 'ALLOTTED'),
+        },
+        externalByStatus: {
+          pending: byStatus(externalApplications, 'APPLIED'),
+          approved: byStatus(externalApplications, 'ACCEPTED'),
+          rejected: byStatus(externalApplications, 'REJECTED'),
+          allotted: byStatus(externalApplications, 'ALLOTTED'),
+        },
+      },
+      evaluationStatus: evaluationStatus.results ?? [],
+      analytics: {
+        departmentParticipation: (departmentPerformance.results ?? []).map((row: any) => ({
+          label: row.department_name,
+          value: Number(row.applications_submitted ?? 0),
+        })),
+        internshipDistribution: (internships.results ?? []).map((row: any) => ({
+          label: row.title,
+          value: Number(row.applications_count ?? 0),
+        })),
+        externalInternalRatio: {
+          internal: internalApplications.length,
+          external: externalApplications.length,
+        },
+        completionRate: (departmentPerformance.results ?? []).map((row: any) => ({
+          label: row.department_name,
+          value: Number(row.completion_rate ?? 0),
+        })),
+      },
+      reportCenter: {
+        collegeReportReady: true,
+        departmentReportsReady: true,
+        studentReportsReady: true,
+        coPoSummaryReady: true,
+      },
+      notifications: alerts.results ?? [],
+      ipoSummary: ipoSummary.results ?? [],
     });
   }
 
@@ -1663,6 +1858,77 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Application accepted and competing applications rejected');
   }
 
+  if (request.method === 'PUT' && pathname === '/api/college/applications/bulk-status') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const ids = Array.isArray(body?.application_ids) ? body.application_ids.map((v) => toText(v)).filter(Boolean) : [];
+    const action = toText(body?.action).toLowerCase();
+    if (!ids.length) return badRequest('application_ids is required');
+    if (!['accept', 'reject'].includes(action)) return badRequest('action must be accept or reject');
+
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = await env.DB.prepare(
+      `SELECT ia.id
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ia.id IN (${placeholders}) AND i.college_id = ?`,
+    ).bind(...ids, actor.id).all<{ id: string }>();
+    const validIds = (rows.results ?? []).map((row) => row.id);
+    if (!validIds.length) return badRequest('No applications belong to this college');
+
+    const updatePlaceholders = validIds.map(() => '?').join(',');
+    const nextStatus = action === 'accept' ? 'accepted' : 'rejected';
+    await env.DB.prepare(
+      `UPDATE internship_applications
+       SET status = ?, updated_at = datetime('now')
+       WHERE id IN (${updatePlaceholders})`,
+    ).bind(nextStatus, ...validIds).run();
+
+    return ok('Bulk action completed', { affected: validIds.length, status: nextStatus });
+  }
+
+  const collegeInternshipActionMatch = pathname.match(/^\/api\/college\/internships\/([^/]+)\/(approve|reject|force-close|assign-department)$/);
+  if (collegeInternshipActionMatch && request.method === 'PUT') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const [, internshipId, action] = collegeInternshipActionMatch;
+    const body = await readBody(request);
+
+    const internship = await env.DB.prepare(
+      'SELECT id, college_id FROM internships WHERE id = ?',
+    ).bind(internshipId).first<{ id: string; college_id: string | null }>();
+    if (!internship || internship.college_id !== actor.id) return errorResponse(404, 'Internship not found');
+
+    if (action === 'assign-department') {
+      const departmentId = toText(body?.department_id);
+      if (!departmentId) return badRequest('department_id is required');
+      const department = await env.DB.prepare(
+        'SELECT id FROM departments WHERE id = ? AND college_id = ?',
+      ).bind(departmentId, actor.id).first<{ id: string }>();
+      if (!department) return badRequest('Invalid department');
+      await env.DB.prepare(
+        `UPDATE internships
+         SET department_id = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+      ).bind(departmentId, internshipId).run();
+      return ok('Department assigned');
+    }
+
+    if (action === 'force-close') {
+      await env.DB.prepare(
+        `UPDATE internships
+         SET status = 'CLOSED', available_vacancy = 0, remaining_vacancy = 0, updated_at = datetime('now')
+         WHERE id = ?`,
+      ).bind(internshipId).run();
+      return ok('Internship force closed');
+    }
+
+    const nextStatus = action === 'approve' ? 'SENT_TO_DEPARTMENT' : 'REJECTED';
+    await env.DB.prepare('UPDATE internships SET status = ?, updated_at = datetime(\'now\') WHERE id = ?').bind(nextStatus, internshipId).run();
+    return ok(action === 'approve' ? 'Internship approved' : 'Internship rejected');
+  }
+
 
   const actionMatch = pathname.match(/^\/api\/admin\/(college|industry|student|department)\/([^/]+)\/(approve|reject|delete|edit)$/);
   if (actionMatch) {
@@ -2011,17 +2277,26 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!student) return unauthorized('Student not found');
     const rows = await env.DB.prepare(
       `SELECT i.id, i.title, i.description, i.duration, i.total_vacancy, i.filled_vacancy, i.remaining_vacancy, i.status,
+              COALESCE(i.created_by, i.source_type, 'INDUSTRY') AS created_by,
               CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END AS applied, a.status AS application_status
        FROM internships i
        LEFT JOIN applications a ON a.internship_id = i.id AND a.student_id = ?
        WHERE i.status IN ('PUBLISHED', 'published')
          AND (
-              (COALESCE(i.is_external, 0) = 0 AND i.college_id = ? AND i.department_id = ?)
+              (UPPER(COALESCE(i.created_by, i.source_type, 'INDUSTRY')) = 'INDUSTRY')
               OR
-              (COALESCE(i.is_external, 0) = 1 AND i.department_id <> ?)
+              (UPPER(COALESCE(i.created_by, i.source_type, 'COLLEGE')) IN ('COLLEGE', 'DEPARTMENT')
+                AND COALESCE(i.is_external, 0) = 0
+                AND i.college_id = ?
+                AND (i.department_id IS NULL OR i.department_id = ?))
+              OR
+              (UPPER(COALESCE(i.created_by, i.source_type, 'COLLEGE')) IN ('COLLEGE', 'DEPARTMENT')
+                AND COALESCE(i.is_external, 0) = 1
+                AND i.college_id IS NOT NULL
+                AND i.college_id <> ?)
          )
        ORDER BY i.created_at DESC`,
-    ).bind(actor.id, student.college_id, student.department_id, student.department_id).all();
+    ).bind(actor.id, student.college_id, student.department_id, student.college_id).all();
     return ok('Student internships fetched', rows.results ?? []);
   }
 
@@ -2046,8 +2321,18 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const student = await env.DB.prepare('SELECT college_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string | null }>();
     if (!student) return unauthorized('Student not found');
     const hostCollegeId = internship.college_id ?? internship.department_college_id;
-    if (Number(internship.is_external) === 1 && hostCollegeId && student.college_id && hostCollegeId === student.college_id) {
-      return forbidden('This internship is open only to external college students');
+    if (hostCollegeId && student.college_id && hostCollegeId === student.college_id) {
+      await env.DB.prepare(
+        `INSERT INTO compliance_violations (id, rule_code, message, internship_id, student_id, college_id, level, created_at)
+         VALUES (?, 'SAME_INSTITUTION_BLOCK', ?, ?, ?, ?, 'ERROR', datetime('now'))`,
+      ).bind(
+        crypto.randomUUID(),
+        'Application blocked: students cannot apply to internships hosted by their own institution.',
+        internshipId,
+        actor.id,
+        student.college_id,
+      ).run();
+      return forbidden('Students cannot apply to internships hosted by the same institution.');
     }
 
     const existing = await env.DB.prepare('SELECT id FROM applications WHERE student_id = ? AND internship_id = ?').bind(actor.id, internshipId).first<{ id: string }>();
@@ -4493,6 +4778,22 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     )`,
   ).run();
 
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS compliance_violations (
+      id TEXT PRIMARY KEY,
+      rule_code TEXT NOT NULL,
+      message TEXT NOT NULL,
+      internship_id TEXT,
+      student_id TEXT,
+      college_id TEXT,
+      level TEXT NOT NULL DEFAULT 'ERROR' CHECK (level IN ('INFO', 'WARNING', 'ERROR')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE SET NULL,
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL,
+      FOREIGN KEY (college_id) REFERENCES colleges(id) ON DELETE SET NULL
+    )`,
+  ).run();
+
   await Promise.all([
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internships_external_status ON internships(is_external, status)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_applications_external_status ON internship_applications(is_external, status)').run(),
@@ -4510,6 +4811,7 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_evaluations_application ON internship_evaluations(application_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_outcome_results_student ON outcome_results(student_id, external_student_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status, created_at)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_compliance_violations_college ON compliance_violations(college_id, created_at)').run(),
   ]);
 }
 

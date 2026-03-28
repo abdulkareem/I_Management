@@ -1,179 +1,268 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { DataTable } from '@/components/data-table';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
+import { StatusBadge } from '@/components/status-badge';
 import { fetchWithSession } from '@/lib/auth';
 
-type Department = { id: string; name: string; coordinator_name: string; coordinator_email: string; coordinator_mobile?: string; is_active: number; is_first_login: number };
-type IndustryLink = { link_id: string; industry_id: string; name: string; email: string; business_activity: string; status: string };
-type Application = { id: string; student_name: string; student_email: string; internship_title: string; status: string; created_at: string };
+type Summary = {
+  totalInternships: number;
+  activeInternships: number;
+  totalStudentsApplied: number;
+  studentsPlaced: number;
+  pendingAllocations: number;
+  externalApplicationsCount: number;
+};
+
+type DepartmentPerformance = {
+  id: string;
+  department_name: string;
+  total_students: number;
+  applications_submitted: number;
+  students_selected: number;
+  completion_rate: number;
+  evaluation_status: string;
+};
+
+type InternshipItem = {
+  id: string;
+  title: string;
+  created_by: string;
+  target_department: string;
+  vacancy: string;
+  applications_count: number;
+  status: string;
+  alert: string;
+};
+
+type ApprovalQueueItem = { id: string; title: string; industry_name: string; assigned_department: string; status: string };
+type ApplicationItem = { id: string; student_name: string; student_email: string; internship_title: string; status: string; created_at: string; application_type: 'INTERNAL' | 'EXTERNAL' };
+type EvaluationItem = { department: string; students_evaluated: number; pending_evaluations: number; submission_status: string };
+type ChartPoint = { label: string; value: number };
+type IpoSummaryItem = { ipo_id: string; ipo_name: string; internship_count: number; active_engagements: number };
+
+type DashboardData = {
+  summary: Summary;
+  approvalQueue: ApprovalQueueItem[];
+  departmentPerformance: DepartmentPerformance[];
+  internships: InternshipItem[];
+  applications: { internal: ApplicationItem[]; external: ApplicationItem[] };
+  evaluationStatus: EvaluationItem[];
+  analytics: {
+    departmentParticipation: ChartPoint[];
+    internshipDistribution: ChartPoint[];
+    completionRate: ChartPoint[];
+    externalInternalRatio: { internal: number; external: number };
+  };
+  notifications: Array<{ message: string; level: string; created_at: string }>;
+  ipoSummary: IpoSummaryItem[];
+};
+
+function MiniBars({ title, data }: { title: string; data: ChartPoint[] }) {
+  const max = Math.max(1, ...data.map((item) => item.value));
+  return (
+    <Card className="rounded-[24px] p-4">
+      <h3 className="mb-3 font-semibold text-slate-900">{title}</h3>
+      <div className="space-y-2">
+        {data.length === 0 ? <p className="text-sm text-slate-500">No data – Create / Assign Internship</p> : null}
+        {data.slice(0, 6).map((item) => (
+          <div key={item.label}>
+            <div className="mb-1 flex justify-between text-xs text-slate-600"><span>{item.label}</span><span>{item.value}</span></div>
+            <div className="h-2 rounded bg-slate-100"><div className="h-2 rounded bg-sky-500" style={{ width: `${Math.max(4, (item.value / max) * 100)}%` }} /></div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 export default function CollegeDashboardPage() {
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [industries, setIndustries] = useState<IndustryLink[]>([]);
-  const [internalApps, setInternalApps] = useState<Application[]>([]);
-  const [externalApps, setExternalApps] = useState<Application[]>([]);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [showDepartmentForm, setShowDepartmentForm] = useState(false);
-  const [ipoDetails, setIpoDetails] = useState<any | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [departmentForm, setDepartmentForm] = useState({
-    name: '',
-    coordinator_name: '',
-    coordinator_email: '',
-    coordinator_mobile: '',
-  });
+  const [loading, setLoading] = useState(true);
+  const [selectedInternal, setSelectedInternal] = useState<string[]>([]);
+  const [selectedExternal, setSelectedExternal] = useState<string[]>([]);
 
-  async function loadAll() {
+  async function loadDashboard() {
+    setLoading(true);
     setError(null);
-    const [d, i, ia, ea] = await Promise.all([
-      fetchWithSession<Department[]>('/api/department/list'),
-      fetchWithSession<IndustryLink[]>('/api/college/industries'),
-      fetchWithSession<Application[]>('/api/applications/internal'),
-      fetchWithSession<Application[]>('/api/applications/external'),
-    ]);
-    setDepartments(d.data ?? []);
-    setIndustries(i.data ?? []);
-    setInternalApps(ia.data ?? []);
-    setExternalApps(ea.data ?? []);
+    try {
+      const response = await fetchWithSession<DashboardData>('/api/dashboard/college/control-center');
+      setData(response.data ?? null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to load college control center.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    loadAll().catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'));
+    loadDashboard();
   }, []);
 
-  async function addDepartment() {
-    setFormError(null);
-    if (!departmentForm.name || !departmentForm.coordinator_name || !departmentForm.coordinator_email) {
-      setFormError('Please fill department name, coordinator name, and coordinator email.');
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      await fetchWithSession('/api/department/create', { method: 'POST', body: JSON.stringify(departmentForm) });
-      setDepartmentForm({ name: '', coordinator_name: '', coordinator_email: '', coordinator_mobile: '' });
-      setShowDepartmentForm(false);
-      await loadAll();
-    } catch (reason) {
-      setFormError(reason instanceof Error ? reason.message : 'Unable to create department.');
-    } finally {
-      setIsSubmitting(false);
-    }
+  async function updateInternship(id: string, action: 'approve' | 'reject' | 'force-close') {
+    await fetchWithSession(`/api/college/internships/${id}/${action}`, { method: 'PUT' });
+    await loadDashboard();
   }
 
-  async function editDepartment(row: Department) {
-    const name = prompt('Department name', row.name) ?? row.name;
-    try {
-      setError(null);
-      await fetchWithSession('/api/department/update', { method: 'PUT', body: JSON.stringify({ id: row.id, name }) });
-      await loadAll();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to update department.');
-    }
+  async function bulkAction(ids: string[], action: 'accept' | 'reject') {
+    if (!ids.length) return;
+    await fetchWithSession('/api/college/applications/bulk-status', {
+      method: 'PUT',
+      body: JSON.stringify({ application_ids: ids, action }),
+    });
+    await loadDashboard();
   }
 
-  async function deleteDepartment(id: string) {
-    try {
-      setError(null);
-      await fetchWithSession(`/api/department/delete?id=${id}`, { method: 'DELETE' });
-      await loadAll();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to delete department.');
-    }
-  }
-
-  async function removeIndustry(linkId: string) {
-    try {
-      setError(null);
-      await fetchWithSession(`/api/college/industries?link_id=${linkId}`, { method: 'DELETE' });
-      await loadAll();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to remove Internship Provider Organization (IPO).');
-    }
-  }
-
-  async function decideApplication(id: string, action: 'accept' | 'reject') {
-    try {
-      setError(null);
-      await fetchWithSession(`/api/college/applications/${id}/${action}`, { method: 'POST' });
-      await loadAll();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : `Unable to ${action} application.`);
-    }
-  }
-
-  async function viewIpoProfile(industryId: string) {
-    try {
-      const response = await fetchWithSession(`/api/ipo/${industryId}`);
-      setIpoDetails(response.data ?? null);
-    } catch {
-      setIpoDetails(null);
-    }
-  }
+  const cards = useMemo(() => {
+    if (!data) return [];
+    return [
+      { label: 'Total Internships', value: data.summary.totalInternships },
+      { label: 'Active Internships', value: data.summary.activeInternships },
+      { label: 'Total Students Applied', value: data.summary.totalStudentsApplied },
+      { label: 'Students Placed', value: data.summary.studentsPlaced },
+      { label: 'Pending Allocations', value: data.summary.pendingAllocations },
+      { label: 'External Applications', value: data.summary.externalApplicationsCount },
+    ];
+  }, [data]);
 
   return (
-    <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN', 'COLLEGE_COORDINATOR']} title="College Dashboard" subtitle="Departments, Internship Provider Organizations (IPOs), applications, and allocations are fully connected to D1.">
+    <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN', 'COLLEGE_COORDINATOR']} title="College Internship Control System" subtitle="Approval, routing, applications, compliance, monitoring and reports.">
       {() => (
         <>
-          {error ? <Card className="rounded-[28px] p-4 text-rose-800">{error}</Card> : null}
+          {error ? <Card className="rounded-[24px] p-4 text-rose-700">{error}</Card> : null}
+          {loading ? <Card className="rounded-[24px] p-6 text-slate-600">Loading dashboard...</Card> : null}
 
-          <Card className="rounded-[28px] p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-slate-900">Department Module</h2>
-              <Button onClick={() => setShowDepartmentForm((value) => !value)}>{showDepartmentForm ? 'Close Form' : 'Create Department'}</Button>
-            </div>
-          </Card>
+          {data ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                {cards.map((card) => (
+                  <Card key={card.label} className="rounded-[24px] p-4">
+                    <p className="text-xs text-slate-500">{card.label}</p>
+                    <p className="text-2xl font-bold text-slate-900">{card.value}</p>
+                  </Card>
+                ))}
+              </div>
 
-          {showDepartmentForm ? (
-            <Card className="rounded-[28px] p-5">
-              <h3 className="mb-4 text-lg font-semibold text-slate-900">Create Department</h3>
+              <DataTable
+                title="Internship Approval Queue"
+                rows={data.approvalQueue.map((item) => ({ ...item, id: item.id }))}
+                columns={[{ key: 'title', label: 'Internship' }, { key: 'industry_name', label: 'Industry' }, { key: 'assigned_department', label: 'Assigned Dept' }, { key: 'status', label: 'Status' }]}
+                actions={(row) => (
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="secondary" onClick={() => updateInternship(row.id, 'approve')}>Approve</Button>
+                    <Button variant="secondary" onClick={() => updateInternship(row.id, 'reject')}>Reject</Button>
+                  </div>
+                )}
+              />
+
+              <DataTable
+                title="Department Internship Performance"
+                rows={data.departmentPerformance.map((row) => ({ ...row, id: row.id, completion: `${row.completion_rate}%` })) as any}
+                columns={[{ key: 'department_name', label: 'Department Name' }, { key: 'total_students', label: 'Total Students' }, { key: 'applications_submitted', label: 'Applications Submitted' }, { key: 'students_selected', label: 'Students Selected' }, { key: 'completion', label: 'Completion Rate' }, { key: 'evaluation_status', label: 'Evaluation Status' }] as any}
+              />
+
+              <DataTable
+                title="All Internships (College View)"
+                rows={data.internships.map((row) => ({ ...row, created_by: row.created_by === 'INDUSTRY' ? 'Industry' : 'Dept/College' })) as any}
+                columns={[{ key: 'title', label: 'Internship Title' }, { key: 'created_by', label: 'Created By' }, { key: 'target_department', label: 'Target Department' }, { key: 'vacancy', label: 'Vacancy (Filled/Total)' }, { key: 'applications_count', label: 'Applications' }, { key: 'status', label: 'Status' }, { key: 'alert', label: 'Alert' }] as any}
+                actions={(row: any) => (
+                  <div className="flex flex-wrap gap-2">
+                    <StatusBadge status={row.status} />
+                    <Button variant="secondary" onClick={() => updateInternship(row.id, 'force-close')}>Force Close</Button>
+                  </div>
+                )}
+              />
+
+              <Card className="rounded-[24px] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-slate-900">Internal Applications</h3>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => bulkAction(selectedInternal, 'accept')}>Approve Selected</Button>
+                    <Button variant="secondary" onClick={() => bulkAction(selectedInternal, 'reject')}>Reject Selected</Button>
+                  </div>
+                </div>
+                {data.applications.internal.length === 0 ? <p className="text-sm text-slate-500">No data – Create / Assign Internship</p> : null}
+                <div className="space-y-2">
+                  {data.applications.internal.map((item) => (
+                    <label key={item.id} className="flex items-center justify-between rounded border border-slate-200 p-2 text-sm">
+                      <div>
+                        <p className="font-medium">{item.student_name} • {item.internship_title}</p>
+                        <p className="text-slate-500">{item.student_email}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={item.status.toUpperCase()} />
+                        <input type="checkbox" checked={selectedInternal.includes(item.id)} onChange={(event) => setSelectedInternal((prev) => event.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id))} />
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </Card>
+
+              <Card className="rounded-[24px] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-slate-900">External Applications</h3>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => bulkAction(selectedExternal, 'accept')}>Approve Selected</Button>
+                    <Button variant="secondary" onClick={() => bulkAction(selectedExternal, 'reject')}>Reject Selected</Button>
+                  </div>
+                </div>
+                {data.applications.external.length === 0 ? <p className="text-sm text-slate-500">No data – Create / Assign Internship</p> : null}
+                <div className="space-y-2">
+                  {data.applications.external.map((item) => (
+                    <label key={item.id} className="flex items-center justify-between rounded border border-slate-200 p-2 text-sm">
+                      <div>
+                        <p className="font-medium">{item.student_name} • {item.internship_title}</p>
+                        <p className="text-slate-500">{item.student_email}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={item.status.toUpperCase()} />
+                        <input type="checkbox" checked={selectedExternal.includes(item.id)} onChange={(event) => setSelectedExternal((prev) => event.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id))} />
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </Card>
+
+              <DataTable
+                title="Evaluation Monitoring"
+                rows={data.evaluationStatus.map((row) => ({ ...row, id: row.department }))}
+                columns={[{ key: 'department', label: 'Department' }, { key: 'students_evaluated', label: 'Students Evaluated' }, { key: 'pending_evaluations', label: 'Pending Evaluations' }, { key: 'submission_status', label: 'Submission Status' }]}
+              />
+
               <div className="grid gap-3 md:grid-cols-2">
-                <Input placeholder="Department name" value={departmentForm.name} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, name: event.target.value }))} />
-                <Input placeholder="Department coordinator name" value={departmentForm.coordinator_name} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, coordinator_name: event.target.value }))} />
-                <Input placeholder="Department coordinator email" type="email" value={departmentForm.coordinator_email} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, coordinator_email: event.target.value }))} />
-                <Input placeholder="Mobile number" value={departmentForm.coordinator_mobile} onChange={(event) => setDepartmentForm((prev) => ({ ...prev, coordinator_mobile: event.target.value }))} />
+                <MiniBars title="Department-wise Participation" data={data.analytics.departmentParticipation} />
+                <MiniBars title="Internship Distribution" data={data.analytics.internshipDistribution} />
+                <MiniBars title="Completion Rate" data={data.analytics.completionRate} />
+                <Card className="rounded-[24px] p-4">
+                  <h3 className="mb-3 font-semibold text-slate-900">External vs Internal Ratio</h3>
+                  <p className="text-sm text-slate-600">Internal: {data.analytics.externalInternalRatio.internal}</p>
+                  <p className="text-sm text-slate-600">External: {data.analytics.externalInternalRatio.external}</p>
+                </Card>
               </div>
-              {formError ? <p className="mt-3 text-sm text-rose-300">{formError}</p> : null}
-              <div className="mt-4">
-                <Button disabled={isSubmitting} onClick={addDepartment}>{isSubmitting ? 'Submitting...' : 'Submit'}</Button>
-              </div>
-            </Card>
+
+              <DataTable
+                title="IPO Management"
+                rows={data.ipoSummary.map((row) => ({ ...row, id: row.ipo_id }))}
+                columns={[{ key: 'ipo_name', label: 'IPO Name' }, { key: 'internship_count', label: 'Internship Count' }, { key: 'active_engagements', label: 'Active Engagements' }]}
+              />
+
+              <Card className="rounded-[24px] p-4">
+                <h3 className="mb-3 text-lg font-semibold text-slate-900">Notification Center</h3>
+                <ul className="space-y-2 text-sm">
+                  {data.notifications.length === 0 ? <li className="text-slate-500">No alerts available.</li> : data.notifications.map((item, index) => (
+                    <li key={`${item.created_at}-${index}`} className="rounded border border-slate-200 p-2">
+                      <p className="font-medium">{item.level}: {item.message}</p>
+                      <p className="text-xs text-slate-500">{item.created_at}</p>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </>
           ) : null}
-
-          <DataTable title="Departments" rows={departments} columns={[{ key: 'name', label: 'Department' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'coordinator_mobile', label: 'Mobile' }, { key: 'is_first_login', label: 'First Login' }, { key: 'is_active', label: 'Active' }]} actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => editDepartment(row)}>Edit</Button><Button variant="secondary" onClick={() => deleteDepartment(row.id)}>Delete</Button></div>} />
-
-          <DataTable title="Linked Internship Provider Organizations (IPOs)" rows={industries.map((r) => ({ ...r, id: r.link_id }))} columns={[{ key: 'name', label: 'IPO' }, { key: 'email', label: 'Email' }, { key: 'business_activity', label: 'Business' }, { key: 'status', label: 'Status' }]} actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => viewIpoProfile((row as any).industry_id)}>View Profile</Button><Button variant="secondary" onClick={() => removeIndustry(row.id)}>Remove</Button></div>} />
-
-          {ipoDetails ? (
-            <Card className="rounded-[28px] p-5">
-              <h2 className="text-xl font-semibold text-slate-900">{ipoDetails.name}</h2>
-              <p className="mt-2 text-sm text-slate-700">Address: {ipoDetails.company_address || '-'}</p>
-              <p className="text-sm text-slate-700">Contact: {ipoDetails.contact_number || '-'}</p>
-              <p className="text-sm text-slate-700">Email: {ipoDetails.email || '-'}</p>
-              <p className="text-sm text-slate-700">Registration No: {ipoDetails.registration_number || '-'}</p>
-              <p className="text-sm text-slate-700">Registration Year: {ipoDetails.registration_year || '-'}</p>
-            </Card>
-          ) : null}
-
-          <DataTable
-            title="Internal Applications"
-            rows={internalApps}
-            columns={[{ key: 'student_name', label: 'Student' }, { key: 'student_email', label: 'Email' }, { key: 'internship_title', label: 'Internship' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Applied At' }]}
-            actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => decideApplication(row.id, 'accept')}>Accept</Button><Button variant="secondary" onClick={() => decideApplication(row.id, 'reject')}>Reject</Button></div>}
-          />
-
-          <DataTable
-            title="External Applications"
-            rows={externalApps}
-            columns={[{ key: 'student_name', label: 'Student' }, { key: 'student_email', label: 'Email' }, { key: 'internship_title', label: 'Internship' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Applied At' }]}
-            actions={(row) => <div className="space-x-2"><Button variant="secondary" onClick={() => decideApplication(row.id, 'accept')}>Accept</Button><Button variant="secondary" onClick={() => decideApplication(row.id, 'reject')}>Reject</Button></div>}
-          />
         </>
       )}
     </RoleDashboardShell>
