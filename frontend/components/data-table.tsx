@@ -97,7 +97,7 @@ export function DataTable<T extends { id: string }>({
         <tbody>
           {paginated.length === 0 ? (
             <tr className="border-t border-slate-200">
-              <td className="py-3 text-slate-600" colSpan={columns.length + (actions ? 1 : 0)}>No data to display.</td>
+              <td className="py-3 text-slate-600" colSpan={columns.length + (actions ? 1 : 0)}>No data – Create / Assign Internship</td>
             </tr>
           ) : paginated.map((row) => (
             <tr key={row.id} className="border-t border-slate-200">

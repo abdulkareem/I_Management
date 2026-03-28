@@ -6,6 +6,12 @@ const STATUS_STYLE: Record<string, string> = {
   DRAFT: 'bg-slate-200 text-slate-900 border-slate-300',
   PUBLISHED: 'bg-emerald-100 text-emerald-900 border-emerald-300',
   CLOSED: 'bg-rose-100 text-rose-900 border-rose-300',
+  ACCEPTED: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+  APPROVED: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+  REJECTED: 'bg-rose-100 text-rose-900 border-rose-300',
+  APPLIED: 'bg-amber-100 text-amber-900 border-amber-300',
+  ALLOTTED: 'bg-violet-100 text-violet-900 border-violet-300',
+  PENDING: 'bg-amber-100 text-amber-900 border-amber-300',
 };
 
 export function StatusBadge({ status }: { status: Status }) {
