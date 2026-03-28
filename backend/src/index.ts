@@ -1230,20 +1230,60 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
     const body = await readBody(request);
     const internshipId = required(body, ['id', 'internship_id', 'internshipId']);
+    const vacancy = Number(optional(body, ['vacancy']) ?? 0);
+    const genderPreference = toText(optional(body, ['gender_preference', 'genderPreference'])).toUpperCase() || 'BOTH';
+    const internshipCategory = toText(optional(body, ['internship_category', 'internshipCategory'])).toUpperCase() || null;
+    const fee = optional(body, ['fee']) ? Number(optional(body, ['fee'])) : null;
+    const stipendAmount = optional(body, ['stipend_amount', 'stipendAmount']) ? Number(optional(body, ['stipend_amount', 'stipendAmount'])) : null;
+    const stipendDuration = toText(optional(body, ['stipend_duration', 'stipendDuration'])) || null;
+    const hourDuration = optional(body, ['hour_duration', 'hourDuration', 'durationHours']) ? Number(optional(body, ['hour_duration', 'hourDuration', 'durationHours'])) : null;
     if (!internshipId) return badRequest('id is required');
 
     const internship = await env.DB.prepare(
       'SELECT id, status FROM internships WHERE id = ? AND industry_id = ?',
     ).bind(internshipId, actor.id).first<{ id: string; status: string }>();
     if (!internship) return errorResponse(404, 'Internship not found');
-    if (internship.status !== INTERNSHIP_STATUS.ACCEPTED) return badRequest('Only ACCEPTED internships can be published');
+    if (!['SENT_TO_INDUSTRY', INTERNSHIP_STATUS.ACCEPTED].includes(internship.status)) return badRequest('Only sent internships can be published');
+    if (!Number.isFinite(vacancy) || vacancy <= 0) return badRequest('vacancy must be greater than 0');
+    if (!['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
+    if (hourDuration !== null && hourDuration < 60) return badRequest('duration must be at least 60 hours');
+    if (internshipCategory && !['FREE', 'PAID', 'STIPEND'].includes(internshipCategory)) return badRequest('internshipCategory must be FREE, PAID or STIPEND');
+    if ((internshipCategory === 'PAID' || (internshipCategory === null && fee !== null)) && (!fee || fee <= 0)) return badRequest('fee is required for paid internship');
+    if (internshipCategory === 'STIPEND' && (!stipendAmount || stipendAmount < 0)) return badRequest('stipendAmount is required for stipend internship');
 
     const result = await env.DB.prepare(
       `UPDATE internships
        SET student_visibility = 1,
+           status = 'PUBLISHED',
+           vacancy = ?,
+           total_vacancy = ?,
+           remaining_vacancy = ?,
+           available_vacancy = ?,
+           gender_preference = ?,
+           internship_category = COALESCE(?, internship_category),
+           fee = CASE WHEN COALESCE(?, internship_category) = 'PAID' THEN ? ELSE NULL END,
+           stipend_amount = CASE WHEN COALESCE(?, internship_category) = 'STIPEND' THEN ? ELSE NULL END,
+           stipend_duration = CASE WHEN COALESCE(?, internship_category) = 'STIPEND' THEN ? ELSE NULL END,
+           minimum_days = COALESCE(?, minimum_days),
            updated_at = datetime('now')
        WHERE id = ? AND industry_id = ?`,
-    ).bind(internshipId, actor.id).run();
+    ).bind(
+      Math.floor(vacancy),
+      Math.floor(vacancy),
+      Math.floor(vacancy),
+      Math.floor(vacancy),
+      genderPreference,
+      internshipCategory,
+      internshipCategory,
+      fee,
+      internshipCategory,
+      stipendAmount,
+      internshipCategory,
+      stipendDuration,
+      hourDuration ? Math.floor(hourDuration) : null,
+      internshipId,
+      actor.id,
+    ).run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(500, 'Unable to publish internship');
     return ok('Internship published for students');
   }
@@ -1893,12 +1933,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END AS applied, a.status AS application_status
        FROM internships i
        LEFT JOIN applications a ON a.internship_id = i.id AND a.student_id = ?
-       WHERE i.status = 'PUBLISHED'
-         AND i.published = 1
-         AND i.college_id = ?
-         AND (i.department_id IS NULL OR i.department_id = ?)
+       WHERE i.status IN ('PUBLISHED', 'published')
+         AND (
+              (COALESCE(i.is_external, 0) = 0 AND i.college_id = ? AND i.department_id = ?)
+              OR
+              (COALESCE(i.is_external, 0) = 1 AND i.department_id <> ?)
+         )
        ORDER BY i.created_at DESC`,
-    ).bind(actor.id, student.college_id, student.department_id).all();
+    ).bind(actor.id, student.college_id, student.department_id, student.department_id).all();
     return ok('Student internships fetched', rows.results ?? []);
   }
 
@@ -2054,6 +2096,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const stipendDuration = toText(optional(body, ['stipend_duration', 'stipendDuration'])) || null;
     const minimumDaysRaw = optional(body, ['minimum_days', 'minimumDays', 'hourDuration']);
     const minimumDays = minimumDaysRaw ? Number(minimumDaysRaw) : null;
+    const applicableTo = toText(optional(body, ['applicable_to', 'applicableTo'])).toUpperCase() || 'EXTERNAL';
+    const action = toText(optional(body, ['action'])).toLowerCase();
+    const industryId = toText(optional(body, ['industry_id', 'industryId'])) || null;
+    const programId = toText(optional(body, ['program_id', 'programId'])) || null;
+    const mappedPo = optional(body, ['mapped_po', 'mappedPo']);
+    const mappedPso = optional(body, ['mapped_pso', 'mappedPso']);
+    const mappedIpo = optional(body, ['mapped_ipo', 'mappedIpo']);
+    const mappedCo = optional(body, ['mapped_co', 'mappedCo']);
     const genderPreference = toText(optional(body, ['gender_preference', 'genderPreference'])).toUpperCase() || 'BOTH';
     const categoryRaw = toText(optional(body, ['internship_category', 'internshipCategory'])).toUpperCase();
     const requestedCategory = ['FREE', 'PAID', 'STIPEND'].includes(categoryRaw) ? categoryRaw : null;
@@ -2065,16 +2115,36 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!title || !description) return badRequest('title and description are required');
     if (isPaid && (!fee || Number.isNaN(fee) || fee <= 0)) return badRequest('Valid fee is required for paid internships');
     if (internshipCategory === 'STIPEND' && (stipendAmount === null || Number.isNaN(stipendAmount) || stipendAmount < 0)) return badRequest('Valid stipendAmount is required for stipend internships');
-    if (vacancy !== null && (Number.isNaN(vacancy) || vacancy < 0)) return badRequest('vacancy must be a non-negative number');
+    if (vacancy !== null && (Number.isNaN(vacancy) || vacancy <= 0)) return badRequest('vacancy must be a positive number');
+    if (minimumDays !== null && (!Number.isFinite(minimumDays) || minimumDays < 60)) return badRequest('duration must be at least 60 hours');
     if (!['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
+    if (!['EXTERNAL', 'INTERNAL'].includes(applicableTo)) return badRequest('applicableTo must be INTERNAL or EXTERNAL');
+    if (applicableTo === 'INTERNAL' && !industryId) return badRequest('industryId is required for internal internships');
+    if (action === 'send_to_industry' && applicableTo !== 'INTERNAL') return badRequest('Only internal internships can be sent to industry');
 
     const department = await env.DB.prepare('SELECT college_id FROM departments WHERE id = ?').bind(actor.id).first<{ college_id: string }>();
     if (!department) return badRequest('Department not found');
 
+    if (programId) {
+      const program = await env.DB.prepare('SELECT id FROM programs WHERE id = ? AND department_id = ?').bind(programId, actor.id).first<{ id: string }>();
+      if (!program) return badRequest('programId does not belong to this department');
+    }
+
+    if (action === 'send_to_industry') {
+      const duplicate = await env.DB.prepare(
+        `SELECT id FROM internships
+         WHERE department_id = ?
+           AND industry_id = ?
+           AND lower(title) = lower(?)
+           AND status = 'SENT_TO_INDUSTRY'`,
+      ).bind(actor.id, industryId, title).first<{ id: string }>();
+      if (duplicate) return conflict('This internship is already sent to the selected industry.');
+    }
+
     const internshipId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, college_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DEPARTMENT', 'OTHER_COLLEGES', 'OPEN', ?, ?, ?, ?)`,
+      `INSERT INTO internships (id, title, description, department_id, college_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DEPARTMENT', ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?)`,
     )
       .bind(
         internshipId,
@@ -2082,22 +2152,30 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         description,
         actor.id,
         department.college_id,
+        applicableTo === 'INTERNAL' ? industryId : null,
         isPaid ? 1 : 0,
         isPaid ? Math.round(fee ?? 0) : null,
         internshipCategory,
-        vacancy === null ? 0 : Math.floor(vacancy),
-        vacancy === null ? 0 : Math.floor(vacancy),
-        vacancy === null ? 0 : Math.floor(vacancy),
-        vacancy === null ? 0 : Math.floor(vacancy),
-        isExternal ? 1 : 0,
+        Math.floor(vacancy ?? 0),
+        Math.floor(vacancy ?? 0),
+        Math.floor(vacancy ?? 0),
+        Math.floor(vacancy ?? 0),
+        applicableTo === 'EXTERNAL' ? 1 : 0,
+        applicableTo === 'EXTERNAL' ? 'ALL_TARGETS' : 'SAME_COLLEGE_DEPARTMENT',
+        action === 'send_to_industry' ? 'SENT_TO_INDUSTRY' : 'PUBLISHED',
         internshipCategory === 'STIPEND' ? stipendAmount : null,
         internshipCategory === 'STIPEND' ? stipendDuration : null,
         minimumDays === null || Number.isNaN(minimumDays) ? null : Math.floor(minimumDays),
         genderPreference,
+        programId ?? null,
+        JSON.stringify(Array.isArray(mappedPo) ? mappedPo : []),
+        JSON.stringify(Array.isArray(mappedPso) ? mappedPso : []),
+        JSON.stringify(Array.isArray(mappedCo) ? mappedCo : []),
+        JSON.stringify(Array.isArray(mappedIpo) ? mappedIpo : []),
       )
       .run();
 
-    return created('Department internship created', { id: internshipId });
+    return created(action === 'send_to_industry' ? 'Sent to Industry' : 'Published Successfully', { id: internshipId, status: action === 'send_to_industry' ? 'SENT_TO_INDUSTRY' : 'PUBLISHED' });
   }
 
   const updateDepartmentInternshipMatch = pathname.match(/^\/api\/department\/internships\/([^/]+)$/);
@@ -2252,18 +2330,41 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       if (eligibility.openApplications >= 3) return forbidden('You can only keep three active applications at a time.');
     }
 
-    await env.DB.prepare(
-      `INSERT INTO internship_applications (id, student_id, external_student_id, internship_id, status, is_external)
-       VALUES (?, ?, ?, ?, 'pending', ?)`,
-    )
-      .bind(
-        crypto.randomUUID(),
-        actor.role === 'STUDENT' ? actor.id : null,
-        actor.role === 'EXTERNAL_STUDENT' ? actor.id : null,
-        internshipId,
-        isExternal,
+    const applicationId = crypto.randomUUID();
+    await env.DB.exec('BEGIN');
+    try {
+      await env.DB.prepare(
+        `INSERT INTO internship_applications (id, student_id, external_student_id, internship_id, status, is_external)
+         VALUES (?, ?, ?, ?, 'pending', ?)`,
       )
-      .run();
+        .bind(
+          applicationId,
+          actor.role === 'STUDENT' ? actor.id : null,
+          actor.role === 'EXTERNAL_STUDENT' ? actor.id : null,
+          internshipId,
+          isExternal,
+        )
+        .run();
+
+      const vacancyUpdate = await env.DB.prepare(
+        `UPDATE internships
+         SET available_vacancy = MAX(COALESCE(available_vacancy, vacancy, total_vacancy, 0) - 1, 0),
+             remaining_vacancy = MAX(COALESCE(remaining_vacancy, vacancy, total_vacancy, 0) - 1, 0),
+             vacancy = MAX(COALESCE(vacancy, total_vacancy, 0) - 1, 0),
+             updated_at = datetime('now')
+         WHERE id = ?
+           AND COALESCE(available_vacancy, vacancy, total_vacancy, 0) > 0`,
+      ).bind(internshipId).run();
+
+      if ((vacancyUpdate.meta.changes ?? 0) === 0) {
+        throw new Error('No vacancy available for this internship');
+      }
+      await env.DB.exec('COMMIT');
+    } catch (error) {
+      await env.DB.exec('ROLLBACK');
+      if (error instanceof Error) return conflict(error.message);
+      return conflict('Unable to submit application');
+    }
 
     return created('Application submitted', { internshipId, status: 'pending' });
   }
