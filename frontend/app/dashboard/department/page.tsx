@@ -48,6 +48,7 @@ export default function DepartmentDashboardPage() {
   const [selectedInternalIndustryId, setSelectedInternalIndustryId] = useState('');
   const [selectedInternalProgramId, setSelectedInternalProgramId] = useState('');
   const [internalMappings, setInternalMappings] = useState<{ po: string[]; pso: string[]; ipo: string[]; co: string[] }>({ po: [], pso: [], ipo: [], co: [] });
+  const [markSection, setMarkSection] = useState<'CCA' | 'ESE' | 'FINAL'>('CCA');
   const [internshipCos, setInternshipCos] = useState<OutcomeDefinition[]>([]);
   const [internshipPos, setInternshipPos] = useState<OutcomeDefinition[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -385,8 +386,11 @@ export default function DepartmentDashboardPage() {
   const session = loadSession();
   const dashboardTitle = `${session?.user?.email?.split('@')[0] ?? 'Department'} Dashboard`;
   const industryAdvertisements = (dashboard?.internships ?? []).filter((item: any) => item.status === 'SENT_TO_DEPARTMENT');
-  const internalApps = (dashboard?.applications ?? []).filter((item) => item.is_external !== 1 && item.status !== 'rejected');
-  const externalApps = (dashboard?.applications ?? []).filter((item) => item.is_external === 1 && item.status !== 'rejected');
+  const internalApps = (dashboard?.applications ?? []).filter((item: any) => item.is_internal_student === 1 && item.status !== 'rejected');
+  const externalApps = (dashboard?.applications ?? []).filter((item: any) => {
+    const differentCollege = item.is_external_by_college === 1;
+    return (item.is_external === 1 || differentCollege) && item.status !== 'rejected';
+  });
   const parseMappings = (value?: string | null) => value?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
 
   const toggleDraftSelection = (internshipId: string, field: 'mappedCo' | 'mappedPo' | 'mappedPso', value: string) => {
@@ -432,8 +436,8 @@ export default function DepartmentDashboardPage() {
                   <input name="title" placeholder="Internship title" required />
                   <textarea name="description" placeholder="Description" required />
                   <select name="applicableTo" value={applicableTo} onChange={(e) => setApplicableTo(e.target.value as ApplicableTo)}>
-                    <option value="INTERNAL">Internal Students</option>
                     <option value="EXTERNAL">External Students</option>
+                    <option value="INTERNAL">Internal Students</option>
                   </select>
                   {applicableTo === 'INTERNAL' ? (
                     <>
@@ -472,6 +476,22 @@ export default function DepartmentDashboardPage() {
                         </div>
                       </div>
                     </>
+                  ) : null}
+                  {applicableTo === 'EXTERNAL' ? (
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div>
+                        <p className="text-sm font-semibold">Internship CO Mapping</p>
+                        {internshipCos.map((entry) => (
+                          <label key={`ext-co-${entry.id}`} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={internalMappings.co.includes(entry.code)} onChange={() => toggleInternalMapping('co', entry.code)} />{entry.code} — {entry.description}</label>
+                        ))}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">Internship PO Mapping</p>
+                        {internshipPos.map((entry) => (
+                          <label key={`ext-po-${entry.id}`} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={internalMappings.ipo.includes(entry.code)} onChange={() => toggleInternalMapping('ipo', entry.code)} />{entry.code} — {entry.description}</label>
+                        ))}
+                      </div>
+                    </div>
                   ) : null}
                   <select name="internshipCategory" value={internshipType} onChange={(e) => setInternshipType(e.target.value as InternshipType)}>
                     <option value="FREE">Free Internship</option>
@@ -673,7 +693,7 @@ export default function DepartmentDashboardPage() {
           </section>
 
           <Card className="rounded-[20px] p-5">
-            <h2 className="mb-3 text-xl font-semibold">Internal Applications Submitted by Students</h2>
+            <h2 className="mb-3 text-xl font-semibold">Applications Submitted by Internal Students</h2>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -783,7 +803,7 @@ export default function DepartmentDashboardPage() {
 
           <Modal
             open={markEntryModal.open}
-            title="Mark Entry Window"
+            title="Internship Evaluation Entry"
             onClose={() => {
               setMarkEntryModal({ open: false, applicationId: null });
               setMarkForm({ attendanceMarks: '0', workRegisterMarks: '0', presentationMarks: '0', vivaMarks: '0', reportMarks: '0' });
@@ -791,16 +811,33 @@ export default function DepartmentDashboardPage() {
             footer={(
               <div className="flex justify-end gap-2">
                 <Button variant="secondary" onClick={() => setMarkEntryModal({ open: false, applicationId: null })}>Close</Button>
+                <Button variant="secondary" onClick={() => setMarkSection('CCA')}>CCA Evaluation</Button>
+                <Button variant="secondary" onClick={() => setMarkSection('ESE')}>ESE Evaluation</Button>
+                <Button variant="secondary" onClick={() => setMarkSection('FINAL')}>Final Evaluation</Button>
                 <Button onClick={saveEvaluationMarks}>Save All</Button>
               </div>
             )}
           >
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1 text-sm">Attendance & Performance Feedback (0-9)<input type="number" min={0} max={9} value={markForm.attendanceMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, attendanceMarks: e.target.value }))} /></label>
-              <label className="grid gap-1 text-sm">Work Register (0-6)<input type="number" min={0} max={6} value={markForm.workRegisterMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, workRegisterMarks: e.target.value }))} /></label>
-              <label className="grid gap-1 text-sm">Presentation (0-14)<input type="number" min={0} max={14} value={markForm.presentationMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, presentationMarks: e.target.value }))} /></label>
-              <label className="grid gap-1 text-sm">Viva Voce (0-14)<input type="number" min={0} max={14} value={markForm.vivaMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, vivaMarks: e.target.value }))} /></label>
-              <label className="grid gap-1 text-sm md:col-span-2">Internship Report (0-7)<input type="number" min={0} max={7} value={markForm.reportMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, reportMarks: e.target.value }))} /></label>
+            <div className="grid gap-3">
+              {(markSection === 'CCA' || markSection === 'FINAL') ? (
+                <div className="grid gap-3 md:grid-cols-2 rounded-lg border border-slate-200 p-3">
+                  <p className="md:col-span-2 text-sm font-semibold">CCA (15): Attendance & Performance Feedback (9) + Work Register (6)</p>
+                  <label className="grid gap-1 text-sm">Attendance & Performance Feedback (0-9)<input type="number" min={0} max={9} value={markForm.attendanceMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, attendanceMarks: e.target.value }))} /></label>
+                  <label className="grid gap-1 text-sm">Work Register (0-6)<input type="number" min={0} max={6} value={markForm.workRegisterMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, workRegisterMarks: e.target.value }))} /></label>
+                </div>
+              ) : null}
+              {(markSection === 'ESE' || markSection === 'FINAL') ? (
+                <div className="grid gap-3 md:grid-cols-2 rounded-lg border border-slate-200 p-3">
+                  <p className="md:col-span-2 text-sm font-semibold">ESE (35): Presentation (14) + Viva (14) + Report (7)</p>
+                  <label className="grid gap-1 text-sm">Presentation (0-14)<input type="number" min={0} max={14} value={markForm.presentationMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, presentationMarks: e.target.value }))} /></label>
+                  <label className="grid gap-1 text-sm">Viva Voce (0-14)<input type="number" min={0} max={14} value={markForm.vivaMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, vivaMarks: e.target.value }))} /></label>
+                  <label className="grid gap-1 text-sm md:col-span-2">Internship Report (0-7)<input type="number" min={0} max={7} value={markForm.reportMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, reportMarks: e.target.value }))} /></label>
+                </div>
+              ) : null}
+              <div className="rounded-lg border border-slate-200 p-3 text-sm">
+                <p><strong>Final Evaluation</strong>: CCA + ESE = 50</p>
+                <p>Current Total: {Number(markForm.attendanceMarks || 0) + Number(markForm.workRegisterMarks || 0) + Number(markForm.presentationMarks || 0) + Number(markForm.vivaMarks || 0) + Number(markForm.reportMarks || 0)} / 50</p>
+              </div>
             </div>
           </Modal>
 

@@ -133,6 +133,8 @@ model Internship {
   stipendAmount  Float?               @map("stipend_amount")
   stipendFrequency String?            @map("stipend_frequency")
   gender         String?
+  internshipPo   String?              @map("internship_po")
+  internshipCo   String?              @map("internship_co")
   collegeId      String?              @map("college_id")
   departmentId   String?              @map("department_id")
   industryId     String?              @map("industry_id")
@@ -151,6 +153,8 @@ model Internship {
   mappings       CoPoMapping[]
   results        Result[]
   outcomeMappings InternshipOutcomeMapping[]
+  coMappings      InternshipCoMapping[]
+  poMappings      InternshipPoMapping[]
 
   @@map("internships")
 }
@@ -166,6 +170,30 @@ model InternshipOutcomeMapping {
   internship   Internship  @relation(fields: [internshipId], references: [id], onDelete: Cascade)
 
   @@map("internship_outcome_mappings")
+}
+
+model InternshipCoMapping {
+  id           String     @id @default(cuid())
+  internshipId String     @map("internship_id")
+  coCode       String     @map("co_code")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  internship   Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+
+  @@unique([internshipId, coCode])
+  @@map("internship_co_mapping")
+}
+
+model InternshipPoMapping {
+  id           String     @id @default(cuid())
+  internshipId String     @map("internship_id")
+  poCode       String     @map("po_code")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  internship   Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+
+  @@unique([internshipId, poCode])
+  @@map("internship_po_mapping")
 }
 
 model InternshipTarget {

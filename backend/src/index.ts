@@ -1953,11 +1953,21 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const internshipId = parsed.data.internship_id;
 
     const internship = await env.DB.prepare(
-      `SELECT id, status, published, remaining_vacancy FROM internships WHERE id = ?`,
-    ).bind(internshipId).first<{ id: string; status: string; published: number; remaining_vacancy: number }>();
+      `SELECT i.id, i.status, i.published, i.remaining_vacancy, i.college_id, d.college_id AS department_college_id
+       FROM internships i
+       LEFT JOIN departments d ON d.id = i.department_id
+       WHERE i.id = ?`,
+    ).bind(internshipId).first<{ id: string; status: string; published: number; remaining_vacancy: number; college_id: string | null; department_college_id: string | null }>();
     if (!internship) return errorResponse(404, 'Internship not found');
     if (internship.status !== 'PUBLISHED' || Number(internship.published) !== 1) return forbidden('Internship is not open for applications');
     if ((internship.remaining_vacancy ?? 0) <= 0) return forbidden('No vacancy available');
+
+    const student = await env.DB.prepare('SELECT college_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string | null }>();
+    if (!student) return unauthorized('Student not found');
+    const hostCollegeId = internship.college_id ?? internship.department_college_id;
+    if (hostCollegeId && student.college_id && hostCollegeId === student.college_id) {
+      return forbidden('Students cannot apply to internships within their own institution.');
+    }
 
     const existing = await env.DB.prepare('SELECT id FROM applications WHERE student_id = ? AND internship_id = ?').bind(actor.id, internshipId).first<{ id: string }>();
     if (existing) return conflict('You already applied to this internship');
@@ -2143,8 +2153,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const internshipId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, college_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DEPARTMENT', ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?)`,
+      `INSERT INTO internships (id, title, description, department_id, college_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po, internship_co)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DEPARTMENT', ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?, ?)`,
     )
       .bind(
         internshipId,
@@ -2172,8 +2182,39 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         JSON.stringify(Array.isArray(mappedPso) ? mappedPso : []),
         JSON.stringify(Array.isArray(mappedCo) ? mappedCo : []),
         JSON.stringify(Array.isArray(mappedIpo) ? mappedIpo : []),
+        JSON.stringify(Array.isArray(mappedCo) ? mappedCo : []),
       )
       .run();
+
+    const coCodes = Array.isArray(mappedCo) ? mappedCo.map((item) => toText(item)).filter(Boolean) : [];
+    const poCodes = Array.isArray(mappedIpo) ? mappedIpo.map((item) => toText(item)).filter(Boolean) : [];
+    if (applicableTo === 'EXTERNAL') {
+      await env.DB.exec('BEGIN');
+      try {
+        if (coCodes.length > 0) {
+          for (const coCode of coCodes) {
+            await env.DB.prepare(
+              `INSERT INTO internship_co_mapping (id, internship_id, co_code, updated_at)
+               VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(internship_id, co_code) DO UPDATE SET updated_at = datetime('now')`,
+            ).bind(crypto.randomUUID(), internshipId, coCode).run();
+          }
+        }
+        if (poCodes.length > 0) {
+          for (const poCode of poCodes) {
+            await env.DB.prepare(
+              `INSERT INTO internship_po_mapping (id, internship_id, po_code, updated_at)
+               VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(internship_id, po_code) DO UPDATE SET updated_at = datetime('now')`,
+            ).bind(crypto.randomUUID(), internshipId, poCode).run();
+          }
+        }
+        await env.DB.exec('COMMIT');
+      } catch (error) {
+        await env.DB.exec('ROLLBACK');
+        throw error;
+      }
+    }
 
     return created(action === 'send_to_industry' ? 'Sent to Industry' : 'Published Successfully', { id: internshipId, status: action === 'send_to_industry' ? 'SENT_TO_INDUSTRY' : 'PUBLISHED' });
   }
@@ -2346,19 +2387,6 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         )
         .run();
 
-      const vacancyUpdate = await env.DB.prepare(
-        `UPDATE internships
-         SET available_vacancy = MAX(COALESCE(available_vacancy, vacancy, total_vacancy, 0) - 1, 0),
-             remaining_vacancy = MAX(COALESCE(remaining_vacancy, vacancy, total_vacancy, 0) - 1, 0),
-             vacancy = MAX(COALESCE(vacancy, total_vacancy, 0) - 1, 0),
-             updated_at = datetime('now')
-         WHERE id = ?
-           AND COALESCE(available_vacancy, vacancy, total_vacancy, 0) > 0`,
-      ).bind(internshipId).run();
-
-      if ((vacancyUpdate.meta.changes ?? 0) === 0) {
-        throw new Error('No vacancy available for this internship');
-      }
       await env.DB.exec('COMMIT');
     } catch (error) {
       await env.DB.exec('ROLLBACK');
@@ -2423,9 +2451,13 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const stmt = env.DB.prepare(
       `SELECT ia.id, ia.status, ia.created_at, ia.is_external, ia.completed_at, ia.industry_feedback, ia.industry_score,
               i.id AS internship_id, i.title AS internship_title, i.is_paid, i.fee,
-              d.name AS department_name,
+              d.name AS department_name, d.college_id AS department_college_id,
               COALESCE(es.name, s.name) AS student_name,
-              COALESCE(es.email, s.email) AS student_email
+              COALESCE(es.email, s.email) AS student_email,
+              s.department_id AS student_department_id,
+              s.college_id AS student_college_id,
+              CASE WHEN s.department_id = ? THEN 1 ELSE 0 END AS is_internal_student,
+              CASE WHEN s.college_id IS NOT NULL AND s.college_id <> d.college_id THEN 1 ELSE 0 END AS is_external_by_college
        FROM internship_applications ia
        INNER JOIN internships i ON i.id = ia.internship_id
        INNER JOIN departments d ON d.id = i.department_id
@@ -2435,8 +2467,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        ORDER BY ia.created_at DESC`,
     );
     const rows = statusClause
-      ? await stmt.bind(actor.id, statusFilter).all()
-      : await stmt.bind(actor.id).all();
+      ? await stmt.bind(actor.id, actor.id, statusFilter).all()
+      : await stmt.bind(actor.id, actor.id).all();
 
     return ok('Department applications fetched', rows.results ?? []);
   }
@@ -2479,16 +2511,30 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(app.industry_id ?? null, applicationId).run();
     await env.DB.prepare(
       `UPDATE internships
-       SET vacancy = CASE
-          WHEN vacancy IS NULL THEN NULL
-          WHEN vacancy > 0 THEN vacancy - 1
-          ELSE 0
-       END,
-       available_vacancy = CASE
-         WHEN COALESCE(available_vacancy, vacancy, 0) > 0 THEN COALESCE(available_vacancy, vacancy, 0) - 1
-         ELSE 0
-       END,
-       filled_vacancy = COALESCE(filled_vacancy, 0) + 1,
+       SET filled_vacancy = (
+         SELECT COUNT(*)
+         FROM internship_applications ia
+         WHERE ia.internship_id = internships.id
+           AND ia.status = 'accepted'
+       ),
+       available_vacancy = MAX(
+         COALESCE(total_vacancy, vacancy, 0) - (
+           SELECT COUNT(*)
+           FROM internship_applications ia
+           WHERE ia.internship_id = internships.id
+             AND ia.status = 'accepted'
+         ),
+         0
+       ),
+       remaining_vacancy = MAX(
+         COALESCE(total_vacancy, vacancy, 0) - (
+           SELECT COUNT(*)
+           FROM internship_applications ia
+           WHERE ia.internship_id = internships.id
+             AND ia.status = 'accepted'
+         ),
+         0
+       ),
        updated_at = datetime('now')
        WHERE id = (SELECT internship_id FROM internship_applications WHERE id = ?)`,
     ).bind(applicationId).run();
@@ -2650,6 +2696,50 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       calculationSteps,
     ).run();
     return created('Outcome assessment recorded', { weightedScore, percentage, calculationSteps });
+  }
+
+  const departmentMarksheetMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/marksheet$/);
+  if (departmentMarksheetMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const applicationId = departmentMarksheetMatch[1];
+
+    const header = await env.DB.prepare(
+      `SELECT ia.id, ia.status, COALESCE(es.name, s.name) AS student_name, COALESCE(es.email, s.email) AS student_email,
+              i.title AS internship_title, d.name AS department_name, c.name AS college_name
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN departments d ON d.id = i.department_id
+       INNER JOIN colleges c ON c.id = d.college_id
+       LEFT JOIN students s ON s.id = ia.student_id
+       LEFT JOIN external_students es ON es.id = ia.external_student_id
+       WHERE ia.id = ? AND d.id = ?`,
+    ).bind(applicationId, actor.id).first<any>();
+    if (!header) return errorResponse(404, 'Application not found');
+
+    const evaluation = await env.DB.prepare(
+      `SELECT attendance_marks, work_register_marks, presentation_marks, viva_marks, report_marks, cca_total, ese_total, final_total
+       FROM internship_evaluations
+       WHERE application_id = ?`,
+    ).bind(applicationId).first<any>();
+
+    const outcomes = await env.DB.prepare(
+      `SELECT outcome_id, outcome_type, weighted_score, percentage
+       FROM outcome_results
+       WHERE application_id = ?
+       ORDER BY outcome_type, outcome_id`,
+    ).bind(applicationId).all<any>();
+
+    return ok('Department marksheet fetched', {
+      ...header,
+      criteria: {
+        cca: 'Attendance & Performance Feedback (9) + Work Register (6) = 15',
+        ese: 'Presentation (14) + Viva (14) + Report (7) = 35',
+        final: 'CCA (15) + ESE (35) = 50',
+      },
+      evaluation: evaluation ?? null,
+      outcomes: outcomes.results ?? [],
+    });
   }
 
   if (request.method === 'GET' && pathname === '/api/department/industries') {
@@ -4042,6 +4132,8 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   if (!internshipColumns.has('mapped_co')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN mapped_co TEXT').run();
   if (!internshipColumns.has('mapped_po')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN mapped_po TEXT').run();
   if (!internshipColumns.has('mapped_pso')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN mapped_pso TEXT').run();
+  if (!internshipColumns.has('internship_po')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN internship_po TEXT').run();
+  if (!internshipColumns.has('internship_co')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN internship_co TEXT').run();
   await env.DB.prepare(
     `UPDATE internships
      SET available_vacancy = MAX(COALESCE(total_vacancy, vacancy, 0) - COALESCE(filled_vacancy, 0), 0)
@@ -4154,6 +4246,30 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   ).run();
 
   await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_co_mapping (
+      id TEXT PRIMARY KEY,
+      internship_id TEXT NOT NULL,
+      co_code TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      UNIQUE (internship_id, co_code)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_po_mapping (
+      id TEXT PRIMARY KEY,
+      internship_id TEXT NOT NULL,
+      po_code TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      UNIQUE (internship_id, po_code)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS internship_evaluations (
       id TEXT PRIMARY KEY,
       application_id TEXT NOT NULL UNIQUE,
@@ -4241,6 +4357,8 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_cos_department ON internship_cos(department_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_pos_department ON internship_pos(department_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_outcome_map_internship ON internship_outcome_map(internship_id, type)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_co_mapping_internship ON internship_co_mapping(internship_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_po_mapping_internship ON internship_po_mapping(internship_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_evaluations_application ON internship_evaluations(application_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_outcome_results_student ON outcome_results(student_id, external_student_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status, created_at)').run(),
