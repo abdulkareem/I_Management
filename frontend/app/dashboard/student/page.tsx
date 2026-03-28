@@ -9,6 +9,7 @@ import { InternshipProgressTracker } from '@/components/internship-progress-trac
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { StatusBadge } from '@/components/status-badge';
 import { fetchWithSession } from '@/lib/auth';
+import { API_BASE_URL } from '@/lib/config';
 
 type InternshipTab = 'college' | 'external';
 
@@ -22,10 +23,16 @@ export default function StudentDashboardPage() {
   const [submitting, setSubmitting] = useState(false);
   const [emailingId, setEmailingId] = useState<string | null>(null);
   const [ipoDetails, setIpoDetails] = useState<any | null>(null);
+  const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>([]);
+  const [docPreview, setDocPreview] = useState<string | null>(null);
 
   const refresh = async () => {
-    const response = await fetchWithSession<StudentDashboard>('/student/dashboard');
+    const [response, docRes] = await Promise.all([
+      fetchWithSession<StudentDashboard>('/student/dashboard'),
+      fetchWithSession<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>('/api/documents/my'),
+    ]);
     setDashboard(response.data);
+    setDocuments(docRes.data ?? []);
   };
 
   useEffect(() => {
@@ -125,6 +132,25 @@ export default function StudentDashboardPage() {
     } finally {
       setEmailingId(null);
     }
+  }
+
+  async function downloadDocument(documentId: string) {
+    const session = localStorage.getItem('internsuite.session');
+    const token = session ? JSON.parse(session).token : '';
+    const res = await fetch(`${API_BASE_URL}/api/documents/${documentId}/download`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `document-${documentId}.html`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  async function previewDocument(documentId: string) {
+    const payload = await fetchWithSession<{ html: string }>(`/api/documents/${documentId}/preview`);
+    setDocPreview(payload.data?.html ?? null);
   }
 
   return (
@@ -255,6 +281,22 @@ export default function StudentDashboardPage() {
               <div className="mt-3"><Button variant="secondary" onClick={() => setIpoDetails(null)}>Close IPO Profile</Button></div>
             </Card>
           ) : null}
+          <Card className="rounded-[30px] p-6">
+            <h2 className="text-xl font-semibold text-slate-900">System Generated Documents</h2>
+            <p className="mt-2 text-sm text-slate-600">Download your allotment letter and feedback summary.</p>
+            <div className="mt-4 space-y-2">
+              {documents.length ? documents.map((doc) => (
+                <div key={doc.id} className="flex flex-wrap items-center justify-between rounded-xl border border-slate-200 p-3">
+                  <p className="text-sm text-slate-700">{doc.type.toUpperCase()} • Internship {doc.internship_id} • {new Date(doc.generated_at).toLocaleString()}</p>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => previewDocument(doc.id)}>Preview</Button>
+                    <Button variant="secondary" onClick={() => downloadDocument(doc.id)}>Download PDF</Button>
+                  </div>
+                </div>
+              )) : <p className="text-sm text-slate-600">No student documents available yet.</p>}
+            </div>
+            {docPreview ? <iframe title="Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
+          </Card>
         </>
       )}
     </RoleDashboardShell>

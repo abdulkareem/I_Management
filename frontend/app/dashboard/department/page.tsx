@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Modal } from '@/components/ui/modal';
 import { fetchWithSession, loadSession } from '@/lib/auth';
+import { API_BASE_URL } from '@/lib/config';
 import type { DepartmentDashboard } from '@/lib/types';
 
 type Industry = { id: string; name: string; is_linked?: number };
@@ -62,9 +63,11 @@ export default function DepartmentDashboardPage() {
   const [markForm, setMarkForm] = useState({ attendanceMarks: '0', workRegisterMarks: '0', presentationMarks: '0', vivaMarks: '0', reportMarks: '0' });
   const [outcomeAssessmentModal, setOutcomeAssessmentModal] = useState<{ open: boolean; applicationId: string | null }>({ open: false, applicationId: null });
   const [outcomeAssessmentForm, setOutcomeAssessmentForm] = useState({ outcomeType: 'CO', outcomeId: '', studentScore: '0', supervisorScore: '0', coordinatorScore: '0' });
+  const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>([]);
+  const [docPreview, setDocPreview] = useState<string | null>(null);
 
   async function load() {
-    const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes] = await Promise.all([
+    const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes, docsRes] = await Promise.all([
       fetchWithSession<DepartmentDashboard['internships']>('/api/department/internships'),
       fetchWithSession<DepartmentDashboard['applications']>('/api/department/applications'),
       fetchWithSession<DepartmentDashboard['industryRequests']>('/api/department/industry-requests'),
@@ -72,6 +75,7 @@ export default function DepartmentDashboardPage() {
       fetchWithSession<DepartmentProgram[]>('/api/department/programs'),
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-cos'),
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-pos'),
+      fetchWithSession<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>('/api/documents/my'),
     ]);
 
     const loadedPrograms = (programsRes.data ?? []).map((item: any) => ({
@@ -94,6 +98,36 @@ export default function DepartmentDashboardPage() {
     setPrograms(loadedPrograms);
     setInternshipCos(cosRes.data ?? []);
     setInternshipPos(posRes.data ?? []);
+    setDocuments(docsRes.data ?? []);
+  }
+
+  async function downloadDocument(documentId: string) {
+    const session = localStorage.getItem('internsuite.session');
+    const token = session ? JSON.parse(session).token : '';
+    const res = await fetch(`${API_BASE_URL}/api/documents/${documentId}/download`, { headers: { Authorization: `Bearer ${token}` } });
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `document-${documentId}.html`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  async function previewDocument(documentId: string) {
+    const payload = await fetchWithSession<{ html: string }>(`/api/documents/${documentId}/preview`);
+    setDocPreview(payload.data?.html ?? null);
+  }
+
+  async function downloadStudentBundle(studentId: string) {
+    const session = localStorage.getItem('internsuite.session');
+    const token = session ? JSON.parse(session).token : '';
+    const res = await fetch(`${API_BASE_URL}/api/documents/student-bundle?studentId=${encodeURIComponent(studentId)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `student-${studentId}-documents.zip`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   }
 
   useEffect(() => {
@@ -765,6 +799,35 @@ export default function DepartmentDashboardPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </Card>
+
+          <Card className="rounded-[20px] p-5">
+            <h2 className="mb-3 text-xl font-semibold">Department Documents (Audit Ready)</h2>
+            <p className="mb-3 text-sm text-slate-600">Approval letters, reply letters, allotments, and feedback forms.</p>
+            <div className="space-y-2">
+              {documents.length ? documents.map((doc) => (
+                <div key={doc.id} className="flex flex-wrap items-center justify-between rounded-lg border border-slate-200 p-3">
+                  <p className="text-sm text-slate-700">{doc.type.toUpperCase()} • Internship {doc.internship_id} • Student {doc.student_id ?? 'N/A'}</p>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => previewDocument(doc.id)}>Preview</Button>
+                    <Button variant="secondary" onClick={() => downloadDocument(doc.id)}>Download PDF</Button>
+                  </div>
+                </div>
+              )) : <p className="text-sm text-slate-700">No documents generated yet.</p>}
+            </div>
+            {docPreview ? <iframe title="Department Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
+          </Card>
+
+          <Card className="rounded-[20px] p-5">
+            <h2 className="mb-3 text-xl font-semibold">Download All Documents (ZIP)</h2>
+            <div className="space-y-2">
+              {dashboard?.applications?.length ? dashboard.applications.map((app) => (
+                <div key={`bundle-${app.id}`} className="flex flex-wrap items-center justify-between rounded-lg border border-slate-200 p-3">
+                  <p className="text-sm text-slate-700">{app.student_name} • {app.internship_title}</p>
+                  <Button variant="secondary" onClick={() => downloadStudentBundle((app as any).student_id)} disabled={!(app as any).student_id}>Download All Documents (ZIP)</Button>
+                </div>
+              )) : <p className="text-sm text-slate-700">No student records available for bundles.</p>}
             </div>
           </Card>
 

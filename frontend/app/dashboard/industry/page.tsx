@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
+import { API_BASE_URL } from '@/lib/config';
 
 type IndustryIdea = {
   id: string;
@@ -87,21 +88,42 @@ export default function IndustryDashboardPage() {
   const [connectSubmitted, setConnectSubmitted] = useState(false);
   const [ideaActionSubmitting, setIdeaActionSubmitting] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>([]);
+  const [docPreview, setDocPreview] = useState<string | null>(null);
   const connectFormRef = useRef<HTMLFormElement | null>(null);
 
   async function load() {
-    const [dashboardRes, ideasRes, collegeRes, profileRes, internshipsRes] = await Promise.all([
+    const [dashboardRes, ideasRes, collegeRes, profileRes, internshipsRes, docRes] = await Promise.all([
       fetchWithSession<IndustryDashboard>('/industry/dashboard'),
       fetchWithSession<IndustryIdea[]>('/api/industry/ideas'),
       fetchWithSession<College[]>('/api/industry/colleges'),
       fetchWithSession<IpoProfile>('/api/industry/profile'),
       fetchWithSession<IndustryInternship[]>('/api/industry/internships'),
+      fetchWithSession<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>('/api/documents/my'),
     ]);
     setDashboard(dashboardRes.data);
     setIdeas(ideasRes.data);
     setColleges(collegeRes.data ?? []);
     setIpoProfile(profileRes.data ?? null);
     setIndustryInternships(internshipsRes.data ?? []);
+    setDocuments(docRes.data ?? []);
+  }
+
+  async function downloadDocument(documentId: string) {
+    const session = localStorage.getItem('internsuite.session');
+    const token = session ? JSON.parse(session).token : '';
+    const res = await fetch(`${API_BASE_URL}/api/documents/${documentId}/download`, { headers: { Authorization: `Bearer ${token}` } });
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `document-${documentId}.html`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  async function previewDocument(documentId: string) {
+    const payload = await fetchWithSession<{ html: string }>(`/api/documents/${documentId}/preview`);
+    setDocPreview(payload.data?.html ?? null);
   }
 
   useEffect(() => {
@@ -546,6 +568,23 @@ export default function IndustryDashboardPage() {
                 </div>
               )) : <p className="text-slate-700">No accepted applications found.</p>}
             </div>
+          </Card>
+
+          <Card className="rounded-[30px] p-6">
+            <h2 className="text-2xl font-semibold text-slate-900">System Generated Documents</h2>
+            <p className="mt-2 text-sm text-slate-600">Download Internship Approval Letter and Industry Reply Letter.</p>
+            <div className="mt-4 space-y-2">
+              {documents.length ? documents.map((doc) => (
+                <div key={doc.id} className="flex flex-wrap items-center justify-between rounded-xl border border-slate-200 p-3">
+                  <p className="text-sm text-slate-700">{doc.type.toUpperCase()} • Internship {doc.internship_id} • {new Date(doc.generated_at).toLocaleString()}</p>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => previewDocument(doc.id)}>Preview</Button>
+                    <Button variant="secondary" onClick={() => downloadDocument(doc.id)}>Download PDF</Button>
+                  </div>
+                </div>
+              )) : <p className="text-sm text-slate-700">No industry documents available yet.</p>}
+            </div>
+            {docPreview ? <iframe title="Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
           </Card>
         </>
       )}
