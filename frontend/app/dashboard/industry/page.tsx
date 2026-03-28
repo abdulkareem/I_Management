@@ -164,20 +164,24 @@ export default function IndustryDashboardPage() {
       setError('Please select a college before sending.');
       return;
     }
+    if (!connectForm.departmentId) {
+      setError('Please select a department before sending.');
+      return;
+    }
     setError(null);
     setSuccessMessage(null);
     setConnectSubmitted(false);
     setConnectSubmitting(true);
     try {
       const payload = {
-        college_id: selectedCollege,
-        department_id: connectForm.departmentId || null,
-        internship_title: connectForm.internshipTitle,
-        nature_of_work: connectForm.natureOfWork,
-        internship_category: connectForm.internshipCategory,
+        college: selectedCollege,
+        department: connectForm.departmentId || null,
+        internshipTitle: connectForm.internshipTitle,
+        natureOfWork: connectForm.natureOfWork,
+        category: connectForm.internshipCategory,
         vacancy: Number(connectForm.vacancy || 0),
-        gender_preference: connectForm.genderPreference,
-        program_id: connectForm.departmentId ? connectForm.programme || null : null,
+        genderPreference: connectForm.genderPreference,
+        programme: connectForm.departmentId ? connectForm.programme || null : null,
         hourDuration: Number(connectForm.hourDuration || 0),
         fee: connectForm.internshipCategory === 'PAID' ? Number(connectForm.fee || 0) : null,
         stipendAmount: connectForm.internshipCategory === 'STIPEND' ? Number(connectForm.stipendAmount || 0) : null,
@@ -187,7 +191,7 @@ export default function IndustryDashboardPage() {
       if (connectForm.departmentId && !connectForm.programme) {
         throw new Error('Please select a programme when a department is selected.');
       }
-      const response = await fetchWithSession('/api/industry/connect-request', {
+      const response = await fetchWithSession('/api/industry/send-to-department', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
@@ -451,7 +455,7 @@ export default function IndustryDashboardPage() {
                 {colleges.map((college) => <option key={college.id} value={college.id}>{college.name}</option>)}
               </select>
               <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={connectForm.departmentId} onChange={(e) => setConnectForm((prev) => ({ ...prev, departmentId: e.target.value, programme: '' }))}>
-                <option value="">No preference (all departments)</option>
+                <option value="">Select department</option>
                 {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
               </select>
               <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={connectForm.programme} disabled={!connectForm.departmentId} onChange={(e) => setConnectForm((prev) => ({ ...prev, programme: e.target.value }))}>
