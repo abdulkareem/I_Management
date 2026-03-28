@@ -124,6 +124,7 @@ model Internship {
   remainingVacancy Int                @default(0) @map("remaining_vacancy")
   availableVacancy Int                @default(0) @map("available_vacancy")
   createdByType  InternshipCreatedBy  @default(INDUSTRY) @map("created_by")
+  sourceType     String               @default("INDUSTRY") @map("source_type")
   visibilityType InternshipVisibilityType @default(ALL_TARGETS) @map("visibility_type")
   isExternal     Boolean              @default(false) @map("is_external")
   status         String               @default("DRAFT")
@@ -133,8 +134,8 @@ model Internship {
   stipendAmount  Float?               @map("stipend_amount")
   stipendFrequency String?            @map("stipend_frequency")
   gender         String?
-  internshipPo   String?              @map("internship_po")
-  internshipCo   String?              @map("internship_co")
+  internshipPo   Json                 @default("[]") @map("internship_po")
+  internshipCo   Json                 @default("[]") @map("internship_co")
   collegeId      String?              @map("college_id")
   departmentId   String?              @map("department_id")
   industryId     String?              @map("industry_id")

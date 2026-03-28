@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 interface EnvBindings {
   DB: D1Database;
+  INTERNSHIP_STATE?: DurableObjectNamespace;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   JWT_SECRET?: string;
@@ -59,6 +60,7 @@ const INTERNSHIP_STATUS = {
 type InternshipStatus = (typeof INTERNSHIP_STATUS)[keyof typeof INTERNSHIP_STATUS];
 const ALLOWED_INTERNSHIP_STATUS = new Set<InternshipStatus>(Object.values(INTERNSHIP_STATUS));
 const WORKFLOW_INTERNSHIP_STATUS = ['DRAFT', 'SENT_TO_DEPT', 'ACCEPTED', 'PUBLISHED', 'CLOSED'] as const;
+const MAX_ACTIVE_APPLICATIONS = 3;
 
 const ipoInternshipCreateSchema = z.object({
   title: z.string().trim().min(3),
@@ -1953,11 +1955,11 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const internshipId = parsed.data.internship_id;
 
     const internship = await env.DB.prepare(
-      `SELECT i.id, i.status, i.published, i.remaining_vacancy, i.college_id, d.college_id AS department_college_id
+      `SELECT i.id, i.status, i.published, i.remaining_vacancy, COALESCE(i.is_external, 0) AS is_external, i.college_id, d.college_id AS department_college_id
        FROM internships i
        LEFT JOIN departments d ON d.id = i.department_id
        WHERE i.id = ?`,
-    ).bind(internshipId).first<{ id: string; status: string; published: number; remaining_vacancy: number; college_id: string | null; department_college_id: string | null }>();
+    ).bind(internshipId).first<{ id: string; status: string; published: number; remaining_vacancy: number; is_external: number; college_id: string | null; department_college_id: string | null }>();
     if (!internship) return errorResponse(404, 'Internship not found');
     if (internship.status !== 'PUBLISHED' || Number(internship.published) !== 1) return forbidden('Internship is not open for applications');
     if ((internship.remaining_vacancy ?? 0) <= 0) return forbidden('No vacancy available');
@@ -1965,12 +1967,22 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const student = await env.DB.prepare('SELECT college_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string | null }>();
     if (!student) return unauthorized('Student not found');
     const hostCollegeId = internship.college_id ?? internship.department_college_id;
-    if (hostCollegeId && student.college_id && hostCollegeId === student.college_id) {
-      return forbidden('Students cannot apply to internships within their own institution.');
+    if (Number(internship.is_external) === 1 && hostCollegeId && student.college_id && hostCollegeId === student.college_id) {
+      return forbidden('This internship is open only to external college students');
     }
 
     const existing = await env.DB.prepare('SELECT id FROM applications WHERE student_id = ? AND internship_id = ?').bind(actor.id, internshipId).first<{ id: string }>();
     if (existing) return conflict('You already applied to this internship');
+
+    const activeApplicationStats = await env.DB.prepare(
+      `SELECT COUNT(*) AS count
+       FROM applications
+       WHERE student_id = ?
+         AND status IN ('APPLIED', 'ACCEPTED')`,
+    ).bind(actor.id).first<{ count: number }>();
+    if (Number(activeApplicationStats?.count ?? 0) >= MAX_ACTIVE_APPLICATIONS) {
+      return forbidden('Application limit reached');
+    }
 
     const id = crypto.randomUUID();
     await env.DB.prepare(
@@ -1997,25 +2009,43 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (app.status === 'ACCEPTED') return ok('Application already accepted');
     if ((app.filled_vacancy ?? 0) >= (app.total_vacancy ?? 0)) return conflict('Vacancy limit reached');
 
-    await env.DB.exec('BEGIN');
     try {
-      const updateInternship = await env.DB.prepare(
-        `UPDATE internships
-         SET filled_vacancy = filled_vacancy + 1,
-             remaining_vacancy = total_vacancy - (filled_vacancy + 1),
-             available_vacancy = total_vacancy - (filled_vacancy + 1),
-             updated_at = datetime('now')
-         WHERE id = ?
-           AND filled_vacancy < total_vacancy`,
-      ).bind(app.internship_id).run();
-      if ((updateInternship.meta.changes ?? 0) === 0) throw new Error('Vacancy limit reached');
-
-      await env.DB.prepare(
-        `UPDATE applications SET status = 'ACCEPTED' WHERE id = ?`,
-      ).bind(parsed.data.application_id).run();
-      await env.DB.exec('COMMIT');
+      await runAtomic(env, null, async () => {
+        const updateInternship = await env.DB.prepare(
+          `UPDATE internships
+           SET filled_vacancy = (
+             SELECT COUNT(*)
+             FROM applications a
+             WHERE a.internship_id = internships.id
+               AND a.status = 'ACCEPTED'
+           ) + 1,
+               remaining_vacancy = MAX(total_vacancy - (
+                 SELECT COUNT(*)
+                 FROM applications a
+                 WHERE a.internship_id = internships.id
+                   AND a.status = 'ACCEPTED'
+               ) - 1, 0),
+               available_vacancy = MAX(total_vacancy - (
+                 SELECT COUNT(*)
+                 FROM applications a
+                 WHERE a.internship_id = internships.id
+                   AND a.status = 'ACCEPTED'
+               ) - 1, 0),
+               updated_at = datetime('now')
+           WHERE id = ?
+             AND (
+               SELECT COUNT(*)
+               FROM applications a
+               WHERE a.internship_id = internships.id
+                 AND a.status = 'ACCEPTED'
+             ) < total_vacancy`,
+        ).bind(app.internship_id).run();
+        if ((updateInternship.meta.changes ?? 0) === 0) throw new Error('Vacancy limit reached');
+        await env.DB.prepare(
+          `UPDATE applications SET status = 'ACCEPTED' WHERE id = ?`,
+        ).bind(parsed.data.application_id).run();
+      });
     } catch (error) {
-      await env.DB.exec('ROLLBACK');
       return conflict(error instanceof Error ? error.message : 'Unable to accept application');
     }
 
@@ -2153,8 +2183,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const internshipId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, college_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po, internship_co)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DEPARTMENT', ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?, ?)`,
+      `INSERT INTO internships (id, title, description, department_id, college_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, source_type, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po, internship_co)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?, ?)`,
     )
       .bind(
         internshipId,
@@ -2171,6 +2201,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         Math.floor(vacancy ?? 0),
         Math.floor(vacancy ?? 0),
         applicableTo === 'EXTERNAL' ? 1 : 0,
+        applicableTo === 'EXTERNAL' ? 'COLLEGE' : 'INDUSTRY',
+        applicableTo === 'EXTERNAL' ? 'COLLEGE' : 'DEPARTMENT_SUGGESTED',
         applicableTo === 'EXTERNAL' ? 'ALL_TARGETS' : 'SAME_COLLEGE_DEPARTMENT',
         action === 'send_to_industry' ? 'SENT_TO_INDUSTRY' : 'PUBLISHED',
         internshipCategory === 'STIPEND' ? stipendAmount : null,
@@ -2189,30 +2221,23 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const coCodes = Array.isArray(mappedCo) ? mappedCo.map((item) => toText(item)).filter(Boolean) : [];
     const poCodes = Array.isArray(mappedIpo) ? mappedIpo.map((item) => toText(item)).filter(Boolean) : [];
     if (applicableTo === 'EXTERNAL') {
-      await env.DB.exec('BEGIN');
-      try {
-        if (coCodes.length > 0) {
-          for (const coCode of coCodes) {
-            await env.DB.prepare(
-              `INSERT INTO internship_co_mapping (id, internship_id, co_code, updated_at)
-               VALUES (?, ?, ?, datetime('now'))
-               ON CONFLICT(internship_id, co_code) DO UPDATE SET updated_at = datetime('now')`,
-            ).bind(crypto.randomUUID(), internshipId, coCode).run();
-          }
+      if (coCodes.length > 0) {
+        for (const coCode of coCodes) {
+          await env.DB.prepare(
+            `INSERT INTO internship_co_mapping (id, internship_id, co_code, updated_at)
+             VALUES (?, ?, ?, datetime('now'))
+             ON CONFLICT(internship_id, co_code) DO UPDATE SET updated_at = datetime('now')`,
+          ).bind(crypto.randomUUID(), internshipId, coCode).run();
         }
-        if (poCodes.length > 0) {
-          for (const poCode of poCodes) {
-            await env.DB.prepare(
-              `INSERT INTO internship_po_mapping (id, internship_id, po_code, updated_at)
-               VALUES (?, ?, ?, datetime('now'))
-               ON CONFLICT(internship_id, po_code) DO UPDATE SET updated_at = datetime('now')`,
-            ).bind(crypto.randomUUID(), internshipId, poCode).run();
-          }
+      }
+      if (poCodes.length > 0) {
+        for (const poCode of poCodes) {
+          await env.DB.prepare(
+            `INSERT INTO internship_po_mapping (id, internship_id, po_code, updated_at)
+             VALUES (?, ?, ?, datetime('now'))
+             ON CONFLICT(internship_id, po_code) DO UPDATE SET updated_at = datetime('now')`,
+          ).bind(crypto.randomUUID(), internshipId, poCode).run();
         }
-        await env.DB.exec('COMMIT');
-      } catch (error) {
-        await env.DB.exec('ROLLBACK');
-        throw error;
       }
     }
 
@@ -2346,16 +2371,18 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const internship = await env.DB.prepare(
-      `SELECT i.id, COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS available_vacancy, d.college_id
+      `SELECT i.id, COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS available_vacancy, COALESCE(i.is_external, 0) AS is_external, d.college_id
        FROM internships i
        INNER JOIN departments d ON d.id = i.department_id
        WHERE i.id = ?`,
-    ).bind(internshipId).first<{ id: string; available_vacancy: number | null; college_id: string }>();
+    ).bind(internshipId).first<{ id: string; available_vacancy: number | null; is_external: number; college_id: string }>();
     if (!internship) return badRequest('Invalid internship_id');
     if (actor.role === 'STUDENT') {
       const student = await env.DB.prepare('SELECT college_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string }>();
       if (!student) return unauthorized('Student not found');
-      if (student.college_id === internship.college_id) return forbidden('You can apply only for internships from other colleges.');
+      if (Number(internship.is_external) === 1 && student.college_id === internship.college_id) {
+        return forbidden('This internship is open only to external college students');
+      }
       if (internship.available_vacancy !== null && Number(internship.available_vacancy) <= 0) return forbidden('No vacancy available for this internship');
     }
 
@@ -2372,24 +2399,22 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     }
 
     const applicationId = crypto.randomUUID();
-    await env.DB.exec('BEGIN');
     try {
-      await env.DB.prepare(
-        `INSERT INTO internship_applications (id, student_id, external_student_id, internship_id, status, is_external)
-         VALUES (?, ?, ?, ?, 'pending', ?)`,
-      )
-        .bind(
-          applicationId,
-          actor.role === 'STUDENT' ? actor.id : null,
-          actor.role === 'EXTERNAL_STUDENT' ? actor.id : null,
-          internshipId,
-          isExternal,
+      await runAtomic(env, null, async () => {
+        await env.DB.prepare(
+          `INSERT INTO internship_applications (id, student_id, external_student_id, internship_id, status, is_external)
+           VALUES (?, ?, ?, ?, 'pending', ?)`,
         )
-        .run();
-
-      await env.DB.exec('COMMIT');
+          .bind(
+            applicationId,
+            actor.role === 'STUDENT' ? actor.id : null,
+            actor.role === 'EXTERNAL_STUDENT' ? actor.id : null,
+            internshipId,
+            isExternal,
+          )
+          .run();
+      });
     } catch (error) {
-      await env.DB.exec('ROLLBACK');
       if (error instanceof Error) return conflict(error.message);
       return conflict('Unable to submit application');
     }
@@ -3415,6 +3440,20 @@ async function getStudentApplicationEligibility(env: EnvBindings, studentId: str
   return { openApplications, activeLock };
 }
 
+async function runAtomic(
+  env: EnvBindings,
+  workerState: { storage?: { transaction: <T>(fn: (txn: unknown) => Promise<T>) => Promise<T> } } | null,
+  operation: () => Promise<void>,
+): Promise<void> {
+  if (workerState?.storage?.transaction) {
+    await workerState.storage.transaction(async () => {
+      await operation();
+    });
+    return;
+  }
+  await operation();
+}
+
 async function loadStudentDashboard(env: EnvBindings, studentId: string): Promise<Response> {
   const student = await env.DB.prepare(
     `SELECT s.college_id, s.sex, c.name AS college_name
@@ -3446,7 +3485,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        ORDER BY ia.created_at DESC`,
     ).bind(studentId).all(),
     env.DB.prepare(
-      `SELECT i.id, i.title, i.description, d.name AS department_name, c.name AS college_name
+      `SELECT i.id, i.title, i.description, d.name AS department_name, c.name AS college_name, c.id AS college_id, COALESCE(i.is_external, 0) AS is_external
        FROM internships i
        INNER JOIN departments d ON d.id = i.department_id
        INNER JOIN colleges c ON c.id = d.college_id
@@ -3465,7 +3504,8 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        ORDER BY i.created_at DESC`,
     ).bind(student.college_id, student.sex ?? '', student.sex ?? '').all(),
     env.DB.prepare(
-      `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name,
+      `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name, c.id AS college_id,
+              COALESCE(i.is_external, 0) AS is_external,
               COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS vacancy,
               ia.id AS application_id, ia.status AS application_status, ia.industry_feedback, ia.industry_score,
               (
@@ -3479,8 +3519,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        LEFT JOIN industry_internships ii ON ii.title = i.title
        LEFT JOIN industries ind ON ind.id = ii.industry_id
        LEFT JOIN internship_applications ia ON ia.internship_id = i.id AND ia.student_id = ?
-       WHERE d.college_id <> ?
-         AND i.status = 'ACCEPTED'
+       WHERE i.status = 'ACCEPTED'
          AND COALESCE(i.student_visibility, 0) = 1
          AND (
            COALESCE(i.created_by, 'INDUSTRY') = 'INDUSTRY'
@@ -3492,7 +3531,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
            OR (COALESCE(i.gender_preference, 'BOTH') = 'GIRLS' AND ? = 'FEMALE')
          )
        ORDER BY i.created_at DESC`,
-    ).bind(studentId, student.college_id, student.sex ?? '', student.sex ?? '').all(),
+    ).bind(studentId, student.sex ?? '', student.sex ?? '').all(),
     getStudentApplicationEligibility(env, studentId),
   ]);
 
@@ -3524,8 +3563,13 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
       description: row.description,
       departmentName: row.department_name,
       collegeName: row.college_name,
+      isExternal: Number(row.is_external ?? 0) === 1,
     })),
-    externalInternships: externalRows.map((row: any) => ({
+    externalInternships: externalRows.map((row: any) => {
+      const sameCollege = String(row.college_id ?? '') === String(student.college_id ?? '');
+      const externalOnlyBlocked = Number(row.is_external ?? 0) === 1 && sameCollege;
+      const limitReached = eligibility.openApplications >= MAX_ACTIVE_APPLICATIONS || eligibility.activeLock;
+      return {
       id: row.id,
       title: row.title,
       description: row.description,
@@ -3540,11 +3584,18 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
       industryFeedback: row.industry_feedback ?? null,
       evaluationMarks: row.industry_score === null || row.industry_score === undefined ? null : Number(row.industry_score),
       outcomeMarks: row.outcome_marks === null || row.outcome_marks === undefined ? null : Number(row.outcome_marks),
-    })),
+      isExternal: Number(row.is_external ?? 0) === 1,
+      sameCollege,
+      eligible: !externalOnlyBlocked && !limitReached,
+      eligibilityMessage: externalOnlyBlocked
+        ? 'External-only internship'
+        : (limitReached ? 'Application limit reached' : 'Available for your college'),
+      };
+    }),
     activeApplicationLock: eligibility.activeLock,
-    maxSelectableApplications: 3,
-    canApplyForExternal: !eligibility.activeLock && eligibility.openApplications < 3,
-    policyNote: 'Your selected college+department is your internal institute. You can apply to internships from other colleges only.',
+    maxSelectableApplications: MAX_ACTIVE_APPLICATIONS,
+    canApplyForExternal: !eligibility.activeLock && eligibility.openApplications < MAX_ACTIVE_APPLICATIONS,
+    policyNote: 'You can apply to all industry/internal internships. External internships from your own college are blocked.',
     journeyCompletion: applicationRows.length > 0 ? 60 : 20,
     journeySteps: [
       { label: 'Profile created', done: true },
@@ -4125,6 +4176,7 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   if (!internshipColumns.has('remaining_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN remaining_vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('available_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN available_vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('created_by')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN created_by TEXT NOT NULL DEFAULT 'INDUSTRY'").run();
+  if (!internshipColumns.has('source_type')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN source_type TEXT NOT NULL DEFAULT 'INDUSTRY'").run();
   if (!internshipColumns.has('visibility_type')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN visibility_type TEXT NOT NULL DEFAULT 'ALL_TARGETS'").run();
   if (!internshipColumns.has('requirements')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN requirements TEXT').run();
   if (!internshipColumns.has('published')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN published INTEGER NOT NULL DEFAULT 0').run();
@@ -4375,6 +4427,7 @@ async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
   if (!internshipColumns.has('remaining_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN remaining_vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('available_vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN available_vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('created_by')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN created_by TEXT NOT NULL DEFAULT 'INDUSTRY'").run();
+  if (!internshipColumns.has('source_type')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN source_type TEXT NOT NULL DEFAULT 'INDUSTRY'").run();
   if (!internshipColumns.has('visibility_type')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN visibility_type TEXT NOT NULL DEFAULT 'ALL_TARGETS'").run();
   if (!internshipColumns.has('requirements')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN requirements TEXT').run();
   if (!internshipColumns.has('published')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN published INTEGER NOT NULL DEFAULT 0').run();
