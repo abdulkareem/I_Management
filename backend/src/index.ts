@@ -32,6 +32,7 @@ type AuthSession = {
       | 'COLLEGE'
       | 'DEPARTMENT_COORDINATOR'
       | 'COORDINATOR'
+      | 'DEPARTMENT'
       | 'INDUSTRY'
       | 'STUDENT'
       | 'EXTERNAL_STUDENT';
@@ -6602,6 +6603,25 @@ async function getTableColumns(env: EnvBindings, tableName: string): Promise<Arr
   return rows.results ?? [];
 }
 
+
+function normalizeSessionRole(role: string): AuthSession['user']['role'] | null {
+  const normalized = String(role || '').toUpperCase();
+  if (normalized === 'DEPARTMENT') return 'DEPARTMENT_COORDINATOR';
+  if (
+    normalized === 'SUPER_ADMIN'
+    || normalized === 'ADMIN'
+    || normalized === 'COLLEGE'
+    || normalized === 'DEPARTMENT_COORDINATOR'
+    || normalized === 'COORDINATOR'
+    || normalized === 'INDUSTRY'
+    || normalized === 'STUDENT'
+    || normalized === 'EXTERNAL_STUDENT'
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
 function requireRole(request: Request, allowedRoles: AuthSession['user']['role'][]) {
   const authHeader = request.headers.get('Authorization') || '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
@@ -6632,10 +6652,13 @@ function parseSessionToken(token: string): { id: string; email: string; role: Au
     const payload = JSON.parse(atob(token.replace('session.', '')));
     if (!payload?.id || !payload?.email || !payload?.role) return null;
 
+    const normalizedRole = normalizeSessionRole(payload.role);
+    if (!normalizedRole) return null;
+
     return {
       id: String(payload.id),
       email: String(payload.email),
-      role: payload.role,
+      role: normalizedRole,
     };
   } catch {
     return null;
