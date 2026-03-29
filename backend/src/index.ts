@@ -19,6 +19,7 @@ type Role =
 
 type JsonMap = Record<string, unknown>;
 type DocumentType = 'approval' | 'reply' | 'allotment' | 'feedback';
+type DepartmentDocumentType = DocumentType;
 
 type AuthSession = {
   token: string;
@@ -2702,6 +2703,172 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Department profile fetched', profile);
   }
 
+  if (request.method === 'GET' && pathname === '/api/department/dashboard-summary') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const departmentId = toText(url.searchParams.get('department_id')) || actor.id;
+    if (departmentId !== actor.id) return forbidden('department_id does not match your session');
+
+    const summary = await env.DB.prepare(
+      `SELECT d.name,
+              d.coordinator_name,
+              d.coordinator_email,
+              COUNT(DISTINCT i.id) AS internships_count,
+              SUM(CASE WHEN UPPER(COALESCE(i.status, '')) IN ('DRAFT','SENT_TO_INDUSTRY','SENT_TO_DEPT','SENT_TO_DEPARTMENT','PENDING') THEN 1 ELSE 0 END) AS pending_count,
+              (SELECT COUNT(*) FROM industry_requests ir WHERE ir.department_id = d.id) AS ideas_count,
+              (SELECT COUNT(*) FROM programs p WHERE p.department_id = d.id) AS programmes_count
+       FROM departments d
+       LEFT JOIN internships i ON i.department_id = d.id
+       WHERE d.id = ?
+       GROUP BY d.id, d.name, d.coordinator_name, d.coordinator_email`,
+    ).bind(departmentId).first<any>();
+    if (!summary) return errorResponse(404, 'Department not found');
+
+    return ok('Department dashboard summary fetched', {
+      name: summary.name,
+      coordinator_name: summary.coordinator_name,
+      coordinator_email: summary.coordinator_email,
+      internships_count: Number(summary.internships_count ?? 0),
+      pending_count: Number(summary.pending_count ?? 0),
+      ideas_count: Number(summary.ideas_count ?? 0),
+      programmes_count: Number(summary.programmes_count ?? 0),
+    });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/linked-ipos') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const departmentId = toText(url.searchParams.get('department_id')) || actor.id;
+    if (departmentId !== actor.id) return forbidden('department_id does not match your session');
+    const rows = await env.DB.prepare(
+      `SELECT i.id, i.name, i.business_activity, i.email, COALESCE(cil.status, 'inactive') AS link_status
+       FROM departments d
+       INNER JOIN college_industry_links cil ON cil.college_id = d.college_id AND cil.status IN ('approved', 'active')
+       INNER JOIN industries i ON i.id = cil.industry_id
+       WHERE d.id = ?
+       ORDER BY i.name ASC`,
+    ).bind(departmentId).all();
+    return ok('Linked IPOs fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/analytics') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const departmentId = toText(url.searchParams.get('department_id')) || actor.id;
+    if (departmentId !== actor.id) return forbidden('department_id does not match your session');
+
+    const [students, internships, completed, ongoing, pendingEvaluations, ipoEngagement] = await Promise.all([
+      env.DB.prepare('SELECT COUNT(*) AS count FROM students WHERE department_id = ?').bind(departmentId).first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM internships WHERE department_id = ?').bind(departmentId).first<{ count: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS count
+         FROM internship_applications ia
+         INNER JOIN internships i ON i.id = ia.internship_id
+         WHERE i.department_id = ? AND ia.completed_at IS NOT NULL`,
+      ).bind(departmentId).first<{ count: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS count
+         FROM internship_applications ia
+         INNER JOIN internships i ON i.id = ia.internship_id
+         WHERE i.department_id = ? AND ia.status = 'accepted' AND ia.completed_at IS NULL`,
+      ).bind(departmentId).first<{ count: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS count
+         FROM internship_applications ia
+         INNER JOIN internships i ON i.id = ia.internship_id
+         LEFT JOIN internship_evaluations ie ON ie.application_id = ia.id
+         WHERE i.department_id = ? AND ia.completed_at IS NOT NULL AND ie.id IS NULL`,
+      ).bind(departmentId).first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(DISTINCT industry_id) AS count FROM internships WHERE department_id = ? AND industry_id IS NOT NULL').bind(departmentId).first<{ count: number }>(),
+    ]);
+
+    const totalStudents = Number(students?.count ?? 0);
+    const totalInternships = Number(internships?.count ?? 0);
+    const completedInternships = Number(completed?.count ?? 0);
+    const ongoingInternships = Number(ongoing?.count ?? 0);
+    const pendingEval = Number(pendingEvaluations?.count ?? 0);
+    const ipoEngagementCount = Number(ipoEngagement?.count ?? 0);
+    const performanceScore = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          (completedInternships * 50) / Math.max(totalInternships, 1)
+          + (ipoEngagementCount * 25) / Math.max(totalInternships, 1)
+          + (Math.max(totalInternships - pendingEval, 0) * 25) / Math.max(totalInternships, 1),
+        ),
+      ),
+    );
+
+    return ok('Department analytics fetched', {
+      total_students: totalStudents,
+      total_internships: totalInternships,
+      completed_internships: completedInternships,
+      ongoing_internships: ongoingInternships,
+      pending_evaluations: pendingEval,
+      ipo_engagement_count: ipoEngagementCount,
+      department_performance_score: performanceScore,
+    });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/department/report/pdf') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const departmentId = toText(url.searchParams.get('department_id')) || actor.id;
+    if (departmentId !== actor.id) return forbidden('department_id does not match your session');
+    const summaryRes = await routeRequest(new Request(`${url.origin}/api/department/dashboard-summary?department_id=${departmentId}`, { method: 'GET', headers: request.headers }), env, new URL(`${url.origin}/api/department/dashboard-summary?department_id=${departmentId}`));
+    const analyticsRes = await routeRequest(new Request(`${url.origin}/api/department/analytics?department_id=${departmentId}`, { method: 'GET', headers: request.headers }), env, new URL(`${url.origin}/api/department/analytics?department_id=${departmentId}`));
+    const linkedRes = await routeRequest(new Request(`${url.origin}/api/department/linked-ipos?department_id=${departmentId}`, { method: 'GET', headers: request.headers }), env, new URL(`${url.origin}/api/department/linked-ipos?department_id=${departmentId}`));
+    const internships = await env.DB.prepare('SELECT title, internship_category, vacancy, status, is_external FROM internships WHERE department_id = ? ORDER BY created_at DESC LIMIT 20').bind(departmentId).all<any>();
+    const documents = await env.DB.prepare('SELECT type, COUNT(*) AS count FROM department_documents WHERE department_id = ? GROUP BY type').bind(departmentId).all<any>();
+    const summaryData = await summaryRes.json() as ApiEnvelope<any>;
+    const analyticsData = await analyticsRes.json() as ApiEnvelope<any>;
+    const linkedData = await linkedRes.json() as ApiEnvelope<any>;
+    const lines = [
+      'Department Full Report',
+      `Generated: ${new Date().toISOString()}`,
+      '',
+      '1. Department Overview',
+      `Department: ${summaryData.data?.name ?? '-'}`,
+      `Coordinator: ${summaryData.data?.coordinator_name ?? '-'}`,
+      `Coordinator Email: ${summaryData.data?.coordinator_email ?? '-'}`,
+      '',
+      '2. Internship Summary',
+      `Total Internships: ${summaryData.data?.internships_count ?? 0}`,
+      `Pending Internships: ${summaryData.data?.pending_count ?? 0}`,
+      '',
+      '3. Application Statistics',
+      `Completed Internships: ${analyticsData.data?.completed_internships ?? 0}`,
+      `Ongoing Internships: ${analyticsData.data?.ongoing_internships ?? 0}`,
+      '',
+      '4. Programme + PO/PSO Mapping',
+      `Total Programmes: ${summaryData.data?.programmes_count ?? 0}`,
+      '',
+      '5. IPO Collaborations',
+      `Linked IPOs: ${(linkedData.data ?? []).length}`,
+      '',
+      '6. Internship Listings',
+      ...(internships.results ?? []).slice(0, 8).map((item: any) => `- ${item.title} | ${item.internship_category ?? 'FREE'} | Vac:${item.vacancy ?? 0} | ${item.status} | ${Number(item.is_external) === 1 ? 'external' : 'internal'}`),
+      '',
+      '7. Compliance / Pending Items',
+      `Pending Evaluations: ${analyticsData.data?.pending_evaluations ?? 0}`,
+      '',
+      '8. Documents Summary',
+      ...((documents.results ?? []).map((item: any) => `${item.type}: ${item.count}`)),
+      `Performance Score: ${analyticsData.data?.department_performance_score ?? 0}`,
+    ];
+    const pdfBytes = buildSimplePdf(lines);
+    return new Response(pdfBytes.buffer as ArrayBuffer, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        ...NO_CACHE_HEADERS,
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="department-report-${departmentId}.pdf"`,
+      },
+    });
+  }
+
   if (request.method === 'POST' && pathname === '/api/department/map-internship') {
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
@@ -3019,7 +3186,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const minimumDays = minimumDaysRaw ? Number(minimumDaysRaw) : null;
     const applicableTo = toText(optional(body, ['applicable_to', 'applicableTo'])).toUpperCase() || 'EXTERNAL';
     const action = toText(optional(body, ['action'])).toLowerCase();
-    const industryId = toText(optional(body, ['industry_id', 'industryId'])) || null;
+    const industryId = toText(optional(body, ['industry_id', 'industryId', 'ipo_id', 'ipoId'])) || null;
     const programId = toText(optional(body, ['program_id', 'programId'])) || null;
     const mappedPo = optional(body, ['mapped_po', 'mappedPo']);
     const mappedPso = optional(body, ['mapped_pso', 'mappedPso']);
@@ -3040,8 +3207,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (minimumDays !== null && (!Number.isFinite(minimumDays) || minimumDays < 60)) return badRequest('duration must be at least 60 hours');
     if (!['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
     if (!['EXTERNAL', 'INTERNAL'].includes(applicableTo)) return badRequest('applicableTo must be INTERNAL or EXTERNAL');
-    if (applicableTo === 'INTERNAL' && !industryId) return badRequest('industryId is required for internal internships');
-    if (action === 'send_to_industry' && applicableTo !== 'INTERNAL') return badRequest('Only internal internships can be sent to industry');
+    if (applicableTo === 'INTERNAL' && !industryId) return badRequest('ipoId is required for internal internships');
+    if (action === 'send_to_industry' && applicableTo !== 'INTERNAL') return badRequest('Only internal internships can be sent to IPO');
 
     const department = await env.DB.prepare('SELECT college_id FROM departments WHERE id = ?').bind(actor.id).first<{ college_id: string }>();
     if (!department) return badRequest('Department not found');
@@ -3064,8 +3231,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const internshipId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, college_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, source_type, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po, internship_co)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?, ?)`,
+      `INSERT INTO internships (id, title, description, department_id, college_id, ipo_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, source_type, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po, internship_co)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?, ?)`,
     )
       .bind(
         internshipId,
@@ -3073,6 +3240,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         description,
         actor.id,
         department.college_id,
+        applicableTo === 'INTERNAL' ? industryId : null,
         applicableTo === 'INTERNAL' ? industryId : null,
         isPaid ? 1 : 0,
         isPaid ? Math.round(fee ?? 0) : null,
@@ -3085,7 +3253,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         applicableTo === 'EXTERNAL' ? 'COLLEGE' : 'INDUSTRY',
         applicableTo === 'EXTERNAL' ? 'COLLEGE' : 'DEPARTMENT_SUGGESTED',
         applicableTo === 'EXTERNAL' ? 'ALL_TARGETS' : 'SAME_COLLEGE_DEPARTMENT',
-        action === 'send_to_industry' ? 'SENT_TO_INDUSTRY' : 'PUBLISHED',
+        action === 'send_to_industry' || action === 'send_to_ipo' ? 'SENT_TO_INDUSTRY' : 'PUBLISHED',
         internshipCategory === 'STIPEND' ? stipendAmount : null,
         internshipCategory === 'STIPEND' ? stipendDuration : null,
         minimumDays === null || Number.isNaN(minimumDays) ? null : Math.floor(minimumDays),
@@ -3101,25 +3269,22 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const coCodes = Array.isArray(mappedCo) ? mappedCo.map((item) => toText(item)).filter(Boolean) : [];
     const poCodes = Array.isArray(mappedIpo) ? mappedIpo.map((item) => toText(item)).filter(Boolean) : [];
-    if (applicableTo === 'EXTERNAL') {
-      if (coCodes.length > 0) {
-        for (const coCode of coCodes) {
-          await env.DB.prepare(
-            `INSERT INTO internship_co_mapping (id, internship_id, co_code, updated_at)
-             VALUES (?, ?, ?, datetime('now'))
-             ON CONFLICT(internship_id, co_code) DO UPDATE SET updated_at = datetime('now')`,
-          ).bind(crypto.randomUUID(), internshipId, coCode).run();
-        }
-      }
-      if (poCodes.length > 0) {
-        for (const poCode of poCodes) {
-          await env.DB.prepare(
-            `INSERT INTO internship_po_mapping (id, internship_id, po_code, updated_at)
-             VALUES (?, ?, ?, datetime('now'))
-             ON CONFLICT(internship_id, po_code) DO UPDATE SET updated_at = datetime('now')`,
-          ).bind(crypto.randomUUID(), internshipId, poCode).run();
-        }
-      }
+    if ((coCodes.length + poCodes.length) > 0 && (coCodes.some((item) => !item.trim()) || poCodes.some((item) => !item.trim()))) {
+      return badRequest('Null or empty mapping values are not allowed');
+    }
+    for (const coCode of coCodes) {
+      await env.DB.prepare(
+        `INSERT INTO internship_co_mapping (id, internship_id, co_code, updated_at)
+         VALUES (?, ?, ?, datetime('now'))
+         ON CONFLICT(internship_id, co_code) DO UPDATE SET updated_at = datetime('now')`,
+      ).bind(crypto.randomUUID(), internshipId, coCode).run();
+    }
+    for (const poCode of poCodes) {
+      await env.DB.prepare(
+        `INSERT INTO internship_po_mapping (id, internship_id, po_code, updated_at)
+         VALUES (?, ?, ?, datetime('now'))
+         ON CONFLICT(internship_id, po_code) DO UPDATE SET updated_at = datetime('now')`,
+      ).bind(crypto.randomUUID(), internshipId, poCode).run();
     }
 
     return created(action === 'send_to_industry' ? 'Sent to Industry' : 'Published Successfully', { id: internshipId, status: action === 'send_to_industry' ? 'SENT_TO_INDUSTRY' : 'PUBLISHED' });
@@ -3390,6 +3555,36 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       : await stmt.bind(actor.id, actor.id).all();
 
     return ok('Department applications fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/applications/internal') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const rows = await env.DB.prepare(
+      `SELECT ia.*, i.title AS internship_title, COALESCE(s.name, es.name) AS student_name, COALESCE(s.email, es.email) AS student_email
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       LEFT JOIN students s ON s.id = ia.student_id
+       LEFT JOIN external_students es ON es.id = ia.external_student_id
+       WHERE i.department_id = ? AND ia.student_id IS NOT NULL
+       ORDER BY ia.created_at DESC`,
+    ).bind(actor.id).all();
+    return ok('Internal applications fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/applications/external') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const rows = await env.DB.prepare(
+      `SELECT ia.*, i.title AS internship_title, COALESCE(s.name, es.name) AS student_name, COALESCE(s.email, es.email) AS student_email
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       LEFT JOIN students s ON s.id = ia.student_id
+       LEFT JOIN external_students es ON es.id = ia.external_student_id
+       WHERE i.department_id = ? AND (ia.external_student_id IS NOT NULL OR ia.is_external = 1)
+       ORDER BY ia.created_at DESC`,
+    ).bind(actor.id).all();
+    return ok('External applications fetched', rows.results ?? []);
   }
 
   const acceptDepartmentAppMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/accept$/);
@@ -5206,6 +5401,7 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   if (!internshipColumns.has('internship_category')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN internship_category TEXT NOT NULL DEFAULT 'FREE'").run();
   if (!internshipColumns.has('vacancy')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN vacancy INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('industry_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN industry_id TEXT').run();
+  if (!internshipColumns.has('ipo_id')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN ipo_id TEXT').run();
   if (!internshipColumns.has('status')) await env.DB.prepare("ALTER TABLE internships ADD COLUMN status TEXT NOT NULL DEFAULT 'DRAFT'").run();
   if (!internshipColumns.has('student_visibility')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN student_visibility INTEGER NOT NULL DEFAULT 0').run();
   if (!internshipColumns.has('programme')) await env.DB.prepare('ALTER TABLE internships ADD COLUMN programme TEXT').run();
@@ -5587,6 +5783,29 @@ async function ensureDocumentSchema(env: EnvBindings): Promise<void> {
     )`,
   ).run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_documents_student_type ON documents(student_id, type)').run();
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS department_documents (
+      id TEXT PRIMARY KEY,
+      department_id TEXT NOT NULL,
+      internship_id TEXT NOT NULL,
+      student_id TEXT,
+      type TEXT NOT NULL CHECK (type IN ('approval', 'reply', 'allotment', 'feedback')),
+      generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      file_url TEXT NOT NULL,
+      generated_by TEXT NOT NULL DEFAULT 'system',
+      content_hash TEXT NOT NULL,
+      metadata_json TEXT,
+      FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE
+    )`,
+  ).run();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO department_documents (id, department_id, internship_id, student_id, type, generated_at, file_url, generated_by, content_hash, metadata_json)
+     SELECT d.id, i.department_id, d.internship_id, d.student_id, d.type, d.generated_at, d.file_url, d.generated_by, d.content_hash, d.metadata_json
+     FROM documents d
+     INNER JOIN internships i ON i.id = d.internship_id
+     WHERE i.department_id IS NOT NULL`,
+  ).run();
 }
 
 async function generateDocument(
@@ -5631,6 +5850,23 @@ async function generateDocument(
       `INSERT INTO documents (id, internship_id, student_id, type, generated_at, file_url, generated_by, content_hash, metadata_json)
        VALUES (?, ?, ?, ?, ?, ?, 'system', ?, ?)`,
     ).bind(id, params.internshipId, params.studentId ?? null, params.type, generatedAt, fileUrl, contentHash, metadataJson).run();
+  }
+  const internshipDepartment = await env.DB.prepare('SELECT department_id FROM internships WHERE id = ?').bind(params.internshipId).first<{ department_id: string | null }>();
+  if (internshipDepartment?.department_id) {
+    await env.DB.prepare(
+      `INSERT INTO department_documents (id, department_id, internship_id, student_id, type, generated_at, file_url, generated_by, content_hash, metadata_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'system', ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         department_id = excluded.department_id,
+         internship_id = excluded.internship_id,
+         student_id = excluded.student_id,
+         type = excluded.type,
+         generated_at = excluded.generated_at,
+         file_url = excluded.file_url,
+         generated_by = 'system',
+         content_hash = excluded.content_hash,
+         metadata_json = excluded.metadata_json`,
+    ).bind(id, internshipDepartment.department_id, params.internshipId, params.studentId ?? null, params.type, generatedAt, fileUrl, contentHash, metadataJson).run();
   }
   return { id, internshipId: params.internshipId, studentId: params.studentId ?? null, type: params.type, generatedAt, fileUrl, generatedBy: 'system', regenerated: true };
 }
@@ -5721,12 +5957,14 @@ async function fetchDocumentPayload(env: EnvBindings, documentId: string, actor:
 async function downloadDocument(env: EnvBindings, documentId: string, actor: { id: string; role: AuthSession['user']['role'] }): Promise<Response> {
   const payload = await fetchDocumentPayload(env, documentId, actor);
   if (!payload) return forbidden('Document unavailable for this user');
-  return new Response(payload.html, {
+  const plainLines = payload.html.replace(/<[^>]+>/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 120);
+  const pdfBytes = buildSimplePdf(plainLines);
+  return new Response(pdfBytes.buffer as ArrayBuffer, {
     status: 200,
     headers: {
       ...CORS_HEADERS,
-      'Content-Type': 'text/html; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${payload.type}-${payload.internshipId}-${payload.studentId ?? 'na'}.html"`,
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${payload.type}-${payload.internshipId}-${payload.studentId ?? 'na'}.pdf"`,
     },
   });
 }
@@ -5740,8 +5978,8 @@ async function downloadStudentBundle(env: EnvBindings, studentId: string, actor:
     const payload = await fetchDocumentPayload(env, String(doc.id), actor);
     if (!payload) continue;
     files.push({
-      name: `${payload.type}-${payload.internshipId}-${payload.studentId ?? 'na'}.html`,
-      content: new TextEncoder().encode(payload.html),
+      name: `${payload.type}-${payload.internshipId}-${payload.studentId ?? 'na'}.pdf`,
+      content: buildSimplePdf(payload.html.replace(/<[^>]+>/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 120)),
     });
   }
   const zipBytes = createZip(files);
@@ -5790,10 +6028,10 @@ async function listDocumentsForActor(env: EnvBindings, actor: { id: string; role
   }
   if (actor.role === 'DEPARTMENT_COORDINATOR' || actor.role === 'COORDINATOR') {
     const rows = await env.DB.prepare(
-      `SELECT d.id, d.internship_id, d.student_id, d.type, d.generated_at, d.file_url, d.generated_by
-       FROM documents d INNER JOIN internships i ON i.id = d.internship_id
-       WHERE i.department_id = ?
-       ORDER BY d.generated_at DESC`,
+      `SELECT id, internship_id, student_id, type, generated_at, file_url, generated_by
+       FROM department_documents
+       WHERE department_id = ?
+       ORDER BY generated_at DESC`,
     ).bind(actor.id).all<any>();
     return rows.results ?? [];
   }
