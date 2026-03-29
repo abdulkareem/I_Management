@@ -107,6 +107,25 @@ const ipoCompleteSchema = z.object({
   rating: z.coerce.number().min(1).max(5),
 });
 
+const industryPerformanceFeedbackSchema = z.object({
+  studentName: z.string().trim().min(1),
+  registerNumber: z.string().trim().min(1),
+  organization: z.string().trim().min(1),
+  duration: z.string().trim().min(1),
+  supervisorName: z.string().trim().min(1),
+  attendancePunctuality: z.coerce.number().int().min(1).max(5),
+  technicalSkills: z.coerce.number().int().min(1).max(5),
+  problemSolvingAbility: z.coerce.number().int().min(1).max(5),
+  communicationSkills: z.coerce.number().int().min(1).max(5),
+  teamwork: z.coerce.number().int().min(1).max(5),
+  professionalEthics: z.coerce.number().int().min(1).max(5),
+  overallPerformance: z.enum(['Excellent', 'Good', 'Average', 'Poor']),
+  remarks: z.string().trim().optional().default(''),
+  recommendation: z.string().trim().optional().default(''),
+  supervisorSignature: z.string().trim().optional().default(''),
+  feedbackDate: z.string().trim().min(1),
+});
+
 const evaluateSchema = z.object({
   application_id: z.string().trim().min(1),
   marks: z.coerce.number().min(0).max(100),
@@ -1456,12 +1475,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
                 ia.completed_at,
                 ia.industry_feedback,
                 ia.industry_score,
+                ipf.id AS performance_feedback_id,
                 COALESCE(s.name, es.name) AS student_name,
                 COALESCE(s.email, es.email) AS student_email,
                 COALESCE(c.name, es.college, 'External') AS college_name,
                 i.title AS opportunity_title
          FROM internship_applications ia
          INNER JOIN internships i ON i.id = ia.internship_id
+         LEFT JOIN internship_performance_feedback ipf ON ipf.application_id = ia.id
          LEFT JOIN students s ON s.id = ia.student_id
          LEFT JOIN external_students es ON es.id = ia.external_student_id
          LEFT JOIN colleges c ON c.id = s.college_id
@@ -1502,6 +1523,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         completedAt: row.completed_at,
         industryFeedback: row.industry_feedback,
         industryScore: row.industry_score,
+        performanceFeedbackId: row.performance_feedback_id ?? null,
       })),
     });
   }
@@ -1626,6 +1648,74 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const studentId = toText(url.searchParams.get('studentId'));
     if (!studentId) return badRequest('studentId is required');
     return downloadStudentBundle(env, studentId, actor);
+  }
+
+  const departmentApplicationDocsPdfMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/documents\/pdf$/);
+  if (request.method === 'GET' && departmentApplicationDocsPdfMatch) {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const applicationId = departmentApplicationDocsPdfMatch[1];
+    const row = await env.DB.prepare(
+      `SELECT ia.id, ia.student_id, ia.external_student_id, ia.internship_id,
+              COALESCE(s.name, es.name) AS student_name, COALESCE(s.university_reg_number, 'N/A') AS register_number,
+              i.title AS internship_title, i.department_id,
+              COALESCE(ind.name, 'Industry') AS industry_name
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       LEFT JOIN students s ON s.id = ia.student_id
+       LEFT JOIN external_students es ON es.id = ia.external_student_id
+       LEFT JOIN industries ind ON ind.id = i.industry_id
+       WHERE ia.id = ? AND i.department_id = ?`,
+    ).bind(applicationId, actor.id).first<any>();
+    if (!row) return errorResponse(404, 'Application not found');
+
+    const feedback = await env.DB.prepare(
+      `SELECT * FROM internship_performance_feedback WHERE application_id = ?`,
+    ).bind(applicationId).first<any>();
+    const evaluation = await env.DB.prepare(
+      `SELECT marks, feedback FROM evaluations WHERE application_id = ?`,
+    ).bind(applicationId).first<any>();
+    const outcome = await env.DB.prepare(
+      `SELECT AVG(weighted_score) AS outcome_score FROM outcome_results WHERE application_id = ?`,
+    ).bind(applicationId).first<any>();
+    const lines = [
+      'INTERNSHIP CONSOLIDATED DOCUMENT PACK',
+      '',
+      '1) Internship Approval & Allotment Summary',
+      `Student: ${row.student_name ?? '-'}`,
+      `Register Number: ${row.register_number ?? '-'}`,
+      `Internship: ${row.internship_title ?? '-'}`,
+      `Organization: ${row.industry_name ?? '-'}`,
+      '',
+      '2) Internship Performance Feedback Form',
+      `Supervisor: ${feedback?.supervisor_name ?? '-'}`,
+      `Duration: ${feedback?.duration ?? '-'}`,
+      `Attendance & Punctuality: ${feedback?.attendance_punctuality ?? '-'}/5`,
+      `Technical Skills: ${feedback?.technical_skills ?? '-'}/5`,
+      `Problem Solving Ability: ${feedback?.problem_solving_ability ?? '-'}/5`,
+      `Communication Skills: ${feedback?.communication_skills ?? '-'}/5`,
+      `Teamwork: ${feedback?.teamwork ?? '-'}/5`,
+      `Professional Ethics: ${feedback?.professional_ethics ?? '-'}/5`,
+      `Overall Performance: ${feedback?.overall_performance ?? '-'}`,
+      `Remarks: ${feedback?.remarks ?? '-'}`,
+      `Recommendation: ${feedback?.recommendation ?? '-'}`,
+      '',
+      '3) Evaluation and Marksheet',
+      `Evaluation Marks: ${evaluation?.marks ?? '-'}`,
+      `Evaluation Feedback: ${evaluation?.feedback ?? '-'}`,
+      '',
+      '4) Outcome Evaluation Sheet',
+      `Outcome Score (Average): ${outcome?.outcome_score ?? '-'}`,
+    ];
+    const pdfBytes = buildSimplePdf(lines);
+    return new Response(pdfBytes.buffer as ArrayBuffer, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="application-${applicationId}-documents.pdf"`,
+      },
+    });
   }
 
   if (request.method === 'GET' && pathname === '/api/documents/my') {
@@ -2931,10 +3021,18 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['INDUSTRY']);
     if (actor instanceof Response) return actor;
     const body = await readBody(request);
-    const feedback = toText(required(body, ['feedback']));
-    const score = Number(required(body, ['score']));
-    if (!feedback) return badRequest('feedback is required');
-    if (Number.isNaN(score) || score < 0 || score > 10) return badRequest('score must be between 0 and 10');
+    const parsed = industryPerformanceFeedbackSchema.safeParse(body);
+    if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? 'Invalid feedback payload');
+    const payload = parsed.data;
+    const averageScore = Number((
+      (payload.attendancePunctuality
+      + payload.technicalSkills
+      + payload.problemSolvingAbility
+      + payload.communicationSkills
+      + payload.teamwork
+      + payload.professionalEthics) / 6
+    ).toFixed(2));
+    const summaryFeedback = `Overall: ${payload.overallPerformance}. Remarks: ${payload.remarks || 'N/A'}. Recommendation: ${payload.recommendation || 'N/A'}.`;
     const result = await env.DB.prepare(
       `UPDATE internship_applications
        SET industry_feedback = ?,
@@ -2942,9 +3040,70 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            updated_at = datetime('now')
        WHERE id = ?
          AND internship_id IN (SELECT id FROM internships WHERE industry_id = ?)`,
-    ).bind(feedback, score, industryFeedbackMatch[1], actor.id).run();
+    ).bind(summaryFeedback, averageScore, industryFeedbackMatch[1], actor.id).run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
-    return ok('Feedback saved');
+    await env.DB.prepare(
+      `INSERT INTO internship_performance_feedback (
+         id, application_id, internship_id, student_id, external_student_id, industry_id,
+         student_name, register_number, organization, duration, supervisor_name,
+         attendance_punctuality, technical_skills, problem_solving_ability, communication_skills,
+         teamwork, professional_ethics, overall_performance, remarks, recommendation,
+         supervisor_signature, feedback_date, created_at, updated_at
+       )
+       SELECT
+         ?, ia.id, ia.internship_id, ia.student_id, ia.external_student_id, ?,
+         ?, ?, ?, ?, ?,
+         ?, ?, ?, ?,
+         ?, ?, ?, ?, ?,
+         ?, ?, datetime('now'), datetime('now')
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ia.id = ? AND i.industry_id = ?
+       ON CONFLICT(application_id) DO UPDATE SET
+         student_name = excluded.student_name,
+         register_number = excluded.register_number,
+         organization = excluded.organization,
+         duration = excluded.duration,
+         supervisor_name = excluded.supervisor_name,
+         attendance_punctuality = excluded.attendance_punctuality,
+         technical_skills = excluded.technical_skills,
+         problem_solving_ability = excluded.problem_solving_ability,
+         communication_skills = excluded.communication_skills,
+         teamwork = excluded.teamwork,
+         professional_ethics = excluded.professional_ethics,
+         overall_performance = excluded.overall_performance,
+         remarks = excluded.remarks,
+         recommendation = excluded.recommendation,
+         supervisor_signature = excluded.supervisor_signature,
+         feedback_date = excluded.feedback_date,
+         updated_at = datetime('now')`,
+    ).bind(
+      crypto.randomUUID(), actor.id,
+      payload.studentName, payload.registerNumber, payload.organization, payload.duration, payload.supervisorName,
+      payload.attendancePunctuality, payload.technicalSkills, payload.problemSolvingAbility, payload.communicationSkills,
+      payload.teamwork, payload.professionalEthics, payload.overallPerformance, payload.remarks, payload.recommendation,
+      payload.supervisorSignature, payload.feedbackDate, industryFeedbackMatch[1], actor.id,
+    ).run();
+    return ok('Feedback form saved');
+  }
+
+  const industryFeedbackFormMatch = pathname.match(/^\/api\/industry\/applications\/([^/]+)\/feedback-form$/);
+  if (industryFeedbackFormMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['INDUSTRY', 'DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const row = await env.DB.prepare(
+      `SELECT ipf.*
+       FROM internship_performance_feedback ipf
+       INNER JOIN internship_applications ia ON ia.id = ipf.application_id
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ipf.application_id = ?
+         AND (
+           ( ? = 'INDUSTRY' AND i.industry_id = ? )
+           OR ( ? IN ('DEPARTMENT_COORDINATOR', 'COORDINATOR') AND i.department_id = ? )
+         )`,
+    ).bind(industryFeedbackFormMatch[1], actor.role, actor.id, actor.role, actor.id).first<any>();
+    if (!row) return errorResponse(404, 'Feedback form not found');
+    return ok('Feedback form fetched', row);
   }
 
   if (request.method === 'GET' && pathname === '/api/internships') {
@@ -3898,9 +4057,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
     const rows = await env.DB.prepare(
-      `SELECT ia.*, i.title AS internship_title, COALESCE(s.name, es.name) AS student_name, COALESCE(s.email, es.email) AS student_email
+      `SELECT ia.*, ipf.id AS performance_feedback_id, i.title AS internship_title, COALESCE(s.name, es.name) AS student_name, COALESCE(s.email, es.email) AS student_email
        FROM internship_applications ia
        INNER JOIN internships i ON i.id = ia.internship_id
+       LEFT JOIN internship_performance_feedback ipf ON ipf.application_id = ia.id
        LEFT JOIN students s ON s.id = ia.student_id
        LEFT JOIN external_students es ON es.id = ia.external_student_id
        WHERE i.department_id = ? AND ia.student_id IS NOT NULL
@@ -3913,9 +4073,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
     const rows = await env.DB.prepare(
-      `SELECT ia.*, i.title AS internship_title, COALESCE(s.name, es.name) AS student_name, COALESCE(s.email, es.email) AS student_email
+      `SELECT ia.*, ipf.id AS performance_feedback_id, i.title AS internship_title, COALESCE(s.name, es.name) AS student_name, COALESCE(s.email, es.email) AS student_email
        FROM internship_applications ia
        INNER JOIN internships i ON i.id = ia.internship_id
+       LEFT JOIN internship_performance_feedback ipf ON ipf.application_id = ia.id
        LEFT JOIN students s ON s.id = ia.student_id
        LEFT JOIN external_students es ON es.id = ia.external_student_id
        WHERE i.department_id = ? AND (ia.external_student_id IS NOT NULL OR ia.is_external = 1)
@@ -6084,6 +6245,40 @@ async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
   ).run();
 
   await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_performance_feedback (
+      id TEXT PRIMARY KEY,
+      application_id TEXT NOT NULL UNIQUE,
+      internship_id TEXT NOT NULL,
+      student_id TEXT,
+      external_student_id TEXT,
+      industry_id TEXT NOT NULL,
+      student_name TEXT NOT NULL,
+      register_number TEXT NOT NULL,
+      organization TEXT NOT NULL,
+      duration TEXT NOT NULL,
+      supervisor_name TEXT NOT NULL,
+      attendance_punctuality INTEGER NOT NULL,
+      technical_skills INTEGER NOT NULL,
+      problem_solving_ability INTEGER NOT NULL,
+      communication_skills INTEGER NOT NULL,
+      teamwork INTEGER NOT NULL,
+      professional_ethics INTEGER NOT NULL,
+      overall_performance TEXT NOT NULL CHECK (overall_performance IN ('Excellent', 'Good', 'Average', 'Poor')),
+      remarks TEXT,
+      recommendation TEXT,
+      supervisor_signature TEXT,
+      feedback_date TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (application_id) REFERENCES internship_applications(id) ON DELETE CASCADE,
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL,
+      FOREIGN KEY (external_student_id) REFERENCES external_students(id) ON DELETE SET NULL,
+      FOREIGN KEY (industry_id) REFERENCES industries(id) ON DELETE CASCADE
+    )`,
+  ).run();
+
+  await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
@@ -6098,6 +6293,8 @@ async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_internships_college_dept_status ON internships(college_id, department_id, status)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_applications_internship ON applications(internship_id, status)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_workflow_feedback_internship ON internship_feedback(internship_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_perf_feedback_industry ON internship_performance_feedback(industry_id, feedback_date)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_perf_feedback_internship ON internship_performance_feedback(internship_id)').run(),
   ]);
 }
 
@@ -6245,10 +6442,18 @@ async function buildDocumentData(
     : null;
 
   const now = new Date().toISOString();
+  const feedbackForm = params.studentId
+    ? await env.DB.prepare(
+      `SELECT * FROM internship_performance_feedback
+       WHERE internship_id = ? AND (student_id = ? OR external_student_id = ?)
+       ORDER BY updated_at DESC LIMIT 1`,
+    ).bind(params.internshipId, params.studentId, params.studentId).first<any>()
+    : null;
   return {
     internship,
     student,
     app,
+    feedbackForm,
     systemLog: {
       internshipId: params.internshipId,
       studentId: params.studentId ?? 'N/A',
@@ -6446,12 +6651,29 @@ function renderDocumentHtml(type: DocumentType, data: any): string {
       <p>Your performance will be evaluated based on attendance, work register, report and viva.</p>`);
   }
   return base.replace('{{BODY}}', `<h1>Performance Feedback Form (Industry)</h1>
-    <p>Student Name: ${escapeHtml(data.student?.name ?? '-')}</p>
-    <p>Register Number: ${escapeHtml(data.student?.university_reg_number ?? '-')}</p>
-    <p>Internship Title: ${escapeHtml(data.internship.title)}</p>
-    <p>Department: ${escapeHtml(data.internship.department_name)}</p>
-    <p>Organization: ${escapeHtml(data.internship.industry_name)}</p>
-    <p>Status: Digitally filled by industry and stored in DB.</p>`);
+    <h2>INTERNSHIP PERFORMANCE FEEDBACK FORM</h2>
+    <p><strong>Student Name:</strong> ${escapeHtml(data.feedbackForm?.student_name ?? data.student?.name ?? '-')}</p>
+    <p><strong>Register Number:</strong> ${escapeHtml(data.feedbackForm?.register_number ?? data.student?.university_reg_number ?? '-')}</p>
+    <p><strong>Organization:</strong> ${escapeHtml(data.feedbackForm?.organization ?? data.internship.industry_name ?? '-')}</p>
+    <p><strong>Duration:</strong> ${escapeHtml(data.feedbackForm?.duration ?? data.internship.duration ?? '-')}</p>
+    <p><strong>Supervisor Name:</strong> ${escapeHtml(data.feedbackForm?.supervisor_name ?? '-')}</p>
+    <h3>A. Weekly / Final Evaluation</h3>
+    <ul>
+      <li>Attendance & Punctuality: ${escapeHtml(String(data.feedbackForm?.attendance_punctuality ?? '-'))}/5</li>
+      <li>Technical Skills: ${escapeHtml(String(data.feedbackForm?.technical_skills ?? '-'))}/5</li>
+      <li>Problem Solving Ability: ${escapeHtml(String(data.feedbackForm?.problem_solving_ability ?? '-'))}/5</li>
+      <li>Communication Skills: ${escapeHtml(String(data.feedbackForm?.communication_skills ?? '-'))}/5</li>
+      <li>Teamwork: ${escapeHtml(String(data.feedbackForm?.teamwork ?? '-'))}/5</li>
+      <li>Professional Ethics: ${escapeHtml(String(data.feedbackForm?.professional_ethics ?? '-'))}/5</li>
+    </ul>
+    <h3>B. Overall Performance</h3>
+    <p>${escapeHtml(data.feedbackForm?.overall_performance ?? '-')}</p>
+    <h3>C. Remarks</h3>
+    <p>${escapeHtml(data.feedbackForm?.remarks ?? '-')}</p>
+    <h3>D. Recommendation</h3>
+    <p>${escapeHtml(data.feedbackForm?.recommendation ?? '-')}</p>
+    <p><strong>Supervisor Signature:</strong> ${escapeHtml(data.feedbackForm?.supervisor_signature ?? '-')}</p>
+    <p><strong>Date:</strong> ${escapeHtml(data.feedbackForm?.feedback_date ?? '-')}</p>`);
 }
 
 function escapeHtml(value: string): string {
