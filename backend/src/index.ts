@@ -1475,6 +1475,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
                 ia.completed_at,
                 ia.industry_feedback,
                 ia.industry_score,
+                ia.student_id,
+                ia.internship_id,
                 ipf.id AS performance_feedback_id,
                 COALESCE(s.name, es.name) AS student_name,
                 COALESCE(s.email, es.email) AS student_email,
@@ -1514,6 +1516,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       })),
       applications: appRows.map((row: any) => ({
         id: row.id,
+        studentId: row.student_id ?? null,
+        internshipId: row.internship_id ?? null,
         studentName: row.student_name,
         studentEmail: row.student_email,
         collegeName: row.college_name,
@@ -1883,7 +1887,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['INDUSTRY']);
     if (actor instanceof Response) return actor;
     const row = await env.DB.prepare(
-      `SELECT id, name, email, business_activity, company_address, contact_number, registration_number, registration_year
+      `SELECT id, name, email, business_activity, company_address, contact_number, registration_number, registration_year, supervisor_name
        FROM industries
        WHERE id = ?`,
     ).bind(actor.id).first();
@@ -1903,6 +1907,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            email = COALESCE(?, email),
            registration_number = COALESCE(?, registration_number),
            registration_year = COALESCE(?, registration_year),
+           supervisor_name = COALESCE(?, supervisor_name),
            updated_at = datetime('now')
        WHERE id = ?`,
     )
@@ -1912,6 +1917,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         optional(body, ['email']) ? normalizeEmail(toText(optional(body, ['email']))) : null,
         optional(body, ['registration_number', 'registrationNumber']),
         optional(body, ['registration_year', 'registrationYear']) ? Number(optional(body, ['registration_year', 'registrationYear'])) : null,
+        optional(body, ['supervisor_name', 'supervisorName']),
         actor.id,
       )
       .run();
@@ -1924,7 +1930,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const [profile, linkedColleges, publishedInternships, pendingApplications, acceptedApplications] = await Promise.all([
-      env.DB.prepare('SELECT name, company_address AS address, email FROM industries WHERE id = ?').bind(actor.id).first<{ name: string; address: string | null; email: string }>(),
+      env.DB.prepare('SELECT name, company_address AS address, email, supervisor_name FROM industries WHERE id = ?').bind(actor.id).first<{ name: string; address: string | null; email: string; supervisor_name: string | null }>(),
       env.DB.prepare("SELECT COUNT(DISTINCT college_id) AS count FROM college_industry_links WHERE industry_id = ? AND status IN ('approved', 'active')").bind(actor.id).first<{ count: number }>(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM internships WHERE industry_id = ? AND status = 'PUBLISHED'").bind(actor.id).first<{ count: number }>(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM internship_applications ia INNER JOIN internships i ON i.id = ia.internship_id WHERE i.industry_id = ? AND lower(ia.status) = 'pending'").bind(actor.id).first<{ count: number }>(),
@@ -1935,6 +1941,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       name: profile?.name ?? '',
       address: profile?.address ?? null,
       email: profile?.email ?? '',
+      supervisor_name: profile?.supervisor_name ?? null,
       linked_colleges_count: Number(linkedColleges?.count ?? 0),
       published_internships: Number(publishedInternships?.count ?? 0),
       pending_applications: Number(pendingApplications?.count ?? 0),
@@ -2089,6 +2096,17 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
     const [, applicationId, action] = ipoApplicationActionMatch;
     const nextStatus = action === 'accept' ? 'accepted' : 'rejected';
+    const app = await env.DB.prepare(
+      `SELECT ia.id, ia.student_id, ia.internship_id, i.title AS internship_title, ind.supervisor_name,
+              COALESCE(s.email, es.email) AS student_email, COALESCE(s.name, es.name) AS student_name
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN industries ind ON ind.id = i.industry_id
+       LEFT JOIN students s ON s.id = ia.student_id
+       LEFT JOIN external_students es ON es.id = ia.external_student_id
+       WHERE ia.id = ? AND i.industry_id = ?`,
+    ).bind(applicationId, actor.id).first<any>();
+    if (!app) return errorResponse(404, 'Application not found');
 
     const result = await env.DB.prepare(
       `UPDATE internship_applications
@@ -2097,6 +2115,57 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(nextStatus, actor.id, applicationId, actor.id).run();
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
+    await env.DB.prepare(
+      `UPDATE internships
+       SET filled_vacancy = (
+         SELECT COUNT(*)
+         FROM internship_applications ia
+         WHERE ia.internship_id = internships.id
+           AND lower(ia.status) = 'accepted'
+       ),
+       available_vacancy = MAX(
+         COALESCE(total_vacancy, vacancy, 0) - (
+           SELECT COUNT(*)
+           FROM internship_applications ia
+           WHERE ia.internship_id = internships.id
+             AND lower(ia.status) IN ('pending', 'accepted')
+         ),
+         0
+       ),
+       remaining_vacancy = MAX(
+         COALESCE(total_vacancy, vacancy, 0) - (
+           SELECT COUNT(*)
+           FROM internship_applications ia
+           WHERE ia.internship_id = internships.id
+             AND lower(ia.status) IN ('pending', 'accepted')
+         ),
+         0
+       ),
+       status = CASE
+         WHEN MAX(
+           COALESCE(total_vacancy, vacancy, 0) - (
+             SELECT COUNT(*)
+             FROM internship_applications ia
+             WHERE ia.internship_id = internships.id
+               AND lower(ia.status) IN ('pending', 'accepted')
+           ),
+           0
+         ) <= 0 THEN 'CLOSED'
+         ELSE status
+       END,
+       updated_at = datetime('now')
+       WHERE id = ?`,
+    ).bind(app.internship_id).run();
+    if (action === 'accept' && app.student_id) {
+      await generateDocument(env, {
+        type: 'approval',
+        internshipId: app.internship_id,
+        studentId: app.student_id,
+        actor,
+        supervisorName: app.supervisor_name ?? undefined,
+        supervisorDesignation: 'Industry Supervisor',
+      });
+    }
     return ok(`Application ${action}ed`);
   }
 
@@ -2482,6 +2551,32 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry internship not found or not editable');
     return ok('Industry internship updated');
+  }
+
+  const industryInternshipCloseMatch = pathname.match(/^\/api\/industry\/internships\/([^/]+)\/close$/);
+  if (industryInternshipCloseMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const result = await env.DB.prepare(
+      `UPDATE internships
+       SET status = 'CLOSED',
+           available_vacancy = 0,
+           remaining_vacancy = 0,
+           updated_at = datetime('now')
+       WHERE id = ? AND industry_id = ?`,
+    ).bind(industryInternshipCloseMatch[1], actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry internship not found');
+    return ok('Industry internship closed');
+  }
+
+  if (updateIndustryInternshipMatch && request.method === 'DELETE') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const result = await env.DB.prepare(
+      'DELETE FROM internships WHERE id = ? AND industry_id = ?',
+    ).bind(updateIndustryInternshipMatch[1], actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry internship not found');
+    return ok('Industry internship removed');
   }
 
   if (request.method === 'POST' && pathname === '/api/industry/connect-request') {
@@ -3967,6 +4062,27 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
             isExternal,
           )
           .run();
+        await env.DB.prepare(
+          `UPDATE internships
+           SET available_vacancy = MAX(
+             COALESCE(total_vacancy, vacancy, 0) - (
+               SELECT COUNT(*) FROM internship_applications ia
+               WHERE ia.internship_id = internships.id
+                 AND lower(ia.status) IN ('pending', 'accepted')
+             ),
+             0
+           ),
+           remaining_vacancy = MAX(
+             COALESCE(total_vacancy, vacancy, 0) - (
+               SELECT COUNT(*) FROM internship_applications ia
+               WHERE ia.internship_id = internships.id
+                 AND lower(ia.status) IN ('pending', 'accepted')
+             ),
+             0
+           ),
+           updated_at = datetime('now')
+           WHERE id = ?`,
+        ).bind(internshipId).run();
       });
     } catch (error) {
       if (error instanceof Error) return conflict(error.message);
@@ -4128,15 +4244,15 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
          SELECT COUNT(*)
          FROM internship_applications ia
          WHERE ia.internship_id = internships.id
-           AND ia.status = 'accepted'
+           AND lower(ia.status) = 'accepted'
        ),
        available_vacancy = MAX(
          COALESCE(total_vacancy, vacancy, 0) - (
            SELECT COUNT(*)
            FROM internship_applications ia
            WHERE ia.internship_id = internships.id
-             AND ia.status = 'accepted'
-         ),
+             AND lower(ia.status) IN ('pending', 'accepted')
+          ),
          0
        ),
        remaining_vacancy = MAX(
@@ -4144,8 +4260,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            SELECT COUNT(*)
            FROM internship_applications ia
            WHERE ia.internship_id = internships.id
-             AND ia.status = 'accepted'
-         ),
+             AND lower(ia.status) IN ('pending', 'accepted')
+          ),
          0
        ),
        updated_at = datetime('now')
@@ -4187,6 +4303,29 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       .run();
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found for this department');
+    await env.DB.prepare(
+      `UPDATE internships
+       SET available_vacancy = MAX(
+             COALESCE(total_vacancy, vacancy, 0) - (
+               SELECT COUNT(*)
+               FROM internship_applications ia
+               WHERE ia.internship_id = internships.id
+                 AND lower(ia.status) IN ('pending', 'accepted')
+             ),
+             0
+           ),
+           remaining_vacancy = MAX(
+             COALESCE(total_vacancy, vacancy, 0) - (
+               SELECT COUNT(*)
+               FROM internship_applications ia
+               WHERE ia.internship_id = internships.id
+                 AND lower(ia.status) IN ('pending', 'accepted')
+             ),
+             0
+           ),
+           updated_at = datetime('now')
+       WHERE id = (SELECT internship_id FROM internship_applications WHERE id = ?)`,
+    ).bind(rejectDepartmentAppMatch[1]).run();
     return ok('Application rejected');
   }
 
@@ -6122,6 +6261,7 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   if (!industryColumns.has('contact_number')) await env.DB.prepare('ALTER TABLE industries ADD COLUMN contact_number TEXT').run();
   if (!industryColumns.has('registration_number')) await env.DB.prepare('ALTER TABLE industries ADD COLUMN registration_number TEXT').run();
   if (!industryColumns.has('registration_year')) await env.DB.prepare('ALTER TABLE industries ADD COLUMN registration_year INTEGER').run();
+  if (!industryColumns.has('supervisor_name')) await env.DB.prepare('ALTER TABLE industries ADD COLUMN supervisor_name TEXT').run();
 
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS email_logs (
@@ -6622,6 +6762,7 @@ function renderDocumentHtml(type: DocumentType, data: any): string {
         <li>Programme: ${escapeHtml(data.internship.department_name)}</li>
         <li>Duration: ${period} hours</li>
         <li>Mode: Offline</li>
+        <li>Assigned Supervisor: ${escapeHtml(data.supervisorName ?? 'Not specified')}</li>
         <li>Name of Student: ${escapeHtml(data.student?.name ?? '-')}</li>
         <li>University Reg. No.: ${escapeHtml(data.student?.university_reg_number ?? '-')}</li>
       </ul>
