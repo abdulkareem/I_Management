@@ -19,7 +19,18 @@ export function loadSession(): SessionState | null {
 
 export function clearSession() {
   if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(SESSION_KEY);
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+  document.cookie.split(';').forEach((cookie) => {
+    const eqPos = cookie.indexOf('=');
+    const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
+    if (name) {
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+    }
+  });
+  if ('caches' in window) {
+    window.caches.keys().then((keys) => Promise.all(keys.map((key) => window.caches.delete(key))));
+  }
 }
 
 export async function loginWithPassword(email: string, password: string) {
