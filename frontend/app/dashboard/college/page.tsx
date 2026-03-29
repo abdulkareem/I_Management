@@ -129,6 +129,15 @@ export default function CollegeDashboardPage() {
     ];
   }, [data]);
 
+  const managementMenus = [
+    { title: 'Internship Governance', description: 'Approve, reject, and close internships across all departments.' },
+    { title: 'Application Control', description: 'Process internal/external applications and bulk decisions.' },
+    { title: 'Department Analytics', description: 'Track participation, completion, and evaluation submissions.' },
+    { title: 'Industry Partnership (IPO)', description: 'Monitor active industry collaborations and engagement load.' },
+    { title: 'Compliance & Alerts', description: 'Review notifications, pending evaluations, and risk signals.' },
+    { title: 'Capacity Planning', description: 'Watch vacancy fill ratios and prioritize department demand.' },
+  ];
+
   return (
     <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN', 'COLLEGE_COORDINATOR']} title="College Internship Control System" subtitle="Approval, routing, applications, compliance, monitoring and reports.">
       {() => (
@@ -146,6 +155,18 @@ export default function CollegeDashboardPage() {
                   </Card>
                 ))}
               </div>
+
+              <Card className="rounded-[24px] p-4">
+                <h3 className="mb-3 text-lg font-semibold text-slate-900">College Top-Level Internship Management Menus</h3>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {managementMenus.map((menu) => (
+                    <div key={menu.title} className="rounded-xl border border-slate-200 bg-white p-3">
+                      <p className="text-sm font-semibold text-slate-900">{menu.title}</p>
+                      <p className="mt-1 text-xs text-slate-600">{menu.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
 
               <DataTable
                 title="Internship Approval Queue"
