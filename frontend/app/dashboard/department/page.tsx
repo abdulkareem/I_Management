@@ -11,12 +11,12 @@ import { fetchWithSession, loadSession } from '@/lib/auth';
 import { API_BASE_URL } from '@/lib/config';
 import type { DepartmentDashboard } from '@/lib/types';
 
-type Industry = { id: string; name: string; is_linked?: number };
+type IPO = { id: string; name: string; is_linked?: number };
 type ProgramOutcome = { id: string; type: 'PO' | 'PSO'; value: string };
 type OutcomeDefinition = { id: string; code: string; description: string };
 type DepartmentProgram = { id: string; name: string; program_outcomes: string | null; program_specific_outcomes: string | null };
-type IndustryListing = { id: string; title: string; criteria?: string | null; vacancy?: number | null };
-type IndustryDetails = { id: string; name: string; business_activity: string; category: string; is_linked?: number; listings: IndustryListing[] };
+type IPOListing = { id: string; title: string; criteria?: string | null; vacancy?: number | null };
+type IPODetails = { id: string; name: string; business_activity: string; category: string; is_linked?: number; listings: IPOListing[] };
 type DepartmentProfile = { id: string; name: string; coordinator_name: string };
 type InternshipType = 'FREE' | 'PAID' | 'STIPEND';
 type StipendFrequency = 'DAY' | 'WEEK' | 'MONTH';
@@ -26,11 +26,11 @@ export default function DepartmentDashboardPage() {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<DepartmentDashboard | null>(null);
   const [departmentProfile, setDepartmentProfile] = useState<DepartmentProfile | null>(null);
-  const [industries, setIndustries] = useState<Industry[]>([]);
+  const [ipos, setIPOs] = useState<IPO[]>([]);
   const [programs, setPrograms] = useState<DepartmentProgram[]>([]);
   const [programOutcomes, setProgramOutcomes] = useState<Record<string, ProgramOutcome[]>>({});
-  const [selectedIndustry, setSelectedIndustry] = useState<string>('');
-  const [industryDetails, setIndustryDetails] = useState<IndustryDetails | null>(null);
+  const [selectedIPO, setSelectedIPO] = useState<string>('');
+  const [ipoDetails, setIPODetails] = useState<IPODetails | null>(null);
   const [selectedProgramForIdea, setSelectedProgramForIdea] = useState<string>('');
   const [editingInternshipId, setEditingInternshipId] = useState<string | null>(null);
   const [editingIdeaId, setEditingIdeaId] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export default function DepartmentDashboardPage() {
   const [internshipType, setInternshipType] = useState<InternshipType>('FREE');
   const [stipendFrequency, setStipendFrequency] = useState<StipendFrequency>('MONTH');
   const [applicableTo, setApplicableTo] = useState<ApplicableTo>('EXTERNAL');
-  const [selectedInternalIndustryId, setSelectedInternalIndustryId] = useState('');
+  const [selectedInternalIPOId, setSelectedInternalIPOId] = useState('');
   const [selectedInternalProgramId, setSelectedInternalProgramId] = useState('');
   const [internalMappings, setInternalMappings] = useState<{ po: string[]; pso: string[]; ipo: string[]; co: string[] }>({ po: [], pso: [], ipo: [], co: [] });
   const [markSection, setMarkSection] = useState<'CCA' | 'ESE' | 'FINAL'>('CCA');
@@ -69,11 +69,11 @@ export default function DepartmentDashboardPage() {
   const [docPreview, setDocPreview] = useState<string | null>(null);
 
   async function load() {
-    const [internshipsRes, applicationsRes, requestsRes, industriesRes, programsRes, cosRes, posRes, docsRes, profileRes] = await Promise.all([
+    const [internshipsRes, applicationsRes, requestsRes, iposRes, programsRes, cosRes, posRes, docsRes, profileRes] = await Promise.all([
       fetchWithSession<DepartmentDashboard['internships']>('/api/department/internships'),
       fetchWithSession<DepartmentDashboard['applications']>('/api/department/applications'),
-      fetchWithSession<DepartmentDashboard['industryRequests']>('/api/department/industry-requests'),
-      fetchWithSession<Industry[]>('/api/department/industries'),
+      fetchWithSession<DepartmentDashboard['ipoRequests']>('/api/department/ipo-requests'),
+      fetchWithSession<IPO[]>('/api/department/ipos'),
       fetchWithSession<DepartmentProgram[]>('/api/department/programs'),
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-cos'),
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-pos'),
@@ -96,8 +96,8 @@ export default function DepartmentDashboardPage() {
     );
 
     setProgramOutcomes(Object.fromEntries(outcomesEntries));
-    setDashboard({ internships: internshipsRes.data, applications: applicationsRes.data, industryRequests: requestsRes.data });
-    setIndustries((industriesRes.data ?? []).map((item: any) => ({ id: item.id, name: item.name, is_linked: item.is_linked })));
+    setDashboard({ internships: internshipsRes.data, applications: applicationsRes.data, ipoRequests: requestsRes.data });
+    setIPOs((iposRes.data ?? []).map((item: any) => ({ id: item.id, name: item.name, is_linked: item.is_linked })));
     setPrograms(loadedPrograms);
     setInternshipCos(cosRes.data ?? []);
     setInternshipPos(posRes.data ?? []);
@@ -144,24 +144,24 @@ export default function DepartmentDashboardPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!selectedIndustry) {
-      setIndustryDetails(null);
+    if (!selectedIPO) {
+      setIPODetails(null);
       return;
     }
-    fetchWithSession<IndustryDetails>(`/api/department/industries/${selectedIndustry}`)
-      .then((res) => setIndustryDetails((res.data ?? null) as IndustryDetails | null))
-      .catch(() => setIndustryDetails(null));
-  }, [selectedIndustry]);
+    fetchWithSession<IPODetails>(`/api/department/ipos/${selectedIPO}`)
+      .then((res) => setIPODetails((res.data ?? null) as IPODetails | null))
+      .catch(() => setIPODetails(null));
+  }, [selectedIPO]);
 
   const selectedProgramOutcomes = useMemo(() => programOutcomes[selectedProgramForIdea] ?? [], [programOutcomes, selectedProgramForIdea]);
   const ideaPageSize = 5;
   const paginatedIdeas = useMemo(() => {
-    const allIdeas = dashboard?.industryRequests ?? [];
+    const allIdeas = dashboard?.ipoRequests ?? [];
     const totalPages = Math.max(1, Math.ceil(allIdeas.length / ideaPageSize));
     const safePage = Math.min(ideasPage, totalPages);
     const start = (safePage - 1) * ideaPageSize;
     return { rows: allIdeas.slice(start, start + ideaPageSize), totalPages, safePage };
-  }, [dashboard?.industryRequests, ideasPage]);
+  }, [dashboard?.ipoRequests, ideasPage]);
 
   async function createInternship(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -179,7 +179,7 @@ export default function DepartmentDashboardPage() {
       if (vacancy <= 0) throw new Error('Vacancy must be greater than zero.');
       if (internshipType === 'PAID' && stipendAmount > 0) throw new Error('Fee and stipend cannot coexist.');
       if (internshipType === 'STIPEND' && fee > 0) throw new Error('Fee and stipend cannot coexist.');
-      if (applicableTo === 'INTERNAL' && !selectedInternalIndustryId) throw new Error('Please select a registered IPO.');
+      if (applicableTo === 'INTERNAL' && !selectedInternalIPOId) throw new Error('Please select a registered IPO.');
       if (applicableTo === 'INTERNAL' && !selectedInternalProgramId) throw new Error('Please select a programme.');
 
       setInternshipSubmitting(true);
@@ -198,23 +198,23 @@ export default function DepartmentDashboardPage() {
           minimumDays: hourDuration > 0 ? hourDuration : null,
           genderPreference: form.get('genderPreference') || 'BOTH',
           isExternal: applicableTo === 'EXTERNAL',
-          industryId: applicableTo === 'INTERNAL' ? selectedInternalIndustryId : null,
+          ipoId: applicableTo === 'INTERNAL' ? selectedInternalIPOId : null,
           programId: applicableTo === 'INTERNAL' ? selectedInternalProgramId : null,
           mappedPo: internalMappings.po,
           mappedPso: internalMappings.pso,
           mappedIpo: internalMappings.ipo,
           mappedCo: internalMappings.co,
-          action: applicableTo === 'INTERNAL' ? 'send_to_industry' : 'publish',
+          action: applicableTo === 'INTERNAL' ? 'send_to_ipo' : 'publish',
         }),
       });
       formElement.reset();
       setInternshipType('FREE');
       setStipendFrequency('MONTH');
       setApplicableTo('EXTERNAL');
-      setSelectedInternalIndustryId('');
+      setSelectedInternalIPOId('');
       setSelectedInternalProgramId('');
       setInternalMappings({ po: [], pso: [], ipo: [], co: [] });
-      setSuccessMessage(applicableTo === 'INTERNAL' ? 'Sent to Industry' : 'Published Successfully');
+      setSuccessMessage(applicableTo === 'INTERNAL' ? 'Sent to IPO' : 'Published Successfully');
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Failed to create internship');
@@ -262,7 +262,7 @@ export default function DepartmentDashboardPage() {
     await load();
   }
 
-  async function createIndustryRequest(event: FormEvent<HTMLFormElement>) {
+  async function createIPORequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
@@ -274,10 +274,10 @@ export default function DepartmentDashboardPage() {
 
     try {
       setIdeaSubmitting(true);
-      await fetchWithSession('/api/industry-requests', {
+      await fetchWithSession('/api/ipo-requests', {
         method: 'POST',
         body: JSON.stringify({
-          industryId: form.get('industryId'),
+          ipoId: form.get('ipoId'),
           internshipTitle: form.get('internshipTitle'),
           description: form.get('description'),
           programId: form.get('programId') || null,
@@ -288,12 +288,12 @@ export default function DepartmentDashboardPage() {
       });
       formElement.reset();
       setSelectedProgramForIdea('');
-      setSelectedIndustry('');
+      setSelectedIPO('');
       setIdeasPage(1);
       setSuccessMessage('Idea submitted successfully.');
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Failed to create industry request');
+      setError(reason instanceof Error ? reason.message : 'Failed to create ipo request');
     } finally {
       setIdeaSubmitting(false);
     }
@@ -301,7 +301,7 @@ export default function DepartmentDashboardPage() {
 
   async function saveIdea(item: any) {
     const draft = drafts[item.id] ?? item;
-    await fetchWithSession(`/api/department/industry-requests/${item.id}`, {
+    await fetchWithSession(`/api/department/ipo-requests/${item.id}`, {
       method: 'PUT',
       body: JSON.stringify({
         internshipTitle: draft.internship_title,
@@ -317,7 +317,7 @@ export default function DepartmentDashboardPage() {
   }
 
   async function deleteIdea(id: string) {
-    await fetchWithSession(`/api/department/industry-requests/${id}`, { method: 'DELETE' });
+    await fetchWithSession(`/api/department/ipo-requests/${id}`, { method: 'DELETE' });
     await load();
   }
 
@@ -420,10 +420,10 @@ export default function DepartmentDashboardPage() {
     await load();
   }
 
-  const metrics = useMemo(() => ({ internships: dashboard?.internships.length ?? 0, pendingApplications: dashboard?.applications.filter((item) => item.status === 'pending').length ?? 0, industryIdeas: dashboard?.industryRequests.length ?? 0, programs: programs.length }), [dashboard, programs]);
+  const metrics = useMemo(() => ({ internships: dashboard?.internships.length ?? 0, pendingApplications: dashboard?.applications.filter((item) => item.status === 'pending').length ?? 0, ipoIdeas: dashboard?.ipoRequests.length ?? 0, programs: programs.length }), [dashboard, programs]);
   const session = loadSession();
   const dashboardTitle = `${session?.user?.email?.split('@')[0] ?? 'Department'} Dashboard`;
-  const industryAdvertisements = (dashboard?.internships ?? []).filter((item: any) => {
+  const ipoAdvertisements = (dashboard?.internships ?? []).filter((item: any) => {
     const normalizedStatus = String(item.status ?? '').toUpperCase();
     return normalizedStatus === 'SENT_TO_DEPARTMENT' || normalizedStatus === 'SENT_TO_DEPT';
   });
@@ -461,7 +461,7 @@ export default function DepartmentDashboardPage() {
             <Card className="rounded-[20px] p-4">Coordinator: {departmentProfile?.coordinator_name ?? '-'}</Card>
             <Card className="rounded-[20px] p-4">Internships: {metrics.internships}</Card>
             <Card className="rounded-[20px] p-4">Pending: {metrics.pendingApplications}</Card>
-            <Card className="rounded-[20px] p-4">Ideas: {metrics.industryIdeas}</Card>
+            <Card className="rounded-[20px] p-4">Ideas: {metrics.ipoIdeas}</Card>
             <Card className="rounded-[20px] p-4">Programmes: {metrics.programs}</Card>
           </section>
 
@@ -484,9 +484,9 @@ export default function DepartmentDashboardPage() {
                   </select>
                   {applicableTo === 'INTERNAL' ? (
                     <>
-                      <select name="industryId" value={selectedInternalIndustryId} onChange={(e) => setSelectedInternalIndustryId(e.target.value)} required>
-                        <option value="">Select Registered Industry (IPO)</option>
-                        {industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}</option>)}
+                      <select name="ipoId" value={selectedInternalIPOId} onChange={(e) => setSelectedInternalIPOId(e.target.value)} required>
+                        <option value="">Select Registered IPO (IPO)</option>
+                        {ipos.map((ipo) => <option key={ipo.id} value={ipo.id}>{ipo.name}</option>)}
                       </select>
                       <select name="programId" value={selectedInternalProgramId} onChange={(e) => setSelectedInternalProgramId(e.target.value)} required>
                         <option value="">Select Programme</option>
@@ -557,7 +557,7 @@ export default function DepartmentDashboardPage() {
                   </select>
                   <input name="hourDuration" type="number" min={60} placeholder="Duration in hours (minimum 60)" required />
                   <input name="vacancy" type="number" min={0} placeholder="Vacancy" required />
-                  <Button disabled={internshipSubmitting}>{internshipSubmitting ? 'Submitting...' : applicableTo === 'INTERNAL' ? 'Send to Industry' : 'Publish'}</Button>
+                  <Button disabled={internshipSubmitting}>{internshipSubmitting ? 'Submitting...' : applicableTo === 'INTERNAL' ? 'Send to IPO' : 'Publish'}</Button>
                 </form>
               ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and create internships for internal or external students.</p>}
             </Card>
@@ -574,21 +574,21 @@ export default function DepartmentDashboardPage() {
             </Card>
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, ideas: !prev.ideas }))}>
-                Internship Suggestions Received from Industry
+                Internship Suggestions Received from IPO
               </button>
               {expandedCard.ideas ? (
-                <form className="mt-3 grid gap-3" onSubmit={createIndustryRequest}>
-                  <select name="industryId" value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)} required>
+                <form className="mt-3 grid gap-3" onSubmit={createIPORequest}>
+                  <select name="ipoId" value={selectedIPO} onChange={(e) => setSelectedIPO(e.target.value)} required>
                     <option value="">Select registered Internship Provider Organization (IPO)</option>
-                    {industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}{industry.is_linked ? '' : ' (auto-link on submit)'}</option>)}
+                    {ipos.map((ipo) => <option key={ipo.id} value={ipo.id}>{ipo.name}{ipo.is_linked ? '' : ' (auto-link on submit)'}</option>)}
                   </select>
-                  {industryDetails ? (
+                  {ipoDetails ? (
                     <div className="rounded-lg border border-slate-200 p-2 text-sm text-slate-700">
-                      <p>Activity: {industryDetails.business_activity}</p>
-                      <p>Category: {industryDetails.category || '-'}</p>
-                      {!industryDetails.is_linked ? <p className="mt-1 text-amber-200">This IPO is registered but not linked to your college yet. It will be linked automatically when you submit this idea.</p> : null}
+                      <p>Activity: {ipoDetails.business_activity}</p>
+                      <p>Category: {ipoDetails.category || '-'}</p>
+                      {!ipoDetails.is_linked ? <p className="mt-1 text-amber-200">This IPO is registered but not linked to your college yet. It will be linked automatically when you submit this idea.</p> : null}
                       <p className="mt-1 font-semibold">Internship Provider Organization (IPO) listings & vacancies:</p>
-                      {industryDetails.listings.map((listing) => (
+                      {ipoDetails.listings.map((listing) => (
                         <p key={listing.id}>• {listing.title} ({listing.vacancy ?? 0} vacancy)</p>
                       ))}
                     </div>
@@ -693,7 +693,7 @@ export default function DepartmentDashboardPage() {
               <h2 className="mb-3 text-xl font-semibold">Linked Internship Provider Organizations (IPOs)</h2>
               <p className="mb-2 text-xs text-slate-700">These links come from your college. Selecting an IPO in “Submit Idea” will auto-link it when needed.</p>
               <div className="space-y-2">
-                {industries.filter((item) => item.is_linked).length ? industries.filter((item) => item.is_linked).map((item) => (
+                {ipos.filter((item) => item.is_linked).length ? ipos.filter((item) => item.is_linked).map((item) => (
                   <div key={item.id} className="rounded-lg border border-slate-200 p-2">
                     <p className="font-medium text-slate-900">{item.name}</p>
                     <p className="text-xs text-emerald-800">Linked to your college</p>
@@ -721,7 +721,7 @@ export default function DepartmentDashboardPage() {
                     <>
                       <p>{item.title}</p>
                       <p className="text-xs text-slate-700">{item.description}</p>
-                      <p className="text-xs text-slate-400">Category: {item.internship_category || 'FREE'} • Vacancy: {item.vacancy ?? 0} • {item.status} {item.industry_id ? '(industry)' : '(internal)'}</p>
+                      <p className="text-xs text-slate-400">Category: {item.internship_category || 'FREE'} • Vacancy: {item.vacancy ?? 0} • {item.status} {item.ipo_id ? '(ipo)' : '(internal)'}</p>
                     </>
                   )}
                   <div className="mt-2 flex gap-2">
@@ -736,10 +736,10 @@ export default function DepartmentDashboardPage() {
           </section>
 
           <Card className="rounded-[20px] p-5">
-            <h2 className="mb-3 text-xl font-semibold">Department Suggested Ideas from Industry (Add PO/CO and Publish)</h2>
+            <h2 className="mb-3 text-xl font-semibold">Department Suggested Ideas from IPO (Add PO/CO and Publish)</h2>
             <p className="mb-3 text-sm text-slate-600">When IPO sends an internship to department, review here, map PO/CO/PSO and publish to internal students.</p>
             <div className="space-y-3">
-              {industryAdvertisements.length ? industryAdvertisements.map((item: any) => {
+              {ipoAdvertisements.length ? ipoAdvertisements.map((item: any) => {
                 const draft = advertisementDrafts[item.id] ?? {
                   programId: '',
                   mappedCo: parseMappings(item.mapped_co),
@@ -794,7 +794,7 @@ export default function DepartmentDashboardPage() {
                     </div>
                   </div>
                 );
-              }) : <p className="text-sm text-slate-700">No new internship suggestions received from industry.</p>}
+              }) : <p className="text-sm text-slate-700">No new internship suggestions received from ipo.</p>}
             </div>
           </Card>
 
@@ -819,7 +819,7 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>
                       <td className="py-2 pr-3 uppercase">{app.status}</td>
-                      <td className="py-2 pr-3">{(app as any).industry_feedback ? `${(app as any).industry_feedback} (${(app as any).industry_score ?? '-'}/10)` : '-'}</td>
+                      <td className="py-2 pr-3">{(app as any).ipo_feedback ? `${(app as any).ipo_feedback} (${(app as any).ipo_score ?? '-'}/10)` : '-'}</td>
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
@@ -857,7 +857,7 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>
                       <td className="py-2 pr-3 uppercase">{app.status}</td>
-                      <td className="py-2 pr-3">{(app as any).industry_feedback ? `${(app as any).industry_feedback} (${(app as any).industry_score ?? '-'}/10)` : '-'}</td>
+                      <td className="py-2 pr-3">{(app as any).ipo_feedback ? `${(app as any).ipo_feedback} (${(app as any).ipo_score ?? '-'}/10)` : '-'}</td>
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>

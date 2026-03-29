@@ -1,7 +1,7 @@
 {
   "name": "InternSuite",
   "short_name": "InternSuite",
-  "description": "Single workspace internship platform for students, colleges, and industries.",
+  "description": "Single workspace internship platform for students, colleges, and ipos.",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone"],
   "background_color": "#020617",

@@ -35,10 +35,10 @@ database_id = "<your-database-id>"
 - `GET /api/colleges`
 - `GET /api/departments?collegeId=...`
 - `GET /api/courses?departmentId=...`
-- `GET /api/industry-types`
+- `GET /api/ipo-types`
 - `POST /api/college/register`
 - `POST /api/student/register`
-- `POST /api/industry/register`
+- `POST /api/ipo/register`
 - `POST /api/admin/send-otp`
 - `POST /api/admin/verify-otp`
 

@@ -112,7 +112,8 @@ const industryTypeSchema = z.object({
 
 const industrySubtypeSchema = z.object({
   name: z.string().trim().min(2).max(120),
-  industry_type_id: z.string().trim().min(1),
+  industry_type_id: z.string().trim().min(1).optional(),
+  ipo_type_id: z.string().trim().min(1).optional(),
 });
 
 export default {
@@ -138,7 +139,22 @@ export default {
 };
 
 async function routeRequest(request: Request, env: EnvBindings, url: URL): Promise<Response> {
-  const { pathname } = url;
+  const rawPathname = url.pathname;
+  const pathname = (() => {
+    if (rawPathname.startsWith('/api/ipo-types')) return rawPathname.replace('/api/ipo-types', '/api/industry-types');
+    if (rawPathname.startsWith('/api/ipo-subtypes')) return rawPathname.replace('/api/ipo-subtypes', '/api/industry-subtypes');
+    if (rawPathname.startsWith('/api/ipos')) return rawPathname.replace('/api/ipos', '/api/industries');
+    if (rawPathname.startsWith('/api/ipo-requests')) return rawPathname.replace('/api/ipo-requests', '/api/industry-requests');
+    if (rawPathname.startsWith('/api/department/ipo-requests')) return rawPathname.replace('/api/department/ipo-requests', '/api/department/industry-requests');
+    if (rawPathname.startsWith('/api/department/ipos')) return rawPathname.replace('/api/department/ipos', '/api/department/industries');
+    if (rawPathname === '/api/ipo/register') return '/api/industry/register';
+    if (rawPathname === '/api/ipo/login') return '/api/industry/login';
+    if (rawPathname.startsWith('/api/ipo/')) {
+      const keep = new Set(['/api/ipo/internship', '/api/ipo/application/accept', '/api/ipo/complete']);
+      if (!keep.has(rawPathname)) return rawPathname.replace('/api/ipo/', '/api/industry/');
+    }
+    return rawPathname;
+  })();
 
   if (pathname.startsWith('/api/department') || pathname === '/api/college/login' || pathname === '/api/auth/login') {
     await ensureDepartmentCompatibility(env);
@@ -289,19 +305,19 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!body.success) return badRequest(body.error.issues[0]?.message ?? 'Invalid payload');
 
     const type = await env.DB.prepare('SELECT id FROM industry_types WHERE id = ? AND is_active = 1')
-      .bind(body.data.industry_type_id)
+      .bind(body.data.industry_type_id ?? body.data.ipo_type_id)
       .first<{ id: string }>();
-    if (!type) return badRequest('Invalid industry_type_id');
+    if (!type) return badRequest('Invalid ipo_type_id');
 
     const duplicate = await env.DB.prepare(
       'SELECT id FROM industry_subtypes WHERE industry_type_id = ? AND lower(name) = lower(?)',
-    ).bind(body.data.industry_type_id, body.data.name).first<{ id: string }>();
+    ).bind(body.data.industry_type_id ?? body.data.ipo_type_id, body.data.name).first<{ id: string }>();
     if (duplicate) return conflict('Industry subtype already exists under this type');
 
     const id = crypto.randomUUID();
     await env.DB.prepare(
       'INSERT INTO industry_subtypes (id, name, industry_type_id) VALUES (?, ?, ?)',
-    ).bind(id, body.data.name, body.data.industry_type_id).run();
+    ).bind(id, body.data.name, body.data.industry_type_id ?? body.data.ipo_type_id).run();
     return created('Industry subtype added', { id, ...body.data });
   }
 
@@ -432,10 +448,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const email = normalizeEmail(required(body, ['email']));
     const password = required(body, ['password']);
     const businessActivity = required(body, ['business_activity', 'businessActivity']);
-    const industryTypeId = required(body, ['industry_type_id', 'industryTypeId']);
+    const industryTypeId = required(body, ['ipo_type_id', 'industry_type_id', 'ipoTypeId', 'industryTypeId']);
 
     if (!name || !email || !password || !businessActivity || !industryTypeId) {
-      return badRequest('name, email, password, business_activity, industry_type_id are required');
+      return badRequest('name, email, password, business_activity, ipo_type_id are required');
     }
 
     const [existingIndustry, type] = await Promise.all([
@@ -444,7 +460,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ]);
 
     if (existingIndustry) return conflict('Industry email already exists');
-    if (!type) return badRequest('Invalid industry_type_id');
+    if (!type) return badRequest('Invalid ipo_type_id');
 
     const industryId = crypto.randomUUID();
     await env.DB.prepare(
@@ -456,7 +472,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     await upsertIdentity(env, { role: 'industry', entityId: industryId, email, isActive: 1 });
 
-    return created('Industry registration submitted', { id: industryId, status: 'pending' });
+    return created('IPO registration submitted', { id: industryId, status: 'pending' });
   }
 
   if (request.method === 'POST' && pathname === '/api/student/register') {
@@ -3725,7 +3741,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
          AND i.status = 'approved'
          AND i.is_active = 1`,
     ).bind(actor.id, industryDetailsMatch[1]).first<{ id: string; name: string; business_activity: string; category: string }>();
-    if (!industry) return errorResponse(404, 'Industry not found');
+    if (!industry) return errorResponse(404, 'IPO not found');
     const listings = await env.DB.prepare(
       `SELECT id, title, criteria, COALESCE(vacancy, 0) AS vacancy
        FROM industry_internships
@@ -4060,7 +4076,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const result = await env.DB.prepare(
       "UPDATE industries SET status = ?, is_active = ?, approved_by_admin_id = ?, approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
     ).bind(status, isActive, actor.id, industryId).run();
-    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'IPO not found');
     await insertAuditLog(env, { action: action.toUpperCase(), entity: 'industries', entityId: industryId, performedBy: actor.id });
     return ok(`Industry ${status}`);
   }
@@ -4082,9 +4098,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
     const result = await env.DB.prepare("UPDATE industries SET is_active = 0, status = 'rejected', updated_at = datetime('now') WHERE id = ?")
       .bind(industryDeleteMatch[1]).run();
-    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'IPO not found');
     await insertAuditLog(env, { action: 'DELETE', entity: 'industries', entityId: industryDeleteMatch[1], performedBy: actor.id });
-    return ok('Industry deleted');
+    return ok('IPO deleted');
   }
 
   if (request.method === 'GET' && pathname === '/api/dashboard/metrics') {
@@ -4330,8 +4346,8 @@ async function approveAdminEntity(env: EnvBindings, entity: string, entityId: st
     )
       .bind(actorAdminId, entityId)
       .run();
-    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
-    return ok('Industry approved');
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'IPO not found');
+    return ok('IPO approved');
   }
 
   if (entity === 'department') {
@@ -4382,8 +4398,8 @@ async function rejectAdminEntity(env: EnvBindings, entity: string, entityId: str
     )
       .bind(actorAdminId, entityId)
       .run();
-    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
-    return ok('Industry rejected');
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'IPO not found');
+    return ok('IPO rejected');
   }
 
   if (entity === 'department') {
@@ -4463,8 +4479,8 @@ async function editAdminEntity(request: Request, env: EnvBindings, entity: strin
     )
       .bind(optional(body, ['name']), optional(body, ['email']), optional(body, ['business_activity']), entityId)
       .run();
-    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
-    return ok('Industry updated');
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'IPO not found');
+    return ok('IPO updated');
   }
 
   if (entity === 'department') {

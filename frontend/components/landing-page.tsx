@@ -28,17 +28,17 @@ const roleCards = [
     icon: Building2,
   },
   {
-    href: '/join/industry',
-    title: 'Join as Internship Providing Organization (IPO)',
+    href: '/join/ipo',
+    title: 'Join as IPO (IPO)',
     description: 'Request partnerships, publish internships in under 30 seconds, and accept students instantly.',
     icon: Factory,
   },
 ];
 
 export function LandingPage() {
-  const [stats, setStats] = useState<{ students: number; colleges: number; industries: number; vacancies: number; applied: number; completed: number } | null>(null);
+  const [stats, setStats] = useState<{ students: number; colleges: number; ipos: number; vacancies: number; applied: number; completed: number } | null>(null);
   useEffect(() => {
-    apiRequest<{ students: number; colleges: number; industries: number; vacancies: number; applied: number; completed: number }>('/api/public/stats')
+    apiRequest<{ students: number; colleges: number; ipos: number; vacancies: number; applied: number; completed: number }>('/api/public/stats')
       .then((res) => setStats(res.data))
       .catch(() => setStats(null));
   }, []);
@@ -52,7 +52,7 @@ export function LandingPage() {
             <Badge className="bg-indigo-50 text-indigo-700">Student-first internship platform</Badge>
             <div className="space-y-4">
               <h1 className="max-w-4xl text-3xl font-semibold tracking-tight text-slate-900 sm:text-6xl">
-                Ultra-modern internship workspace for students, colleges, and industry teams.
+                Ultra-modern internship workspace for students, colleges, and ipo teams.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
                 Designed with a clean Figma-style visual system: clear sections, friendly typography, and quick actions that feel great on mobile and desktop.
@@ -123,7 +123,7 @@ export function LandingPage() {
             {[
               ['Registered Students', stats.students],
               ['Registered Colleges', stats.colleges],
-              ['Registered Industries', stats.industries],
+              ['Registered IPOs', stats.ipos],
               ['Internship Vacancies', stats.vacancies],
               ['Applications Submitted', stats.applied],
               ['Internships Completed', stats.completed],
@@ -136,7 +136,7 @@ export function LandingPage() {
           </>
         ) : null}
         {[
-          { icon: HeartHandshake, title: 'Only approved internships', body: 'Students only see opportunities from industries with accepted MoUs for their college.' },
+          { icon: HeartHandshake, title: 'Only approved internships', body: 'Students only see opportunities from ipos with accepted MoUs for their college.' },
           { icon: Zap, title: 'Fast approvals', body: 'Coordinators review requests, sign MoUs, and unlock student access in one tap.' },
           { icon: Sparkles, title: 'Minimal typing', body: 'Big buttons, card layouts, and tap-first flows make the app feel WhatsApp simple.' },
         ].map(({ icon: Icon, title, body }) => (

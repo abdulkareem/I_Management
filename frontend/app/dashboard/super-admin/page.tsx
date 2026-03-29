@@ -10,7 +10,7 @@ import { fetchWithSession } from '@/lib/auth';
 
 type KPI = {
   totalColleges: number;
-  totalIndustries: number;
+  totalIPOs: number;
   totalDepartments: number;
   totalInternships: number;
   pendingApprovals: number;
@@ -18,19 +18,19 @@ type KPI = {
 };
 
 type College = { id: string; name: string; coordinator: string; email: string; status: string };
-type Industry = { id: string; name: string; email: string; status: string; industry_type_name?: string; industry_subtype_name?: string };
+type IPO = { id: string; name: string; email: string; status: string; ipo_type_name?: string; ipo_subtype_name?: string };
 type Department = { id: string; name: string; coordinator: string; email: string; college_id: string; college_name: string };
-type IndustryType = { id: string; name: string };
-type IndustrySubtype = { id: string; name: string; industry_type_id: string };
+type IPOType = { id: string; name: string };
+type IPOSubtype = { id: string; name: string; ipo_type_id: string };
 type LogEntry = { id: string; action: string; entity: string; entity_id: string; performed_by: string; timestamp: string };
 
 export default function SuperAdminDashboardPage() {
   const [metrics, setMetrics] = useState<KPI | null>(null);
   const [colleges, setColleges] = useState<College[]>([]);
-  const [industries, setIndustries] = useState<Industry[]>([]);
+  const [ipos, setIPOs] = useState<IPO[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [industryTypes, setIndustryTypes] = useState<IndustryType[]>([]);
-  const [industrySubtypes, setIndustrySubtypes] = useState<IndustrySubtype[]>([]);
+  const [ipoTypes, setIPOTypes] = useState<IPOType[]>([]);
+  const [ipoSubtypes, setIPOSubtypes] = useState<IPOSubtype[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [search, setSearch] = useState('');
   const [departmentCollegeFilter, setDepartmentCollegeFilter] = useState('all');
@@ -42,21 +42,21 @@ export default function SuperAdminDashboardPage() {
   const loadDashboard = async () => {
     setError(null);
     try {
-      const [metricsRes, collegeRes, industryRes, departmentRes, typeRes, subtypeRes, logsRes] = await Promise.all([
+      const [metricsRes, collegeRes, ipoRes, departmentRes, typeRes, subtypeRes, logsRes] = await Promise.all([
         fetchWithSession<KPI>('/api/dashboard/metrics'),
         fetchWithSession<College[]>('/api/colleges'),
-        fetchWithSession<Industry[]>('/api/industries'),
+        fetchWithSession<IPO[]>('/api/ipos'),
         fetchWithSession<Department[]>('/api/departments'),
-        fetchWithSession<IndustryType[]>('/api/industry-types'),
-        fetchWithSession<IndustrySubtype[]>('/api/industry-subtypes'),
+        fetchWithSession<IPOType[]>('/api/ipo-types'),
+        fetchWithSession<IPOSubtype[]>('/api/ipo-subtypes'),
         fetchWithSession<LogEntry[]>('/api/logs'),
       ]);
       setMetrics(metricsRes.data);
       setColleges(collegeRes.data);
-      setIndustries(industryRes.data);
+      setIPOs(ipoRes.data);
       setDepartments(departmentRes.data);
-      setIndustryTypes(typeRes.data);
-      setIndustrySubtypes(subtypeRes.data);
+      setIPOTypes(typeRes.data);
+      setIPOSubtypes(subtypeRes.data);
       setLogs(logsRes.data);
       if (!selectedType && typeRes.data.length > 0) setSelectedType(typeRes.data[0].id);
     } catch (loadError) {
@@ -71,7 +71,7 @@ export default function SuperAdminDashboardPage() {
   const matchesSearch = (row: Record<string, unknown>) => JSON.stringify(row).toLowerCase().includes(search.toLowerCase());
 
   const visibleColleges = useMemo(() => colleges.filter(matchesSearch), [colleges, search]);
-  const visibleIndustries = useMemo(() => industries.filter(matchesSearch), [industries, search]);
+  const visibleIPOs = useMemo(() => ipos.filter(matchesSearch), [ipos, search]);
   const visibleDepartments = useMemo(
     () => departments.filter((row) => (departmentCollegeFilter === 'all' || row.college_id === departmentCollegeFilter) && matchesSearch(row as unknown as Record<string, unknown>)),
     [departments, departmentCollegeFilter, search],
@@ -84,28 +84,28 @@ export default function SuperAdminDashboardPage() {
     XLSX.writeFile(workbook, `${name}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
-  const updateStatus = async (entity: 'colleges' | 'industries', id: string, action: 'approve' | 'reject') => {
+  const updateStatus = async (entity: 'colleges' | 'ipos', id: string, action: 'approve' | 'reject') => {
     await fetchWithSession(`/api/${entity}/${id}/${action}`, { method: 'PATCH' });
     await loadDashboard();
   };
 
-  const deleteEntity = async (entity: 'colleges' | 'industries', id: string) => {
+  const deleteEntity = async (entity: 'colleges' | 'ipos', id: string) => {
     await fetchWithSession(`/api/${entity}/${id}`, { method: 'DELETE' });
     await loadDashboard();
   };
 
   const createType = async () => {
     if (!newTypeName.trim()) return;
-    await fetchWithSession('/api/industry-types', { method: 'POST', body: JSON.stringify({ name: newTypeName }) });
+    await fetchWithSession('/api/ipo-types', { method: 'POST', body: JSON.stringify({ name: newTypeName }) });
     setNewTypeName('');
     await loadDashboard();
   };
 
   const createSubtype = async () => {
     if (!newSubtypeName.trim() || !selectedType) return;
-    await fetchWithSession('/api/industry-subtypes', {
+    await fetchWithSession('/api/ipo-subtypes', {
       method: 'POST',
-      body: JSON.stringify({ name: newSubtypeName, industry_type_id: selectedType }),
+      body: JSON.stringify({ name: newSubtypeName, ipo_type_id: selectedType }),
     });
     setNewSubtypeName('');
     await loadDashboard();
@@ -120,7 +120,7 @@ export default function SuperAdminDashboardPage() {
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
             {[
               ['Total Colleges', metrics?.totalColleges ?? 0],
-              ['Total Industries', metrics?.totalIndustries ?? 0],
+              ['Total IPOs', metrics?.totalIPOs ?? 0],
               ['Total Departments', metrics?.totalDepartments ?? 0],
               ['Total Internships', metrics?.totalInternships ?? 0],
               ['Pending Approvals', metrics?.pendingApprovals ?? 0],
@@ -144,7 +144,7 @@ export default function SuperAdminDashboardPage() {
           <Card className="space-y-3 p-4">
             <h3 className="font-semibold">Global Search & Filters</h3>
             <div className="grid gap-3 md:grid-cols-3">
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search colleges, industries, departments..." />
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search colleges, ipos, departments..." />
               <select className="rounded-xl border border-slate-300 bg-white px-3 py-2" value={departmentCollegeFilter} onChange={(event) => setDepartmentCollegeFilter(event.target.value)}>
                 <option value="all">All colleges (departments)</option>
                 {colleges.map((college) => <option key={college.id} value={college.id}>{college.name}</option>)}
@@ -153,30 +153,30 @@ export default function SuperAdminDashboardPage() {
           </Card>
 
           <Card className="space-y-4 p-4">
-            <h3 className="font-semibold">Industry Type & Subtype Management</h3>
+            <h3 className="font-semibold">IPO Type & Subtype Management</h3>
             <div className="grid gap-3 md:grid-cols-3">
-              <Input value={newTypeName} onChange={(event) => setNewTypeName(event.target.value)} placeholder="New industry type" />
-              <Button onClick={createType}>Create Industry Type</Button>
+              <Input value={newTypeName} onChange={(event) => setNewTypeName(event.target.value)} placeholder="New ipo type" />
+              <Button onClick={createType}>Create IPO Type</Button>
             </div>
             <div className="grid gap-3 md:grid-cols-4">
               <select className="rounded-xl border border-slate-300 bg-white px-3 py-2" value={selectedType} onChange={(event) => setSelectedType(event.target.value)}>
-                {industryTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+                {ipoTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
               </select>
               <Input value={newSubtypeName} onChange={(event) => setNewSubtypeName(event.target.value)} placeholder="Subtype name" />
               <Button onClick={createSubtype}>Add Subtype</Button>
             </div>
             <div className="space-y-2 text-sm">
-              {industryTypes.map((type) => (
+              {ipoTypes.map((type) => (
                 <div key={type.id} className="rounded-xl border border-slate-200 p-3">
                   <div className="flex items-center justify-between">
                     <p className="font-medium">{type.name}</p>
-                    <Button variant="secondary" onClick={async () => { await fetchWithSession(`/api/industry-types/${type.id}`, { method: 'DELETE' }); await loadDashboard(); }}>Delete Type</Button>
+                    <Button variant="secondary" onClick={async () => { await fetchWithSession(`/api/ipo-types/${type.id}`, { method: 'DELETE' }); await loadDashboard(); }}>Delete Type</Button>
                   </div>
                   <div className="mt-2 ml-4 space-y-2">
-                    {industrySubtypes.filter((sub) => sub.industry_type_id === type.id).map((sub) => (
+                    {ipoSubtypes.filter((sub) => sub.ipo_type_id === type.id).map((sub) => (
                       <div key={sub.id} className="flex items-center justify-between">
                         <span>↳ {sub.name}</span>
-                        <Button variant="secondary" onClick={async () => { await fetchWithSession(`/api/industry-subtypes/${sub.id}`, { method: 'DELETE' }); await loadDashboard(); }}>Delete</Button>
+                        <Button variant="secondary" onClick={async () => { await fetchWithSession(`/api/ipo-subtypes/${sub.id}`, { method: 'DELETE' }); await loadDashboard(); }}>Delete</Button>
                       </div>
                     ))}
                   </div>
@@ -193,11 +193,11 @@ export default function SuperAdminDashboardPage() {
             </div>
           )} />
 
-          <EntityTable title="Industry Management" rows={visibleIndustries} onExport={() => exportRows('industries', visibleIndustries)} renderActions={(row) => (
+          <EntityTable title="IPO Management" rows={visibleIPOs} onExport={() => exportRows('ipos', visibleIPOs)} renderActions={(row) => (
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => updateStatus('industries', row.id, 'approve')}>Approve</Button>
-              <Button variant="secondary" onClick={() => updateStatus('industries', row.id, 'reject')}>Reject</Button>
-              <Button variant="secondary" onClick={() => deleteEntity('industries', row.id)}>Delete</Button>
+              <Button variant="secondary" onClick={() => updateStatus('ipos', row.id, 'approve')}>Approve</Button>
+              <Button variant="secondary" onClick={() => updateStatus('ipos', row.id, 'reject')}>Reject</Button>
+              <Button variant="secondary" onClick={() => deleteEntity('ipos', row.id)}>Delete</Button>
             </div>
           )} />
 

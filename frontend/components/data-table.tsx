@@ -72,37 +72,37 @@ export function DataTable<T extends { id: string }>({
   }
 
   return (
-    <div className="overflow-x-auto rounded-[28px] border border-slate-200 bg-white/80 p-5">
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-lg shadow-slate-200/60">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
         <div className="flex gap-2">
-          <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search..." className="rounded border border-slate-300 bg-white px-3 py-1 text-sm text-slate-900" />
+          <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search..." className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" />
           <Button variant="secondary" onClick={exportExcel}>Export Excel</Button>
         </div>
       </div>
       <table className="w-full text-sm">
-        <thead>
+        <thead className="bg-slate-100 text-slate-700">
           <tr>
             {columns.map((column) => (
-              <th key={String(column.key)} className="cursor-pointer text-left" onClick={() => {
+              <th key={String(column.key)} className="cursor-pointer px-3 py-3 text-left font-semibold" onClick={() => {
                 if (sortKey === column.key) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
                 else { setSortKey(column.key); setSortOrder('asc'); }
               }}>
                 {column.label} {sortKey === column.key ? (sortOrder === 'asc' ? '↑' : '↓') : ''}
               </th>
             ))}
-            {actions ? <th>Actions</th> : null}
+            {actions ? <th className="px-3 py-3 text-left font-semibold">Actions</th> : null}
           </tr>
         </thead>
         <tbody>
           {paginated.length === 0 ? (
             <tr className="border-t border-slate-200">
-              <td className="py-3 text-slate-600" colSpan={columns.length + (actions ? 1 : 0)}>No data – Create / Assign Internship</td>
+              <td className="px-3 py-4 text-slate-600" colSpan={columns.length + (actions ? 1 : 0)}>No data – Create / Assign Internship</td>
             </tr>
           ) : paginated.map((row) => (
-            <tr key={row.id} className="border-t border-slate-200">
-              {columns.map((column) => <td key={String(column.key)} className="py-2 pr-2">{String(row[column.key] ?? '')}</td>)}
-              {actions ? <td className="py-2">{actions(row)}</td> : null}
+            <tr key={row.id} className="border-t border-slate-200 transition-colors hover:bg-slate-50">
+              {columns.map((column) => <td key={String(column.key)} className="px-3 py-3 pr-2">{String(row[column.key] ?? '')}</td>)}
+              {actions ? <td className="px-3 py-3">{actions(row)}</td> : null}
             </tr>
           ))}
         </tbody>

@@ -5,7 +5,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'InternSuite | Student-first internship platform',
-  description: 'Single workspace internship platform for students, colleges, and industries with MoU approvals, offer letters, attendance, and PWA installability.',
+  description: 'Single workspace internship platform for students, colleges, and ipos with MoU approvals, offer letters, attendance, and PWA installability.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,

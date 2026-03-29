@@ -78,15 +78,15 @@ export default function StudentDashboardPage() {
 
   const canApply = Boolean(dashboard?.canApplyForExternal) && availableSlots > 0;
 
-  async function openIpoProfile(industryId?: string | null) {
-    if (!industryId) return;
-    const response = await fetchWithSession(`/api/ipo/${industryId}`);
+  async function openIpoProfile(ipoId?: string | null) {
+    if (!ipoId) return;
+    const response = await fetchWithSession(`/api/ipo/${ipoId}`);
     setIpoDetails(response.data ?? null);
   }
 
   function downloadMarksheet(item: NonNullable<StudentDashboard['externalInternships']>[number]) {
     const status = item.status ?? 'PENDING';
-    const feedback = item.industryFeedback ?? 'Not provided yet';
+    const feedback = item.ipoFeedback ?? 'Not provided yet';
     const evaluationMarks = item.evaluationMarks ?? 'Not available';
     const outcomeMarks = item.outcomeMarks ?? 'Not available';
     const html = `
@@ -95,11 +95,11 @@ export default function StudentDashboardPage() {
         <body style="font-family: Arial, sans-serif; padding: 24px;">
           <h1>Internship Marksheet</h1>
           <p><strong>Internship:</strong> ${item.title}</p>
-          <p><strong>Industry:</strong> ${item.industryName}</p>
+          <p><strong>IPO:</strong> ${item.ipoName}</p>
           <p><strong>Department:</strong> ${item.departmentName}</p>
           <p><strong>College:</strong> ${item.collegeName ?? '-'}</p>
           <p><strong>Application status:</strong> ${status}</p>
-          <p><strong>Industry feedback:</strong> ${feedback}</p>
+          <p><strong>IPO feedback:</strong> ${feedback}</p>
           <p><strong>Evaluation marks:</strong> ${evaluationMarks}</p>
           <p><strong>Outcome marks:</strong> ${outcomeMarks}</p>
           <p style="margin-top: 20px; font-size: 12px;">Generated from the student dashboard.</p>
@@ -193,7 +193,7 @@ export default function StudentDashboardPage() {
           {selectedTab === 'college' ? (
             <Card className="rounded-[30px] p-6">
               <h2 className="text-xl font-semibold text-slate-900">Internships from {dashboard?.studentCollegeName ?? 'your college'}</h2>
-              <p className="mt-2 text-sm text-slate-600">Internal and industry internships are visible here. External-only postings from your own college are blocked.</p>
+              <p className="mt-2 text-sm text-slate-600">Internal and ipo internships are visible here. External-only postings from your own college are blocked.</p>
               <div className="mt-4 space-y-3">
                 {dashboard?.collegeInternships?.length ? dashboard.collegeInternships.map((item) => (
                   <div key={item.id} className="rounded-xl border border-slate-200 bg-white/80 p-4">
@@ -219,12 +219,12 @@ export default function StudentDashboardPage() {
                     <tr className="border-b border-slate-200 text-slate-600">
                       <th className="py-2 pr-2">Select</th>
                       <th className="py-2 pr-2">Internship</th>
-                      <th className="py-2 pr-2">Industry</th>
+                      <th className="py-2 pr-2">IPO</th>
                       <th className="py-2 pr-2">Department</th>
                       <th className="py-2 pr-2">College</th>
                       <th className="py-2 pr-2">Vacancy</th>
                       <th className="py-2 pr-2">Status</th>
-                      <th className="py-2 pr-2">Industry feedback</th>
+                      <th className="py-2 pr-2">IPO feedback</th>
                       <th className="py-2 pr-2">Evaluation marks</th>
                       <th className="py-2 pr-2">Outcome marks</th>
                       <th className="py-2 pr-2">Apply</th>
@@ -244,7 +244,7 @@ export default function StudentDashboardPage() {
                             <p className="font-medium text-slate-900">{item.title}</p>
                             <p className="text-xs text-slate-500">{item.description}</p>
                           </td>
-                          <td className="py-3 pr-2"><button type="button" className="text-indigo-700 underline" onClick={() => openIpoProfile(item.industryId)}>{item.industryName}</button></td>
+                          <td className="py-3 pr-2"><button type="button" className="text-indigo-700 underline" onClick={() => openIpoProfile(item.ipoId)}>{item.ipoName}</button></td>
                           <td className="py-3 pr-2">{item.departmentName}</td>
                           <td className="py-3 pr-2">{item.collegeName ?? '-'}</td>
                           <td className="py-3 pr-2">{item.vacancy ?? 0}</td>
@@ -254,7 +254,7 @@ export default function StudentDashboardPage() {
                               {item.eligibilityMessage ?? (disabled ? 'Application limit reached' : 'You are eligible')}
                             </p>
                           </td>
-                          <td className="py-3 pr-2 text-slate-600">{item.industryFeedback ?? (item.applied ? 'Pending feedback' : '-')}</td>
+                          <td className="py-3 pr-2 text-slate-600">{item.ipoFeedback ?? (item.applied ? 'Pending feedback' : '-')}</td>
                           <td className="py-3 pr-2">{item.evaluationMarks ?? (item.applied ? 'Pending' : '-')}</td>
                           <td className="py-3 pr-2">{item.outcomeMarks ?? (item.applied ? 'Pending' : '-')}</td>
                           <td className="py-3 pr-2">
