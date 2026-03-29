@@ -399,7 +399,7 @@ export default function IPODashboardPage() {
     }
   }
 
-  async function saveDepartmentSuggestedInternship(internshipId: string) {
+  async function saveDepartmentSuggestedInternship(internshipId: string, options?: { reload?: boolean }) {
     const payload = internshipForms[internshipId];
     if (!payload) return;
     setError(null);
@@ -422,10 +422,18 @@ export default function IPODashboardPage() {
         }),
       });
       setSuccessMessage('Department suggested internship updated.');
-      await load();
+      if (options?.reload !== false) {
+        await load();
+      }
     } finally {
       setIdeaActionSubmitting(null);
     }
+  }
+
+  async function saveVacancyAndRefresh(internshipId: string) {
+    await saveDepartmentSuggestedInternship(internshipId, { reload: false });
+    setVacancyEditFor(null);
+    await load();
   }
 
   async function closeInternship(internshipId: string) {
@@ -710,7 +718,7 @@ export default function IPODashboardPage() {
           <Card className="rounded-[30px] p-6">
             <div className="mt-2 flex items-center justify-between gap-2">
               <h2 className="text-2xl font-semibold text-slate-900">Accepted Ideas (Published for Students)</h2>
-              <Button variant="secondary" onClick={() => { void load(); }}>Refresh</Button>
+              <Button variant="secondary" onClick={() => window.location.reload()}>Refresh</Button>
             </div>
             {docPreview ? <iframe title="Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
             <div className="mt-4 overflow-x-auto">
@@ -777,7 +785,7 @@ export default function IPODashboardPage() {
                           {vacancyEditFor === item.id ? (
                             <>
                               <Input className="max-w-[100px]" type="number" min={0} value={form.vacancy} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, vacancy: e.target.value } }))} />
-                              <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={async () => { await saveDepartmentSuggestedInternship(item.id); setVacancyEditFor(null); }}>{ideaActionSubmitting === item.id ? 'Saving...' : 'Save Vacancy'}</Button>
+                              <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void saveVacancyAndRefresh(item.id)}>{ideaActionSubmitting === item.id ? 'Saving...' : 'Save Vacancy'}</Button>
                             </>
                           ) : (
                             <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => setVacancyEditFor(item.id)}>Edit Vacancy</Button>
@@ -822,6 +830,9 @@ export default function IPODashboardPage() {
                   <p className="mt-1 text-xs text-slate-400">Applied: {application.createdAt ?? '-'}</p>
                   <div className="mt-3 flex gap-2">
                     <Button variant="secondary" onClick={() => acceptApplication(application.id)}>Accept</Button>
+                    <Button variant="secondary" disabled={ideaActionSubmitting === application.id} onClick={() => void generateAndSendLetters(application.id)}>
+                      {ideaActionSubmitting === application.id ? 'Generating...' : 'Generate & Send Acceptance/Invitation'}
+                    </Button>
                     <Button variant="secondary" onClick={() => rejectApplication(application.id)}>Reject</Button>
                   </div>
                 </div>
@@ -844,8 +855,11 @@ export default function IPODashboardPage() {
                   <p className="mt-1 text-xs text-slate-400">Completed: {application.completedAt ?? 'Not completed'}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => completeApplication(application.id)} disabled={Boolean(application.completedAt)}>Completed</Button>
-                    <Button variant="secondary" onClick={() => approvalDocument ? previewDocument(approvalDocument.id) : generateAndSendLetters(application.id)}>{approvalDocument ? 'Preview Approval Letter' : 'Generate Approval Letter'}</Button>
-                    <Button variant="secondary" onClick={() => approvalDocument ? downloadDocument(approvalDocument.id) : generateAndSendLetters(application.id)}>{approvalDocument ? 'Download Approval Letter' : 'Generate & Download Letter'}</Button>
+                    <Button variant="secondary" disabled={!approvalDocument} onClick={() => approvalDocument && previewDocument(approvalDocument.id)}>Preview Approval Letter</Button>
+                    <Button variant="secondary" disabled={!approvalDocument} onClick={() => approvalDocument && downloadDocument(approvalDocument.id)}>Download Approval Letter</Button>
+                    <Button variant="secondary" disabled={ideaActionSubmitting === application.id} onClick={() => void generateAndSendLetters(application.id)}>
+                      {ideaActionSubmitting === application.id ? 'Generating...' : 'Generate & Send Acceptance/Invitation'}
+                    </Button>
                     <Button variant="secondary" onClick={() => {
                       const today = new Date().toISOString().slice(0, 10);
                       setFeedbackDraft((prev) => ({
@@ -872,9 +886,6 @@ export default function IPODashboardPage() {
                       setFeedbackEditorOpenFor(application.id);
                     }}>
                       Open Feedback Form
-                    </Button>
-                    <Button variant="secondary" disabled={ideaActionSubmitting === application.id} onClick={() => void generateAndSendLetters(application.id)}>
-                      {ideaActionSubmitting === application.id ? 'Generating...' : 'Generate & Send Acceptance/Invitation'}
                     </Button>
                   </div>
                   </>
