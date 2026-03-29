@@ -112,7 +112,8 @@ export default function IPODashboardPage() {
     setDashboard(dashboardRes.data);
     setIdeas(ideasRes.data);
     setColleges(collegeRes.data ?? []);
-    setIpoProfile(profileRes.data ?? null);
+    const profile = profileRes.data as (IpoProfile & { address?: string | null }) | null;
+    setIpoProfile(profile ? { ...profile, company_address: profile.company_address ?? profile.address ?? null } : null);
     setIPOInternships(internshipsRes.data ?? []);
     setDocuments(docRes.data ?? []);
   }
