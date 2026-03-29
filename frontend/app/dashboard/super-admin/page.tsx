@@ -1,127 +1,240 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { DataTable } from '@/components/data-table';
+import { Input } from '@/components/ui/input';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
 
-type Entity = { id: string; [key: string]: string | number | null | undefined };
+type KPI = {
+  totalColleges: number;
+  totalIndustries: number;
+  totalDepartments: number;
+  totalInternships: number;
+  pendingApprovals: number;
+  activeInternships: number;
+};
+
+type College = { id: string; name: string; coordinator: string; email: string; status: string };
+type Industry = { id: string; name: string; email: string; status: string; industry_type_name?: string; industry_subtype_name?: string };
+type Department = { id: string; name: string; coordinator: string; email: string; college_id: string; college_name: string };
+type IndustryType = { id: string; name: string };
+type IndustrySubtype = { id: string; name: string; industry_type_id: string };
+type LogEntry = { id: string; action: string; entity: string; entity_id: string; performed_by: string; timestamp: string };
 
 export default function SuperAdminDashboardPage() {
-  const [colleges, setColleges] = useState<Entity[]>([]);
-  const [industries, setIndustries] = useState<Entity[]>([]);
-  const [departments, setDepartments] = useState<Entity[]>([]);
-  const [students, setStudents] = useState<Entity[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [metrics, setMetrics] = useState<KPI | null>(null);
+  const [colleges, setColleges] = useState<College[]>([]);
+  const [industries, setIndustries] = useState<Industry[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [industryTypes, setIndustryTypes] = useState<IndustryType[]>([]);
+  const [industrySubtypes, setIndustrySubtypes] = useState<IndustrySubtype[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [search, setSearch] = useState('');
+  const [departmentCollegeFilter, setDepartmentCollegeFilter] = useState('all');
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newSubtypeName, setNewSubtypeName] = useState('');
+  const [selectedType, setSelectedType] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [expandedCard, setExpandedCard] = useState<'industry-types' | null>(null);
-  const [industryTypeName, setIndustryTypeName] = useState('');
-  const [industryTypes, setIndustryTypes] = useState<Entity[]>([]);
 
-  async function loadAll() {
-    setLoading(true);
+  const loadDashboard = async () => {
     setError(null);
     try {
-      const [collegesRes, industriesRes, departmentsRes, studentsRes, typesRes] = await Promise.all([
-        fetchWithSession<Entity[]>('/api/admin/colleges'),
-        fetchWithSession<Entity[]>('/api/admin/industries'),
-        fetchWithSession<Entity[]>('/api/admin/departments'),
-        fetchWithSession<Entity[]>('/api/admin/students'),
-        fetchWithSession<Entity[]>('/api/industry-types'),
+      const [metricsRes, collegeRes, industryRes, departmentRes, typeRes, subtypeRes, logsRes] = await Promise.all([
+        fetchWithSession<KPI>('/api/dashboard/metrics'),
+        fetchWithSession<College[]>('/api/colleges'),
+        fetchWithSession<Industry[]>('/api/industries'),
+        fetchWithSession<Department[]>('/api/departments'),
+        fetchWithSession<IndustryType[]>('/api/industry-types'),
+        fetchWithSession<IndustrySubtype[]>('/api/industry-subtypes'),
+        fetchWithSession<LogEntry[]>('/api/logs'),
       ]);
-      setColleges(collegesRes.data);
-      setIndustries(industriesRes.data);
-      setDepartments(departmentsRes.data);
-      setStudents(studentsRes.data);
-      setIndustryTypes(typesRes.data);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to load superadmin data.');
-    } finally {
-      setLoading(false);
+      setMetrics(metricsRes.data);
+      setColleges(collegeRes.data);
+      setIndustries(industryRes.data);
+      setDepartments(departmentRes.data);
+      setIndustryTypes(typeRes.data);
+      setIndustrySubtypes(subtypeRes.data);
+      setLogs(logsRes.data);
+      if (!selectedType && typeRes.data.length > 0) setSelectedType(typeRes.data[0].id);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load dashboard');
     }
-  }
+  };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    void loadDashboard();
+  }, []);
 
-  async function performAction(entity: 'college' | 'industry' | 'department' | 'student', id: string, action: 'approve' | 'reject' | 'delete') {
-    await fetchWithSession(`/api/admin/${entity}/${id}/${action}`, { method: 'POST' });
-    await loadAll();
-  }
+  const matchesSearch = (row: Record<string, unknown>) => JSON.stringify(row).toLowerCase().includes(search.toLowerCase());
 
-  async function editEntity(entity: 'college' | 'industry' | 'department' | 'student', id: string, currentName: string) {
-    const name = prompt('Edit name', currentName);
-    if (!name || name.trim() === currentName) return;
-    await fetchWithSession(`/api/admin/${entity}/${id}/edit`, { method: 'POST', body: JSON.stringify({ name: name.trim() }) });
-    await loadAll();
-  }
-
-  const actionButtons = (entity: 'college' | 'industry' | 'department' | 'student') => (row: Entity) => (
-    <div className="space-x-2">
-      <Button variant="secondary" onClick={() => performAction(entity, row.id, 'approve')}>Approve</Button>
-      <Button variant="secondary" onClick={() => performAction(entity, row.id, 'reject')}>Reject</Button>
-      <Button variant="secondary" onClick={() => editEntity(entity, row.id, String(row.name ?? ''))}>Edit</Button>
-      <Button variant="secondary" onClick={() => performAction(entity, row.id, 'delete')}>Delete</Button>
-    </div>
+  const visibleColleges = useMemo(() => colleges.filter(matchesSearch), [colleges, search]);
+  const visibleIndustries = useMemo(() => industries.filter(matchesSearch), [industries, search]);
+  const visibleDepartments = useMemo(
+    () => departments.filter((row) => (departmentCollegeFilter === 'all' || row.college_id === departmentCollegeFilter) && matchesSearch(row as unknown as Record<string, unknown>)),
+    [departments, departmentCollegeFilter, search],
   );
 
-  async function addIndustryType() {
-    if (!industryTypeName.trim()) return;
-    await fetchWithSession('/api/industry-types', {
+  const exportRows = (name: string, rows: unknown[]) => {
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, name);
+    XLSX.writeFile(workbook, `${name}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const updateStatus = async (entity: 'colleges' | 'industries', id: string, action: 'approve' | 'reject') => {
+    await fetchWithSession(`/api/${entity}/${id}/${action}`, { method: 'PATCH' });
+    await loadDashboard();
+  };
+
+  const deleteEntity = async (entity: 'colleges' | 'industries', id: string) => {
+    await fetchWithSession(`/api/${entity}/${id}`, { method: 'DELETE' });
+    await loadDashboard();
+  };
+
+  const createType = async () => {
+    if (!newTypeName.trim()) return;
+    await fetchWithSession('/api/industry-types', { method: 'POST', body: JSON.stringify({ name: newTypeName }) });
+    setNewTypeName('');
+    await loadDashboard();
+  };
+
+  const createSubtype = async () => {
+    if (!newSubtypeName.trim() || !selectedType) return;
+    await fetchWithSession('/api/industry-subtypes', {
       method: 'POST',
-      body: JSON.stringify({ name: industryTypeName.trim() }),
+      body: JSON.stringify({ name: newSubtypeName, industry_type_id: selectedType }),
     });
-    setIndustryTypeName('');
-    await loadAll();
-  }
-
-  async function editIndustryType(row: Entity) {
-    const name = prompt('Edit industry type', String(row.name ?? ''))?.trim();
-    if (!name || name === row.name) return;
-    await fetchWithSession(`/api/industry-types/${row.id}`, { method: 'PUT', body: JSON.stringify({ name }) });
-    await loadAll();
-  }
-
-  async function deleteIndustryType(id: string) {
-    await fetchWithSession(`/api/industry-types/${id}`, { method: 'DELETE' });
-    await loadAll();
-  }
+    setNewSubtypeName('');
+    await loadDashboard();
+  };
 
   return (
-    <RoleDashboardShell allowedRoles={['SUPER_ADMIN', 'ADMIN']} title="Super Admin Dashboard" subtitle="Manage all entities from D1 with full CRUD and approvals.">
+    <RoleDashboardShell allowedRoles={['SUPER_ADMIN', 'ADMIN']} title="Super Admin Control Center" subtitle="Audit-ready control panel for approvals, hierarchy management, and governance.">
       {() => (
-        <>
-          {error ? <Card className="rounded-[28px] p-4 text-rose-800">{error}</Card> : null}
-          {loading ? <Card className="rounded-[28px] p-4">Loading dashboard data...</Card> : null}
-          <Card className="rounded-[20px] p-4">
-            <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => prev === 'industry-types' ? null : 'industry-types')}>
-              Add Industry Types
-            </button>
-            {expandedCard === 'industry-types' ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <input value={industryTypeName} onChange={(e) => setIndustryTypeName(e.target.value)} placeholder="Type name (e.g., Manufacturing)" />
-                <Button onClick={addIndustryType}>Save Industry Type</Button>
-              </div>
-            ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and add industry categories for registrations.</p>}
+        <div className="space-y-6 text-slate-900">
+          {error ? <Card className="p-4 text-rose-700">{error}</Card> : null}
+
+          <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+            {[
+              ['Total Colleges', metrics?.totalColleges ?? 0],
+              ['Total Industries', metrics?.totalIndustries ?? 0],
+              ['Total Departments', metrics?.totalDepartments ?? 0],
+              ['Total Internships', metrics?.totalInternships ?? 0],
+              ['Pending Approvals', metrics?.pendingApprovals ?? 0],
+              ['Active Internships', metrics?.activeInternships ?? 0],
+            ].map(([label, value]) => (
+              <Card key={String(label)} className="p-4">
+                <p className="text-xs font-medium uppercase text-slate-600">{label}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-950">{value}</p>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="p-4">
+            <h3 className="font-semibold">Alerts</h3>
+            <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
+              <li>{(metrics?.pendingApprovals ?? 0) > 0 ? `${metrics?.pendingApprovals ?? 0} entities are awaiting approval.` : 'No pending approvals.'}</li>
+              <li>{(metrics?.activeInternships ?? 0) === 0 ? 'Warning: No active internships currently visible.' : 'Internship engine is running normally.'}</li>
+            </ul>
           </Card>
-          <DataTable
-            title="Industry Types"
-            rows={industryTypes}
-            columns={[{ key: 'name', label: 'Type Name' }]}
-            actions={(row) => (
-              <div className="space-x-2">
-                <Button variant="secondary" onClick={() => editIndustryType(row)}>Edit</Button>
-                <Button variant="secondary" onClick={() => deleteIndustryType(row.id)}>Delete</Button>
-              </div>
-            )}
-          />
-          <DataTable title="Colleges" rows={colleges} columns={[{ key: 'name', label: 'Name' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'status', label: 'Status' }]} actions={actionButtons('college')} />
-          <DataTable title="Industries" rows={industries} columns={[{ key: 'name', label: 'Name' }, { key: 'industry_type_name', label: 'Type' }, { key: 'email', label: 'Email' }, { key: 'status', label: 'Status' }]} actions={actionButtons('industry')} />
-          <DataTable title="Departments" rows={departments} columns={[{ key: 'name', label: 'Name' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Email' }, { key: 'college_name', label: 'College' }]} actions={actionButtons('department')} />
-          <DataTable title="Students" rows={students} columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'college_name', label: 'College' }, { key: 'department_name', label: 'Department' }]} actions={actionButtons('student')} />
-        </>
+
+          <Card className="space-y-3 p-4">
+            <h3 className="font-semibold">Global Search & Filters</h3>
+            <div className="grid gap-3 md:grid-cols-3">
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search colleges, industries, departments..." />
+              <select className="rounded-xl border border-slate-300 bg-white px-3 py-2" value={departmentCollegeFilter} onChange={(event) => setDepartmentCollegeFilter(event.target.value)}>
+                <option value="all">All colleges (departments)</option>
+                {colleges.map((college) => <option key={college.id} value={college.id}>{college.name}</option>)}
+              </select>
+            </div>
+          </Card>
+
+          <Card className="space-y-4 p-4">
+            <h3 className="font-semibold">Industry Type & Subtype Management</h3>
+            <div className="grid gap-3 md:grid-cols-3">
+              <Input value={newTypeName} onChange={(event) => setNewTypeName(event.target.value)} placeholder="New industry type" />
+              <Button onClick={createType}>Create Industry Type</Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              <select className="rounded-xl border border-slate-300 bg-white px-3 py-2" value={selectedType} onChange={(event) => setSelectedType(event.target.value)}>
+                {industryTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+              </select>
+              <Input value={newSubtypeName} onChange={(event) => setNewSubtypeName(event.target.value)} placeholder="Subtype name" />
+              <Button onClick={createSubtype}>Add Subtype</Button>
+            </div>
+            <div className="space-y-2 text-sm">
+              {industryTypes.map((type) => (
+                <div key={type.id} className="rounded-xl border border-slate-200 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium">{type.name}</p>
+                    <Button variant="secondary" onClick={async () => { await fetchWithSession(`/api/industry-types/${type.id}`, { method: 'DELETE' }); await loadDashboard(); }}>Delete Type</Button>
+                  </div>
+                  <div className="mt-2 ml-4 space-y-2">
+                    {industrySubtypes.filter((sub) => sub.industry_type_id === type.id).map((sub) => (
+                      <div key={sub.id} className="flex items-center justify-between">
+                        <span>↳ {sub.name}</span>
+                        <Button variant="secondary" onClick={async () => { await fetchWithSession(`/api/industry-subtypes/${sub.id}`, { method: 'DELETE' }); await loadDashboard(); }}>Delete</Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <EntityTable title="College Management" rows={visibleColleges} onExport={() => exportRows('colleges', visibleColleges)} renderActions={(row) => (
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => updateStatus('colleges', row.id, 'approve')}>Approve</Button>
+              <Button variant="secondary" onClick={() => updateStatus('colleges', row.id, 'reject')}>Reject</Button>
+              <Button variant="secondary" onClick={() => deleteEntity('colleges', row.id)}>Delete</Button>
+            </div>
+          )} />
+
+          <EntityTable title="Industry Management" rows={visibleIndustries} onExport={() => exportRows('industries', visibleIndustries)} renderActions={(row) => (
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => updateStatus('industries', row.id, 'approve')}>Approve</Button>
+              <Button variant="secondary" onClick={() => updateStatus('industries', row.id, 'reject')}>Reject</Button>
+              <Button variant="secondary" onClick={() => deleteEntity('industries', row.id)}>Delete</Button>
+            </div>
+          )} />
+
+          <EntityTable title="Department Management" rows={visibleDepartments} onExport={() => exportRows('departments', visibleDepartments)} />
+          <EntityTable title="Audit Logs" rows={logs.slice(0, 100)} onExport={() => exportRows('logs', logs)} />
+        </div>
       )}
     </RoleDashboardShell>
+  );
+}
+
+function EntityTable<T extends { id: string }>({ title, rows, renderActions, onExport }: { title: string; rows: T[]; renderActions?: (row: T) => ReactNode; onExport: () => void }) {
+  const columns = rows.length > 0 ? Object.keys(rows[0]).filter((key) => key !== 'id') : [];
+  return (
+    <Card className="space-y-3 p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">{title}</h3>
+        <Button variant="secondary" onClick={onExport}>Export Excel</Button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-100 text-slate-700">
+            <tr>
+              {columns.map((key) => <th key={key} className="px-3 py-2 capitalize">{key.replaceAll('_', ' ')}</th>)}
+              {renderActions ? <th className="px-3 py-2">Actions</th> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-slate-200">
+                {columns.map((key) => <td key={key} className="px-3 py-2 text-slate-800">{String((row as Record<string, unknown>)[key] ?? '-')}</td>)}
+                {renderActions ? <td className="px-3 py-2">{renderActions(row)}</td> : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

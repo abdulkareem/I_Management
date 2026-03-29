@@ -68,6 +68,9 @@ model College {
   id           String       @id @default(cuid())
   name         String
   code         String?      @unique
+  coordinator  String?      @map("coordinator_name")
+  email        String?      @map("coordinator_email")
+  status       String?      @default("pending")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
   departments  Department[]
@@ -84,6 +87,8 @@ model Department {
   collegeId    String       @map("college_id")
   name         String
   code         String?
+  coordinator  String?      @map("coordinator_name")
+  email        String?      @map("coordinator_email")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
   college      College      @relation(fields: [collegeId], references: [id], onDelete: Cascade)
@@ -100,6 +105,9 @@ model Industry {
   id           String       @id @default(cuid())
   name         String
   email        String?      @unique
+  industryTypeId String?    @map("industry_type_id")
+  industrySubtypeId String? @map("industry_subtype_id")
+  status       String?      @default("pending")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
   users        User[]
@@ -107,6 +115,36 @@ model Industry {
   results      Result[]
 
   @@map("industries")
+}
+
+model IndustryType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("industry_types")
+}
+
+model IndustrySubtype {
+  id             String   @id @default(cuid())
+  name           String
+  industryTypeId String   @map("industry_type_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([industryTypeId, name])
+  @@map("industry_subtypes")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String
+  entity      String
+  entityId    String   @map("entity_id")
+  performedBy String   @map("performed_by")
+  timestamp   DateTime @default(now())
+
+  @@map("logs")
 }
 
 model Internship {
