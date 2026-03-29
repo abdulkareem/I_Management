@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
 import { API_BASE_URL } from '@/lib/config';
@@ -89,7 +90,24 @@ export default function IPODashboardPage() {
   const [editingIdeaId, setEditingIdeaId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [ipoProfile, setIpoProfile] = useState<IpoProfile | null>(null);
-  const [feedbackDraft, setFeedbackDraft] = useState<Record<string, { feedback: string; score: string }>>({});
+  const [feedbackDraft, setFeedbackDraft] = useState<Record<string, {
+    studentName: string;
+    registerNumber: string;
+    organization: string;
+    duration: string;
+    supervisorName: string;
+    attendancePunctuality: string;
+    technicalSkills: string;
+    problemSolvingAbility: string;
+    communicationSkills: string;
+    teamwork: string;
+    professionalEthics: string;
+    overallPerformance: 'Excellent' | 'Good' | 'Average' | 'Poor';
+    remarks: string;
+    recommendation: string;
+    supervisorSignature: string;
+    feedbackDate: string;
+  }>>({});
   const [ideasPage, setIdeasPage] = useState(1);
   const [connectSubmitting, setConnectSubmitting] = useState(false);
   const [connectSubmitted, setConnectSubmitted] = useState(false);
@@ -314,10 +332,10 @@ export default function IPODashboardPage() {
 
   async function submitFeedback(applicationId: string) {
     const data = feedbackDraft[applicationId];
-    if (!data?.feedback || !data?.score) return;
+    if (!data) return;
     await fetchWithSession(`/api/industry/applications/${applicationId}/feedback`, {
       method: 'POST',
-      body: JSON.stringify({ feedback: data.feedback, score: Number(data.score) }),
+      body: JSON.stringify(data),
     });
     setFeedbackEditorOpenFor(null);
     await load();
@@ -684,33 +702,68 @@ export default function IPODashboardPage() {
                   <p className="mt-1 text-xs text-slate-400">Completed: {application.completedAt ?? 'Not completed'}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => completeApplication(application.id)} disabled={Boolean(application.completedAt)}>Completed</Button>
-                    <Button
-                      variant="secondary"
-                      disabled={!Boolean(application.completedAt)}
-                      onClick={() => setFeedbackEditorOpenFor((prev) => (prev === application.id ? null : application.id))}
-                    >
-                      {feedbackEditorOpenFor === application.id ? 'Close Feedback Tab' : 'Open Feedback Form'}
+                    <Button variant="secondary" disabled={!Boolean(application.completedAt)} onClick={() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      setFeedbackDraft((prev) => ({
+                        ...prev,
+                        [application.id]: prev[application.id] ?? {
+                          studentName: application.studentName ?? '',
+                          registerNumber: '',
+                          organization: ipoProfile?.name ?? dashboard?.ipo?.name ?? '',
+                          duration: application.opportunityTitle ?? '',
+                          supervisorName: ipoProfile?.name ?? '',
+                          attendancePunctuality: '3',
+                          technicalSkills: '3',
+                          problemSolvingAbility: '3',
+                          communicationSkills: '3',
+                          teamwork: '3',
+                          professionalEthics: '3',
+                          overallPerformance: 'Good',
+                          remarks: '',
+                          recommendation: '',
+                          supervisorSignature: ipoProfile?.name ?? '',
+                          feedbackDate: today,
+                        },
+                      }));
+                      setFeedbackEditorOpenFor(application.id);
+                    }}>
+                      Open Feedback Form
                     </Button>
                   </div>
-                  {feedbackEditorOpenFor === application.id ? (
-                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_160px_auto]">
-                      <Input
-                        placeholder="Feedback"
-                        value={feedbackDraft[application.id]?.feedback ?? (application as any).industryFeedback ?? application.ipoFeedback ?? ''}
-                        onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: event.target.value, score: prev[application.id]?.score ?? String((application as any).industryScore ?? application.ipoScore ?? '') } }))}
-                      />
-                      <Input
-                        placeholder="Score /10"
-                        value={feedbackDraft[application.id]?.score ?? String((application as any).industryScore ?? application.ipoScore ?? '')}
-                        onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: prev[application.id]?.feedback ?? (application as any).industryFeedback ?? application.ipoFeedback ?? '', score: event.target.value } }))}
-                      />
-                      <Button variant="secondary" onClick={() => submitFeedback(application.id)}>Save Feedback</Button>
-                    </div>
-                  ) : null}
                 </div>
               )) : <p className="text-slate-700">No accepted applications found.</p>}
             </div>
           </Card>
+          <Modal
+            open={Boolean(feedbackEditorOpenFor)}
+            title="INTERNSHIP PERFORMANCE FEEDBACK FORM"
+            onClose={() => setFeedbackEditorOpenFor(null)}
+            footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setFeedbackEditorOpenFor(null)}>Close</Button><Button onClick={() => feedbackEditorOpenFor && submitFeedback(feedbackEditorOpenFor)}>Submit</Button></div>}
+          >
+            {feedbackEditorOpenFor ? (
+              <div className="grid gap-2 text-sm">
+                {(() => { const f = feedbackDraft[feedbackEditorOpenFor]; if (!f) return null; return (
+                  <>
+                    <Input placeholder="Student Name" value={f.studentName} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, studentName: e.target.value } }))} />
+                    <Input placeholder="Register Number" value={f.registerNumber} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, registerNumber: e.target.value } }))} />
+                    <Input placeholder="Organization" value={f.organization} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, organization: e.target.value } }))} />
+                    <Input placeholder="Duration" value={f.duration} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, duration: e.target.value } }))} />
+                    <Input placeholder="Supervisor Name" value={f.supervisorName} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, supervisorName: e.target.value } }))} />
+                    {(['attendancePunctuality', 'technicalSkills', 'problemSolvingAbility', 'communicationSkills', 'teamwork', 'professionalEthics'] as const).map((key) => (
+                      <Input key={key} type="number" min={1} max={5} value={f[key]} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, [key]: e.target.value } }))} />
+                    ))}
+                    <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={f.overallPerformance} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, overallPerformance: e.target.value as 'Excellent' | 'Good' | 'Average' | 'Poor' } }))}>
+                      <option>Excellent</option><option>Good</option><option>Average</option><option>Poor</option>
+                    </select>
+                    <Input placeholder="Remarks" value={f.remarks} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, remarks: e.target.value } }))} />
+                    <Input placeholder="Recommendation" value={f.recommendation} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, recommendation: e.target.value } }))} />
+                    <Input placeholder="Supervisor Signature" value={f.supervisorSignature} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, supervisorSignature: e.target.value } }))} />
+                    <Input type="date" value={f.feedbackDate} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, feedbackDate: e.target.value } }))} />
+                  </>
+                ); })()}
+              </div>
+            ) : null}
+          </Modal>
 
           <Card className="rounded-[30px] p-6">
             <h2 className="text-2xl font-semibold text-slate-900">System Generated Documents</h2>

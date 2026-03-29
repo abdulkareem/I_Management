@@ -83,13 +83,12 @@ export default function DepartmentDashboardPage() {
   const [markForm, setMarkForm] = useState({ attendanceMarks: '0', workRegisterMarks: '0', presentationMarks: '0', vivaMarks: '0', reportMarks: '0' });
   const [outcomeAssessmentModal, setOutcomeAssessmentModal] = useState<{ open: boolean; applicationId: string | null }>({ open: false, applicationId: null });
   const [outcomeAssessmentForm, setOutcomeAssessmentForm] = useState({ outcomeType: 'CO', outcomeId: '', studentScore: '0', supervisorScore: '0', coordinatorScore: '0' });
-  const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>([]);
-  const [docPreview, setDocPreview] = useState<string | null>(null);
   const [summary, setSummary] = useState<DepartmentSummary | null>(null);
   const [analytics, setAnalytics] = useState<DepartmentAnalytics | null>(null);
+  const [feedbackViewModal, setFeedbackViewModal] = useState<{ open: boolean; data: any | null }>({ open: false, data: null });
 
   async function load() {
-    const [internshipsRes, internalApplicationsRes, externalApplicationsRes, requestsRes, linkedIposRes, programsRes, cosRes, posRes, docsRes, profileRes, summaryRes, analyticsRes] = await Promise.all([
+    const [internshipsRes, internalApplicationsRes, externalApplicationsRes, requestsRes, linkedIposRes, programsRes, cosRes, posRes, profileRes, summaryRes, analyticsRes] = await Promise.all([
       fetchWithSession<DepartmentDashboard['internships']>('/api/department/internships'),
       fetchWithSession<DepartmentDashboard['applications']>('/api/applications/internal'),
       fetchWithSession<DepartmentDashboard['applications']>('/api/applications/external'),
@@ -98,7 +97,6 @@ export default function DepartmentDashboardPage() {
       fetchWithSession<DepartmentProgram[]>('/api/department/programs'),
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-cos'),
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-pos'),
-      fetchWithSession<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>('/api/documents/my'),
       fetchWithSession<DepartmentProfile>('/api/department/profile'),
       fetchWithSession<DepartmentSummary>('/api/department/dashboard-summary'),
       fetchWithSession<DepartmentAnalytics>('/api/department/analytics'),
@@ -124,37 +122,24 @@ export default function DepartmentDashboardPage() {
     setPrograms(loadedPrograms);
     setInternshipCos(cosRes.data ?? []);
     setInternshipPos(posRes.data ?? []);
-    setDocuments(docsRes.data ?? []);
     setDepartmentProfile(profileRes.data ?? null);
     setSummary(summaryRes.data ?? null);
     setAnalytics(analyticsRes.data ?? null);
   }
 
-  async function downloadDocument(documentId: string) {
+  async function openFeedbackForm(applicationId: string) {
+    const payload = await fetchWithSession(`/api/industry/applications/${applicationId}/feedback-form`);
+    setFeedbackViewModal({ open: true, data: payload.data });
+  }
+
+  async function downloadApplicationDocumentPack(applicationId: string) {
     const session = localStorage.getItem('internsuite.session');
     const token = session ? JSON.parse(session).token : '';
-    const res = await fetch(`${API_BASE_URL}/api/documents/${documentId}/download`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${API_BASE_URL}/api/department/applications/${applicationId}/documents/pdf`, { headers: { Authorization: `Bearer ${token}` } });
     const blob = await res.blob();
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `document-${documentId}.html`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  }
-
-  async function previewDocument(documentId: string) {
-    const payload = await fetchWithSession<{ html: string }>(`/api/documents/${documentId}/preview`);
-    setDocPreview(payload.data?.html ?? null);
-  }
-
-  async function downloadStudentBundle(studentId: string) {
-    const session = localStorage.getItem('internsuite.session');
-    const token = session ? JSON.parse(session).token : '';
-    const res = await fetch(`${API_BASE_URL}/api/documents/student-bundle?studentId=${encodeURIComponent(studentId)}`, { headers: { Authorization: `Bearer ${token}` } });
-    const blob = await res.blob();
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `student-${studentId}-documents.zip`;
+    link.download = `application-${applicationId}-documents.pdf`;
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -482,11 +467,6 @@ export default function DepartmentDashboardPage() {
     return (inferredExternal || differentCollege) && status !== 'rejected';
   });
   const parseMappings = (value?: string | null) => value?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
-  const internshipTitleById = useMemo(
-    () => new Map((dashboard?.internships ?? []).map((item: any) => [item.id, item.title])),
-    [dashboard?.internships],
-  );
-
   const toggleDraftSelection = (internshipId: string, field: 'mappedCo' | 'mappedPo' | 'mappedPso', value: string) => {
     setAdvertisementDrafts((prev) => {
       const current = prev[internshipId] ?? { programId: '', mappedCo: [], mappedPo: [], mappedPso: [] };
@@ -820,9 +800,11 @@ export default function DepartmentDashboardPage() {
                         <div className="flex gap-2">
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() === 'accepted'}>Accept</Button>
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
-                          <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() !== 'accepted' || Boolean(app.completed_at)}>{(app as any).performance_feedback_id ? 'Completed' : 'Mark Completed'}</Button>
+                          <Button variant="secondary" onClick={() => openFeedbackForm(app.id)} disabled={!(app as any).performance_feedback_id}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!(app as any).performance_feedback_id}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!(app as any).performance_feedback_id}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => downloadApplicationDocumentPack(app.id)}>Documents</Button>
                         </div>
                       </td>
                     </tr>
@@ -862,9 +844,11 @@ export default function DepartmentDashboardPage() {
                         <div className="flex gap-2">
                           <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() === 'accepted'}>Accept</Button>
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
-                          <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() !== 'accepted' || Boolean(app.completed_at)}>{(app as any).performance_feedback_id ? 'Completed' : 'Mark Completed'}</Button>
+                          <Button variant="secondary" onClick={() => openFeedbackForm(app.id)} disabled={!(app as any).performance_feedback_id}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!(app as any).performance_feedback_id}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!(app as any).performance_feedback_id}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => downloadApplicationDocumentPack(app.id)}>Documents</Button>
                         </div>
                       </td>
                     </tr>
@@ -878,22 +862,6 @@ export default function DepartmentDashboardPage() {
             </div>
           </Card>
 
-          <Card className="rounded-[20px] p-5">
-            <h2 className="mb-3 text-xl font-semibold">Department Documents (Audit Ready)</h2>
-            <p className="mb-3 text-sm text-slate-600">Approval letters, reply letters, allotments, and feedback forms.</p>
-            <div className="space-y-2">
-              {documents.length ? documents.map((doc) => (
-                <div key={doc.id} className="flex flex-wrap items-center justify-between rounded-lg border border-slate-200 p-3">
-                  <p className="text-sm text-slate-700">{doc.type.toUpperCase()} • Internship {internshipTitleById.get(doc.internship_id) ?? 'Untitled internship'} • Student {doc.student_id ?? 'N/A'}</p>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => previewDocument(doc.id)}>Preview</Button>
-                    <Button variant="secondary" onClick={() => downloadDocument(doc.id)}>Download PDF</Button>
-                  </div>
-                </div>
-              )) : <p className="text-sm text-slate-700">No documents generated yet.</p>}
-            </div>
-            {docPreview ? <iframe title="Department Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
-          </Card>
 
           <Card className="rounded-[20px] p-5">
             <h2 className="mb-3 text-xl font-semibold">Department Analytics</h2>
@@ -908,17 +876,36 @@ export default function DepartmentDashboardPage() {
             </div>
           </Card>
 
-          <Card className="rounded-[20px] p-5">
-            <h2 className="mb-3 text-xl font-semibold">Download All Documents (ZIP)</h2>
-            <div className="space-y-2">
-              {dashboard?.applications?.length ? dashboard.applications.map((app) => (
-                <div key={`bundle-${app.id}`} className="flex flex-wrap items-center justify-between rounded-lg border border-slate-200 p-3">
-                  <p className="text-sm text-slate-700">{app.student_name} • {app.internship_title}</p>
-                  <Button variant="secondary" onClick={() => downloadStudentBundle((app as any).student_id)} disabled={!(app as any).student_id}>Download All Documents (ZIP)</Button>
-                </div>
-              )) : <p className="text-sm text-slate-700">No student records available for bundles.</p>}
-            </div>
-          </Card>
+          
+
+          <Modal
+            open={feedbackViewModal.open}
+            title="INTERNSHIP PERFORMANCE FEEDBACK FORM"
+            onClose={() => setFeedbackViewModal({ open: false, data: null })}
+            footer={<div className="flex justify-end"><Button variant="secondary" onClick={() => setFeedbackViewModal({ open: false, data: null })}>Close</Button></div>}
+          >
+            {feedbackViewModal.data ? (
+              <div className="grid gap-1 text-sm">
+                <p>Student Name: {feedbackViewModal.data.student_name}</p>
+                <p>Register Number: {feedbackViewModal.data.register_number}</p>
+                <p>Organization: {feedbackViewModal.data.organization}</p>
+                <p>Duration: {feedbackViewModal.data.duration}</p>
+                <p>Supervisor Name: {feedbackViewModal.data.supervisor_name}</p>
+                <p>A. Weekly / Final Evaluation</p>
+                <p>Attendance & Punctuality: {feedbackViewModal.data.attendance_punctuality}/5</p>
+                <p>Technical Skills: {feedbackViewModal.data.technical_skills}/5</p>
+                <p>Problem Solving Ability: {feedbackViewModal.data.problem_solving_ability}/5</p>
+                <p>Communication Skills: {feedbackViewModal.data.communication_skills}/5</p>
+                <p>Teamwork: {feedbackViewModal.data.teamwork}/5</p>
+                <p>Professional Ethics: {feedbackViewModal.data.professional_ethics}/5</p>
+                <p>B. Overall Performance: {feedbackViewModal.data.overall_performance}</p>
+                <p>C. Remarks: {feedbackViewModal.data.remarks || '-'}</p>
+                <p>D. Recommendation: {feedbackViewModal.data.recommendation || '-'}</p>
+                <p>Supervisor Signature: {feedbackViewModal.data.supervisor_signature || '-'}</p>
+                <p>Date: {feedbackViewModal.data.feedback_date}</p>
+              </div>
+            ) : <p>No feedback found.</p>}
+          </Modal>
 
           <Modal
             open={outcomeModalOpen}
