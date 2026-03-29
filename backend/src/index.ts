@@ -2569,6 +2569,32 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Industry internship closed');
   }
 
+  const industryInternshipRepublishMatch = pathname.match(/^\/api\/industry\/internships\/([^/]+)\/republish$/);
+  if (industryInternshipRepublishMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const internship = await env.DB.prepare(
+      `SELECT id, COALESCE(vacancy, total_vacancy, 0) AS vacancy
+       FROM internships
+       WHERE id = ? AND industry_id = ?`,
+    ).bind(industryInternshipRepublishMatch[1], actor.id).first<{ id: string; vacancy: number }>();
+    if (!internship) return errorResponse(404, 'Industry internship not found');
+    const vacancy = Math.max(Number(internship.vacancy ?? 0), 1);
+    const result = await env.DB.prepare(
+      `UPDATE internships
+       SET status = 'PUBLISHED',
+           student_visibility = 1,
+           total_vacancy = CASE WHEN COALESCE(total_vacancy, 0) > 0 THEN total_vacancy ELSE ? END,
+           vacancy = CASE WHEN COALESCE(vacancy, 0) > 0 THEN vacancy ELSE ? END,
+           available_vacancy = CASE WHEN COALESCE(available_vacancy, 0) > 0 THEN available_vacancy ELSE ? END,
+           remaining_vacancy = CASE WHEN COALESCE(remaining_vacancy, 0) > 0 THEN remaining_vacancy ELSE ? END,
+           updated_at = datetime('now')
+       WHERE id = ? AND industry_id = ?`,
+    ).bind(vacancy, vacancy, vacancy, vacancy, industryInternshipRepublishMatch[1], actor.id).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(500, 'Unable to republish internship');
+    return ok('Industry internship published again');
+  }
+
   if (updateIndustryInternshipMatch && request.method === 'DELETE') {
     const actor = requireRole(request, ['INDUSTRY']);
     if (actor instanceof Response) return actor;
@@ -3109,6 +3135,38 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(industryCompleteMatch[1], actor.id).run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Accepted application not found');
     return ok('Application marked completed');
+  }
+
+  const industryGenerateLettersMatch = pathname.match(/^\/api\/industry\/applications\/([^/]+)\/generate-letters$/);
+  if (industryGenerateLettersMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const application = await env.DB.prepare(
+      `SELECT ia.id, ia.student_id, ia.internship_id, i.industry_id, ind.supervisor_name
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN industries ind ON ind.id = i.industry_id
+       WHERE ia.id = ? AND i.industry_id = ? AND lower(ia.status) = 'accepted'`,
+    ).bind(industryGenerateLettersMatch[1], actor.id).first<{ id: string; student_id: string | null; internship_id: string; industry_id: string; supervisor_name: string | null }>();
+    if (!application) return errorResponse(404, 'Accepted application not found');
+    if (application.student_id) {
+      await generateDocument(env, {
+        type: 'approval',
+        internshipId: application.internship_id,
+        studentId: application.student_id,
+        actor,
+        supervisorName: application.supervisor_name ?? undefined,
+        supervisorDesignation: 'Industry Supervisor',
+      });
+    }
+    await generateDocument(env, {
+      type: 'reply',
+      internshipId: application.internship_id,
+      actor,
+      supervisorName: application.supervisor_name ?? 'Industry Supervisor',
+      supervisorDesignation: 'Industry Supervisor',
+    });
+    return ok('Acceptance and invitation letters generated');
   }
 
   const industryFeedbackMatch = pathname.match(/^\/api\/industry\/applications\/([^/]+)\/feedback$/);
