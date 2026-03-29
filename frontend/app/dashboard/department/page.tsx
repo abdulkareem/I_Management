@@ -742,9 +742,9 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/feedback`)} disabled={!(app as any).performance_feedback_id}>Feedback</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/evaluation`)} disabled={!(app as any).performance_feedback_id}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/outcome-assessment`)} disabled={!(app as any).performance_feedback_id}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/feedback`)} disabled={!((app as any).performance_feedback_id && app.completed_at)}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/evaluation`)} disabled={!((app as any).performance_feedback_id && app.completed_at)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/outcome-assessment`)} disabled={!((app as any).performance_feedback_id && app.completed_at)}>Outcome Assessment Engine</Button>
                           <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/documents`)}>Documents</Button>
                         </div>
                       </td>
@@ -782,9 +782,9 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/feedback`)} disabled={!(app as any).performance_feedback_id}>Feedback</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/evaluation`)} disabled={!(app as any).performance_feedback_id}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/outcome-assessment`)} disabled={!(app as any).performance_feedback_id}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/feedback`)} disabled={!((app as any).performance_feedback_id && app.completed_at)}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/evaluation`)} disabled={!((app as any).performance_feedback_id && app.completed_at)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/outcome-assessment`)} disabled={!((app as any).performance_feedback_id && app.completed_at)}>Outcome Assessment Engine</Button>
                           <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/documents`)}>Documents</Button>
                         </div>
                       </td>

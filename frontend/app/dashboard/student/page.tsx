@@ -25,6 +25,7 @@ export default function StudentDashboardPage() {
   const [ipoDetails, setIpoDetails] = useState<any | null>(null);
   const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>([]);
   const [docPreview, setDocPreview] = useState<string | null>(null);
+  const acceptanceLetter = documents.find((doc) => doc.type === 'reply');
 
   const refresh = async () => {
     const [response, docRes] = await Promise.all([
@@ -309,7 +310,16 @@ export default function StudentDashboardPage() {
           ) : null}
           <Card className="rounded-[30px] p-6">
             <h2 className="text-xl font-semibold text-slate-900">System Generated Documents</h2>
-            <p className="mt-2 text-sm text-slate-600">Download your allotment letter and feedback summary.</p>
+            <p className="mt-2 text-sm text-slate-600">Download your acceptance/invitation letter, allotment letter and feedback summary.</p>
+            {acceptanceLetter ? (
+              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                <p className="text-sm font-medium text-emerald-800">Acceptance/Invitation Letter is available for your internship.</p>
+                <div className="mt-2 flex gap-2">
+                  <Button variant="secondary" onClick={() => previewDocument(acceptanceLetter.id)}>Preview Acceptance Letter</Button>
+                  <Button variant="secondary" onClick={() => downloadDocument(acceptanceLetter.id)}>Download Acceptance Letter</Button>
+                </div>
+              </div>
+            ) : null}
             <div className="mt-4 space-y-2">
               {documents.length ? documents.map((doc) => (
                 <div key={doc.id} className="flex flex-wrap items-center justify-between rounded-xl border border-slate-200 p-3">
