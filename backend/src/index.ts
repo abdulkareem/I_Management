@@ -49,6 +49,12 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+const NO_CACHE_HEADERS: Record<string, string> = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
+  Pragma: 'no-cache',
+  Expires: '0',
+};
+
 const DEFAULT_SUPERADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
 const DEFAULT_SUPERADMIN_ID = 'admin_super_psmo';
 const INTERNSHIP_STATUS = {
@@ -236,18 +242,19 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
   if (request.method === 'GET' && pathname === '/api/departments') {
     const actor = parseSessionToken((request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim());
+    const collegeIdFromQuery = toText(url.searchParams.get('college_id') ?? url.searchParams.get('collegeId'));
+
     if (actor && (actor.role === 'SUPER_ADMIN' || actor.role === 'ADMIN')) {
-      const collegeId = toText(url.searchParams.get('college_id') ?? url.searchParams.get('collegeId'));
-      const rows = collegeId
+      const rows = collegeIdFromQuery
         ? await env.DB.prepare(
-          `SELECT d.id, d.name, d.coordinator_name AS coordinator, d.coordinator_email AS email, d.college_id, c.name AS college_name
+          `SELECT d.id, d.name, d.coordinator_name AS coordinator_name, d.coordinator_email AS coordinator_email, d.college_id, c.name AS college_name
            FROM departments d
            INNER JOIN colleges c ON c.id = d.college_id
            WHERE d.college_id = ?
            ORDER BY d.name ASC`,
-        ).bind(collegeId).all()
+        ).bind(collegeIdFromQuery).all()
         : await env.DB.prepare(
-          `SELECT d.id, d.name, d.coordinator_name AS coordinator, d.coordinator_email AS email, d.college_id, c.name AS college_name
+          `SELECT d.id, d.name, d.coordinator_name AS coordinator_name, d.coordinator_email AS coordinator_email, d.college_id, c.name AS college_name
            FROM departments d
            INNER JOIN colleges c ON c.id = d.college_id
            ORDER BY d.name ASC`,
@@ -255,16 +262,95 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       return ok('Departments fetched', rows.results ?? []);
     }
 
-    const collegeId = toText(url.searchParams.get('collegeId'));
-    if (!collegeId) return badRequest('collegeId is required');
+    const scopedCollegeId = actor?.role === 'COLLEGE' ? actor.id : collegeIdFromQuery;
+    if (!scopedCollegeId) return badRequest('college_id is required');
 
-    const rows = await env.DB.prepare('SELECT id, name, college_id FROM departments WHERE college_id = ? ORDER BY name ASC')
-      .bind(collegeId)
-      .all<{ id: string; name: string; college_id: string }>();
+    const rows = await env.DB.prepare(
+      `SELECT id, name, coordinator_name, coordinator_email, college_id
+       FROM departments
+       WHERE college_id = ? AND is_active = 1
+       ORDER BY name ASC`,
+    )
+      .bind(scopedCollegeId)
+      .all<{ id: string; name: string; coordinator_name: string | null; coordinator_email: string | null; college_id: string }>();
 
-    return ok('Departments fetched',
-      (rows.results ?? []).map((row) => ({ id: row.id, name: row.name, collegeId: row.college_id })),
-    );
+    return ok('Departments fetched', rows.results ?? []);
+  }
+
+
+  if (request.method === 'POST' && pathname === '/api/departments') {
+    const actor = requireRole(request, ['COLLEGE', 'SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+
+    const collegeId = toText(body?.college_id ?? body?.collegeId ?? (actor.role === 'COLLEGE' ? actor.id : ''));
+    const name = toText(body?.name);
+    const coordinatorName = toText(body?.coordinator_name ?? body?.coordinatorName);
+    const coordinatorEmail = normalizeEmail(toText(body?.coordinator_email ?? body?.coordinatorEmail));
+
+    if (!collegeId || !name || !coordinatorName || !coordinatorEmail) {
+      return badRequest('college_id, name, coordinator_name, coordinator_email are required');
+    }
+
+    const duplicate = await env.DB.prepare(
+      'SELECT id FROM departments WHERE college_id = ? AND lower(name) = lower(?) AND is_active = 1',
+    ).bind(collegeId, name).first<{ id: string }>();
+    if (duplicate) return conflict('Department with this name already exists');
+
+    const duplicateEmail = await env.DB.prepare(
+      'SELECT id FROM departments WHERE lower(coordinator_email) = lower(?) AND is_active = 1',
+    ).bind(coordinatorEmail).first<{ id: string }>();
+    if (duplicateEmail) return conflict('Coordinator email already in use');
+
+    const departmentId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO departments (id, name, coordinator_name, coordinator_email, college_id, is_active)
+       VALUES (?, ?, ?, ?, ?, 1)`,
+    ).bind(departmentId, name, coordinatorName, coordinatorEmail, collegeId).run();
+
+    return created('Department created', { id: departmentId });
+  }
+
+  const departmentPatchMatch = pathname.match(/^\/api\/departments\/([^/]+)$/);
+  if (request.method === 'PATCH' && departmentPatchMatch) {
+    const actor = requireRole(request, ['COLLEGE', 'SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const [, departmentId] = departmentPatchMatch;
+    const body = await readBody(request);
+
+    const existing = await env.DB.prepare('SELECT id, college_id FROM departments WHERE id = ?').bind(departmentId).first<{ id: string; college_id: string }>();
+    if (!existing) return errorResponse(404, 'Department not found');
+    if (actor.role === 'COLLEGE' && existing.college_id !== actor.id) return forbidden('Not allowed');
+
+    await env.DB.prepare(
+      `UPDATE departments
+       SET name = COALESCE(?, name),
+           coordinator_name = COALESCE(?, coordinator_name),
+           coordinator_email = COALESCE(?, coordinator_email),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    ).bind(
+      toText(body?.name) || null,
+      toText(body?.coordinator_name ?? body?.coordinatorName) || null,
+      normalizeEmail(toText(body?.coordinator_email ?? body?.coordinatorEmail)) || null,
+      departmentId,
+    ).run();
+
+    return ok('Department updated');
+  }
+
+  const departmentDeleteMatch = pathname.match(/^\/api\/departments\/([^/]+)$/);
+  if (request.method === 'DELETE' && departmentDeleteMatch) {
+    const actor = requireRole(request, ['COLLEGE', 'SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const [, departmentId] = departmentDeleteMatch;
+
+    const existing = await env.DB.prepare('SELECT id, college_id FROM departments WHERE id = ?').bind(departmentId).first<{ id: string; college_id: string }>();
+    if (!existing) return errorResponse(404, 'Department not found');
+    if (actor.role === 'COLLEGE' && existing.college_id !== actor.id) return forbidden('Not allowed');
+
+    await env.DB.prepare("UPDATE departments SET is_active = 0, updated_at = datetime('now') WHERE id = ?").bind(departmentId).run();
+    return ok('Department deleted');
   }
 
   if (request.method === 'GET' && pathname === '/api/courses') {
@@ -1110,6 +1196,201 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       },
       notifications: alerts.results ?? [],
       ipoSummary: ipoSummary.results ?? [],
+    });
+  }
+
+
+  if (request.method === 'GET' && pathname === '/api/college/internships') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const departmentId = toText(url.searchParams.get('department_id'));
+    const status = toText(url.searchParams.get('status')).toUpperCase();
+    let query = `SELECT i.id, i.title, COALESCE(i.status, 'DRAFT') AS status, i.department_id, COALESCE(d.name, 'All Departments') AS department_name,
+                        COALESCE(i.filled_vacancy, 0) AS filled_vacancy, COALESCE(i.total_vacancy, COALESCE(i.vacancy,0)) AS total_vacancy,
+                        COUNT(ia.id) AS applications_count
+                 FROM internships i
+                 LEFT JOIN departments d ON d.id = i.department_id
+                 LEFT JOIN internship_applications ia ON ia.internship_id = i.id
+                 WHERE i.college_id = ?`;
+    const params: Array<string> = [actor.id];
+    if (departmentId) { query += ' AND i.department_id = ?'; params.push(departmentId); }
+    if (status) { query += " AND UPPER(COALESCE(i.status,'')) = ?"; params.push(status); }
+    query += ' GROUP BY i.id, i.title, i.status, i.department_id, d.name, i.filled_vacancy, i.total_vacancy, i.vacancy ORDER BY i.created_at DESC';
+    const rows = await env.DB.prepare(query).bind(...params).all();
+    return ok('College internships loaded', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/college/applications') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const type = toText(url.searchParams.get('type')).toUpperCase();
+    let query = `SELECT ia.id, ia.status, ia.created_at, i.title AS internship_title,
+                        CASE WHEN COALESCE(ia.is_external, CASE WHEN ia.external_student_id IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'EXTERNAL' ELSE 'INTERNAL' END AS application_type,
+                        COALESCE(s.name, es.name, 'Student') AS student_name,
+                        COALESCE(s.email, es.email, '') AS student_email
+                 FROM internship_applications ia
+                 INNER JOIN internships i ON i.id = ia.internship_id
+                 LEFT JOIN students s ON s.id = ia.student_id
+                 LEFT JOIN external_students es ON es.id = ia.external_student_id
+                 WHERE i.college_id = ?`;
+    const params = [actor.id];
+    if (type === 'INTERNAL') query += ' AND COALESCE(ia.is_external, 0) = 0 AND ia.external_student_id IS NULL';
+    if (type === 'EXTERNAL') query += ' AND (COALESCE(ia.is_external, 0) = 1 OR ia.external_student_id IS NOT NULL)';
+    query += ' ORDER BY ia.created_at DESC';
+    const rows = await env.DB.prepare(query).bind(...params).all();
+    return ok('College applications loaded', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/college/ipos') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const rows = await env.DB.prepare(
+      `SELECT ind.id AS ipo_id, ind.name AS ipo_name,
+              COUNT(DISTINCT i.id) AS active_internships,
+              COUNT(DISTINCT ia.id) AS engagement_count
+       FROM industries ind
+       INNER JOIN college_industry_links cil ON cil.industry_id = ind.id AND cil.college_id = ?
+       LEFT JOIN internships i ON i.industry_id = ind.id AND i.college_id = ?
+       LEFT JOIN internship_applications ia ON ia.internship_id = i.id
+       GROUP BY ind.id, ind.name
+       ORDER BY ind.name ASC`,
+    ).bind(actor.id, actor.id).all();
+    return ok('IPO partnerships loaded', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/college/compliance') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const pendingApprovals = await env.DB.prepare(
+      `SELECT COUNT(*) AS count FROM internships
+       WHERE college_id = ? AND UPPER(COALESCE(status,'')) IN ('DRAFT','SENT_TO_DEPARTMENT','SENT_TO_DEPT')`,
+    ).bind(actor.id).first<{ count: number }>();
+    const missingEvaluations = await env.DB.prepare(
+      `SELECT COUNT(*) AS count
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       LEFT JOIN internship_evaluations ie ON ie.application_id = ia.id
+       WHERE i.college_id = ? AND ie.id IS NULL AND UPPER(COALESCE(ia.status,'')) IN ('ACCEPTED','COMPLETED','ALLOTTED')`,
+    ).bind(actor.id).first<{ count: number }>();
+    const violations = await env.DB.prepare(
+      `SELECT COUNT(*) AS count
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN students s ON s.id = ia.student_id
+       WHERE i.college_id = ? AND s.college_id = i.college_id`,
+    ).bind(actor.id).first<{ count: number }>();
+    const alerts = await env.DB.prepare('SELECT message, level, created_at FROM compliance_violations WHERE college_id = ? ORDER BY created_at DESC LIMIT 25').bind(actor.id).all();
+    return ok('Compliance loaded', { pending_approvals: Number(pendingApprovals?.count ?? 0), missing_evaluations: Number(missingEvaluations?.count ?? 0), violations: Number(violations?.count ?? 0), alerts: alerts.results ?? [] });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/college/capacity') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const rows = await env.DB.prepare(
+      `SELECT i.id, i.title, COALESCE(d.name,'All Departments') AS department_name,
+              COALESCE(i.total_vacancy, COALESCE(i.vacancy, 0)) AS total_vacancy,
+              COALESCE(i.filled_vacancy, 0) AS filled_vacancy,
+              ROUND(CASE WHEN COALESCE(i.total_vacancy, COALESCE(i.vacancy, 0)) = 0 THEN 0 ELSE (COALESCE(i.filled_vacancy,0) * 100.0) / COALESCE(i.total_vacancy, COALESCE(i.vacancy, 0)) END, 2) AS filled_ratio
+       FROM internships i
+       LEFT JOIN departments d ON d.id = i.department_id
+       WHERE i.college_id = ?
+       ORDER BY filled_ratio ASC, i.created_at DESC`,
+    ).bind(actor.id).all();
+    return ok('Capacity planning loaded', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/college/analytics') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+
+    const totalDepartments = await env.DB.prepare('SELECT COUNT(*) AS count FROM departments WHERE college_id = ? AND is_active = 1').bind(actor.id).first<{ count: number }>();
+    const totalStudents = await env.DB.prepare('SELECT COUNT(*) AS count FROM students WHERE college_id = ? AND is_active = 1').bind(actor.id).first<{ count: number }>();
+    const totals = await env.DB.prepare(
+      `SELECT
+        COUNT(*) AS total_internships,
+        SUM(CASE WHEN UPPER(COALESCE(status, '')) IN ('COMPLETED','CLOSED','ACCEPTED') THEN 1 ELSE 0 END) AS completed_internships
+       FROM internships
+       WHERE college_id = ?`,
+    ).bind(actor.id).first<{ total_internships: number; completed_internships: number }>();
+    const pendingEvaluations = await env.DB.prepare(
+      `SELECT COUNT(*) AS count
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       LEFT JOIN internship_evaluations ie ON ie.application_id = ia.id
+       WHERE i.college_id = ?
+         AND ie.id IS NULL
+         AND UPPER(COALESCE(ia.status, '')) IN ('ACCEPTED','COMPLETED','ALLOTTED')`,
+    ).bind(actor.id).first<{ count: number }>();
+    const deptStats = await env.DB.prepare(
+      `SELECT d.id, d.name AS department_name,
+          COUNT(DISTINCT s.id) AS total_students,
+          COUNT(DISTINCT ia.id) AS total_applications,
+          SUM(CASE WHEN UPPER(COALESCE(ia.status, '')) IN ('COMPLETED','ACCEPTED','ALLOTTED') THEN 1 ELSE 0 END) AS selected_or_completed,
+          ROUND(CASE WHEN COUNT(DISTINCT ia.id) = 0 THEN 0 ELSE (SUM(CASE WHEN UPPER(COALESCE(ia.status, '')) IN ('COMPLETED','ACCEPTED') THEN 1 ELSE 0 END) * 100.0) / COUNT(DISTINCT ia.id) END,2) AS completion_rate
+       FROM departments d
+       LEFT JOIN students s ON s.department_id = d.id
+       LEFT JOIN internship_applications ia ON ia.student_id = s.id
+       WHERE d.college_id = ?
+       GROUP BY d.id, d.name
+       ORDER BY d.name ASC`,
+    ).bind(actor.id).all();
+
+    return ok('College analytics loaded', {
+      total_departments: Number(totalDepartments?.count ?? 0),
+      total_students: Number(totalStudents?.count ?? 0),
+      total_internships: Number(totals?.total_internships ?? 0),
+      completed_internships: Number(totals?.completed_internships ?? 0),
+      pending_evaluations: Number(pendingEvaluations?.count ?? 0),
+      department_wise_stats: deptStats.results ?? [],
+    });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/college/report/pdf') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const analyticsResponse = await routeRequest(new Request(`${url.origin}/api/college/analytics`, { method: 'GET', headers: request.headers }), env, new URL(`${url.origin}/api/college/analytics`));
+    const analyticsData = await analyticsResponse.json() as ApiEnvelope<any>;
+    const controlResponse = await routeRequest(new Request(`${url.origin}/api/dashboard/college/control-center`, { method: 'GET', headers: request.headers }), env, new URL(`${url.origin}/api/dashboard/college/control-center`));
+    const controlData = await controlResponse.json() as ApiEnvelope<any>;
+
+    const lines = [
+      'College Dashboard Consolidated Report',
+      `Generated: ${new Date().toISOString()}`,
+      '',
+      '1. College Overview',
+      `Total Departments: ${analyticsData.data?.total_departments ?? 0}`,
+      `Total Students: ${analyticsData.data?.total_students ?? 0}`,
+      '',
+      '2. Internship Governance Summary',
+      `Total Internships: ${controlData.data?.summary?.totalInternships ?? 0}`,
+      `Active Internships: ${controlData.data?.summary?.activeInternships ?? 0}`,
+      '',
+      '3. Application Statistics',
+      `Total Applied: ${controlData.data?.summary?.totalStudentsApplied ?? 0}`,
+      `Placed: ${controlData.data?.summary?.studentsPlaced ?? 0}`,
+      '',
+      '4. Department Analytics',
+      `Pending Evaluations: ${analyticsData.data?.pending_evaluations ?? 0}`,
+      '',
+      '5. IPO Engagement',
+      `Linked IPOs: ${(controlData.data?.ipoSummary ?? []).length}`,
+      '',
+      '6. Compliance Alerts',
+      `Alerts: ${(controlData.data?.notifications ?? []).length}`,
+      '',
+      '7. Capacity Planning',
+      `Pending Allocations: ${controlData.data?.summary?.pendingAllocations ?? 0}`,
+    ];
+
+    const pdfBytes = buildSimplePdf(lines);
+    return new Response(pdfBytes.buffer as ArrayBuffer, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        ...NO_CACHE_HEADERS,
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="college-report-${actor.id}.pdf"`,
+      },
     });
   }
 
@@ -5826,6 +6107,40 @@ function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
+
+function buildSimplePdf(lines: string[]): Uint8Array {
+  const sanitized = lines.map((line) => line.replace(/[()\\]/g, (char) => `\\${char}`));
+  const content = ['BT', '/F1 11 Tf', '50 790 Td'];
+  sanitized.forEach((line, index) => {
+    if (index > 0) content.push('0 -16 Td');
+    content.push(`(${line}) Tj`);
+  });
+  content.push('ET');
+  const stream = content.join('\n');
+
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n',
+    `4 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`,
+    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  for (const obj of objects) {
+    offsets.push(pdf.length);
+    pdf += obj;
+  }
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new TextEncoder().encode(pdf);
+}
+
 function classifyPerformance(percentage: number): string {
   if (percentage < 50) return 'Beginner';
   if (percentage <= 60) return 'Basic';
@@ -5839,6 +6154,7 @@ function jsonResponse<T>(status: number, body: ApiEnvelope<T>): Response {
     status,
     headers: {
       ...CORS_HEADERS,
+      ...NO_CACHE_HEADERS,
       'Content-Type': 'application/json',
     },
   });
