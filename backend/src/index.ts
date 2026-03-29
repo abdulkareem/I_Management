@@ -2356,8 +2356,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const internshipId = crypto.randomUUID();
     const result = await env.DB.prepare(
       `INSERT INTO internships (
-        id, title, description, college_id, department_id, industry_id, is_external, internship_category, vacancy, total_vacancy, remaining_vacancy, status, student_visibility, programme, duration, requirements, stipend_amount, stipend_duration, fee, gender_preference
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+        id, title, description, college_id, department_id, industry_id, is_external, internship_category, total_vacancy, filled_vacancy, remaining_vacancy, available_vacancy, status, student_visibility, programme, duration, requirements, stipend_amount, stipend_duration, fee, gender_preference
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       internshipId,
       internshipTitle.trim(),
@@ -2367,6 +2367,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       actor.id,
       category.toUpperCase(),
       Math.floor(vacancy),
+      0,
       Math.floor(vacancy),
       Math.floor(vacancy),
       INTERNSHIP_STATUS.SENT_TO_DEPARTMENT,
@@ -2415,10 +2416,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       `UPDATE internships
        SET student_visibility = 1,
            status = 'PUBLISHED',
-           vacancy = ?,
            total_vacancy = ?,
-           remaining_vacancy = ?,
-           available_vacancy = ?,
+           remaining_vacancy = MAX(? - COALESCE(filled_vacancy, 0), 0),
+           available_vacancy = MAX(? - COALESCE(filled_vacancy, 0), 0),
            gender_preference = ?,
            internship_category = COALESCE(?, internship_category),
            fee = CASE WHEN COALESCE(?, internship_category) = 'PAID' THEN ? ELSE NULL END,
@@ -2429,7 +2429,6 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            updated_at = datetime('now')
        WHERE id = ? AND industry_id = ?`,
     ).bind(
-      Math.floor(vacancy),
       Math.floor(vacancy),
       Math.floor(vacancy),
       Math.floor(vacancy),
@@ -2463,7 +2462,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               i.programme,
               i.description,
               i.internship_category AS category,
-              COALESCE(i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS vacancy,
+              COALESCE(i.total_vacancy, 0) AS total_vacancy,
+              COALESCE(i.filled_vacancy, 0) AS filled_vacancy,
+              MAX(COALESCE(i.total_vacancy, 0) - COALESCE(i.filled_vacancy, 0), 0) AS available_vacancy,
               COALESCE(i.minimum_days, 0) AS minimum_days,
               COALESCE(i.maximum_days, 0) AS maximum_days,
               COALESCE(i.gender_preference, 'BOTH') AS gender_preference,
@@ -2510,15 +2511,24 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (minimumDays !== null && (Number.isNaN(minimumDays) || minimumDays <= 0)) return badRequest('minimumDays must be a positive number');
     if (maximumDays !== null && (Number.isNaN(maximumDays) || maximumDays <= 0)) return badRequest('maximumDays must be a positive number');
 
+    const existingInternship = await env.DB.prepare(
+      `SELECT id, COALESCE(filled_vacancy, 0) AS filled_vacancy
+       FROM internships
+       WHERE id = ? AND industry_id = ? AND status = 'SENT_TO_INDUSTRY'`,
+    ).bind(updateIndustryInternshipMatch[1], actor.id).first<{ id: string; filled_vacancy: number }>();
+    if (!existingInternship) return errorResponse(404, 'Industry internship not found or not editable');
+    if (Math.floor(vacancy) < Number(existingInternship.filled_vacancy ?? 0)) {
+      return badRequest('Cannot reduce vacancy below already filled seats');
+    }
+
     const result = await env.DB.prepare(
       `UPDATE internships
        SET title = ?,
            description = ?,
            internship_category = ?,
-           vacancy = ?,
            total_vacancy = ?,
-           remaining_vacancy = ?,
-           available_vacancy = ?,
+           remaining_vacancy = MAX(? - COALESCE(filled_vacancy, 0), 0),
+           available_vacancy = MAX(? - COALESCE(filled_vacancy, 0), 0),
            fee = CASE WHEN ? = 'PAID' THEN ? ELSE NULL END,
            stipend_amount = CASE WHEN ? = 'STIPEND' THEN ? ELSE NULL END,
            stipend_duration = CASE WHEN ? = 'STIPEND' THEN ? ELSE NULL END,
@@ -2536,7 +2546,6 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       Math.floor(vacancy),
       Math.floor(vacancy),
       Math.floor(vacancy),
-      Math.floor(vacancy),
       internshipCategory,
       fee,
       internshipCategory,
@@ -2549,7 +2558,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       updateIndustryInternshipMatch[1],
       actor.id,
     ).run();
-    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry internship not found or not editable');
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(500, 'Unable to update internship');
     return ok('Industry internship updated');
   }
 
@@ -2873,19 +2882,27 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const [, applicationId, action] = collegeAppActionMatch;
 
     const app = await env.DB.prepare(
-      `SELECT ia.id, ia.student_id, ia.external_student_id
+      `SELECT ia.id, ia.student_id, ia.external_student_id, ia.internship_id, lower(ia.status) AS current_status,
+              COALESCE(i.total_vacancy, 0) AS total_vacancy, COALESCE(i.filled_vacancy, 0) AS filled_vacancy
        FROM internship_applications ia
        INNER JOIN internships i ON i.id = ia.internship_id
        INNER JOIN departments d ON d.id = i.department_id
        WHERE ia.id = ? AND d.college_id = ?`,
-    ).bind(applicationId, actor.id).first<{ id: string; student_id: string | null; external_student_id: string | null }>();
+    ).bind(applicationId, actor.id).first<{ id: string; student_id: string | null; external_student_id: string | null; internship_id: string; current_status: string; total_vacancy: number; filled_vacancy: number }>();
     if (!app) return errorResponse(404, 'Application not found');
 
     if (action === 'reject') {
       await env.DB.prepare("UPDATE internship_applications SET status = 'rejected', updated_at = datetime('now') WHERE id = ?")
         .bind(applicationId)
         .run();
+      if (app.current_status === 'accepted') {
+        await syncInternshipVacancy(env, app.internship_id);
+      }
       return ok('Application rejected');
+    }
+
+    if ((app.filled_vacancy ?? 0) >= (app.total_vacancy ?? 0) && app.current_status !== 'accepted') {
+      return conflict('No vacancies available');
     }
 
     await env.DB.prepare("UPDATE internship_applications SET status = 'accepted', updated_at = datetime('now') WHERE id = ?")
@@ -2906,6 +2923,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
          WHERE external_student_id = ? AND id <> ? AND status = 'pending'`,
       ).bind(app.external_student_id, applicationId).run();
     }
+
+    await syncInternshipVacancy(env, app.internship_id);
 
     return ok('Application accepted and competing applications rejected');
   }
@@ -3642,14 +3661,17 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const internshipId = parsed.data.internship_id;
 
     const internship = await env.DB.prepare(
-      `SELECT i.id, i.status, i.published, i.remaining_vacancy, COALESCE(i.is_external, 0) AS is_external, i.college_id, d.college_id AS department_college_id
+      `SELECT i.id, i.status, i.published,
+              COALESCE(i.total_vacancy, 0) AS total_vacancy,
+              COALESCE(i.filled_vacancy, 0) AS filled_vacancy,
+              COALESCE(i.is_external, 0) AS is_external, i.college_id, d.college_id AS department_college_id
        FROM internships i
        LEFT JOIN departments d ON d.id = i.department_id
        WHERE i.id = ?`,
-    ).bind(internshipId).first<{ id: string; status: string; published: number; remaining_vacancy: number; is_external: number; college_id: string | null; department_college_id: string | null }>();
+    ).bind(internshipId).first<{ id: string; status: string; published: number; total_vacancy: number; filled_vacancy: number; is_external: number; college_id: string | null; department_college_id: string | null }>();
     if (!internship) return errorResponse(404, 'Internship not found');
     if (internship.status !== 'PUBLISHED' || Number(internship.published) !== 1) return forbidden('Internship is not open for applications');
-    if ((internship.remaining_vacancy ?? 0) <= 0) return forbidden('No vacancy available');
+    if ((Number(internship.total_vacancy ?? 0) - Number(internship.filled_vacancy ?? 0)) <= 0) return forbidden('No vacancies available');
 
     const student = await env.DB.prepare('SELECT college_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string | null }>();
     if (!student) return unauthorized('Student not found');
@@ -3704,42 +3726,23 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!app) return errorResponse(404, 'Application not found');
     if (app.ipo_id !== actor.id) return forbidden('You can only accept applications for your internships');
     if (app.status === 'ACCEPTED') return ok('Application already accepted');
-    if ((app.filled_vacancy ?? 0) >= (app.total_vacancy ?? 0)) return conflict('Vacancy limit reached');
+    if ((app.filled_vacancy ?? 0) >= (app.total_vacancy ?? 0)) return conflict('No vacancies available');
 
     try {
       await runAtomic(env, null, async () => {
         const updateInternship = await env.DB.prepare(
           `UPDATE internships
-           SET filled_vacancy = (
-             SELECT COUNT(*)
-             FROM applications a
-             WHERE a.internship_id = internships.id
-               AND a.status = 'ACCEPTED'
-           ) + 1,
-               remaining_vacancy = MAX(total_vacancy - (
-                 SELECT COUNT(*)
-                 FROM applications a
-                 WHERE a.internship_id = internships.id
-                   AND a.status = 'ACCEPTED'
-               ) - 1, 0),
-               available_vacancy = MAX(total_vacancy - (
-                 SELECT COUNT(*)
-                 FROM applications a
-                 WHERE a.internship_id = internships.id
-                   AND a.status = 'ACCEPTED'
-               ) - 1, 0),
+           SET filled_vacancy = filled_vacancy + 1,
+               remaining_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
+               available_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
+               status = CASE WHEN total_vacancy - (filled_vacancy + 1) <= 0 THEN 'FULL' ELSE status END,
                updated_at = datetime('now')
            WHERE id = ?
-             AND (
-               SELECT COUNT(*)
-               FROM applications a
-               WHERE a.internship_id = internships.id
-                 AND a.status = 'ACCEPTED'
-             ) < total_vacancy`,
+             AND filled_vacancy < total_vacancy`,
         ).bind(app.internship_id).run();
-        if ((updateInternship.meta.changes ?? 0) === 0) throw new Error('Vacancy limit reached');
+        if ((updateInternship.meta.changes ?? 0) === 0) throw new Error('No vacancies available');
         await env.DB.prepare(
-          `UPDATE applications SET status = 'ACCEPTED' WHERE id = ?`,
+          `UPDATE applications SET status = 'ACCEPTED' WHERE id = ? AND status != 'ACCEPTED'`,
         ).bind(parsed.data.application_id).run();
       });
     } catch (error) {
@@ -3880,7 +3883,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const internshipId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, college_id, ipo_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, source_type, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po, internship_co)
+      `INSERT INTO internships (id, title, description, department_id, college_id, ipo_id, industry_id, is_paid, fee, internship_category, total_vacancy, filled_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, source_type, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po, internship_co)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?, ?)`,
     )
       .bind(
@@ -3895,7 +3898,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         isPaid ? Math.round(fee ?? 0) : null,
         internshipCategory,
         Math.floor(vacancy ?? 0),
-        Math.floor(vacancy ?? 0),
+        0,
         Math.floor(vacancy ?? 0),
         Math.floor(vacancy ?? 0),
         applicableTo === 'EXTERNAL' ? 1 : 0,
@@ -3968,10 +3971,21 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (vacancy !== null && (Number.isNaN(vacancy) || vacancy < 0)) return badRequest('vacancy must be a non-negative number');
     if (genderPreference !== null && !['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
 
+    const existingInternship = await env.DB.prepare(
+      `SELECT id, COALESCE(filled_vacancy, 0) AS filled_vacancy
+       FROM internships
+       WHERE id = ? AND department_id = ?`,
+    ).bind(updateDepartmentInternshipMatch[1], actor.id).first<{ id: string; filled_vacancy: number }>();
+    if (!existingInternship) return errorResponse(404, 'Internship not found');
+    if (vacancy !== null && Math.floor(vacancy) < Number(existingInternship.filled_vacancy ?? 0)) {
+      return badRequest('Cannot reduce vacancy below already filled seats');
+    }
+
     const result = await env.DB.prepare(
       `UPDATE internships
-       SET title = ?, description = ?, is_paid = ?, fee = ?, internship_category = ?, vacancy = COALESCE(?, vacancy),
-           total_vacancy = COALESCE(?, total_vacancy), remaining_vacancy = COALESCE(?, remaining_vacancy),
+       SET title = ?, description = ?, is_paid = ?, fee = ?, internship_category = ?,
+           total_vacancy = COALESCE(?, total_vacancy),
+           remaining_vacancy = MAX(COALESCE(?, total_vacancy) - COALESCE(filled_vacancy, 0), 0),
            available_vacancy = MAX(COALESCE(?, total_vacancy) - COALESCE(filled_vacancy, 0), 0),
            stipend_amount = ?, stipend_duration = ?, minimum_days = ?, gender_preference = COALESCE(?, gender_preference),
            updated_at = datetime('now')
@@ -3982,7 +3996,6 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       isPaid ? 1 : 0,
       isPaid ? Math.round(fee ?? 0) : null,
       internshipCategory,
-      vacancy === null ? null : Math.floor(vacancy),
       vacancy === null ? null : Math.floor(vacancy),
       vacancy === null ? null : Math.floor(vacancy),
       vacancy === null ? null : Math.floor(vacancy),
@@ -4068,7 +4081,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const internship = await env.DB.prepare(
       `SELECT i.id,
-              COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS available_vacancy,
+              MAX(COALESCE(i.total_vacancy, 0) - COALESCE(i.filled_vacancy, 0), 0) AS available_vacancy,
               COALESCE(i.is_external, 0) AS is_external,
               COALESCE(i.created_by, 'INDUSTRY') AS created_by,
               i.department_id,
@@ -4120,27 +4133,6 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
             isExternal,
           )
           .run();
-        await env.DB.prepare(
-          `UPDATE internships
-           SET available_vacancy = MAX(
-             COALESCE(total_vacancy, vacancy, 0) - (
-               SELECT COUNT(*) FROM internship_applications ia
-               WHERE ia.internship_id = internships.id
-                 AND lower(ia.status) IN ('pending', 'accepted')
-             ),
-             0
-           ),
-           remaining_vacancy = MAX(
-             COALESCE(total_vacancy, vacancy, 0) - (
-               SELECT COUNT(*) FROM internship_applications ia
-               WHERE ia.internship_id = internships.id
-                 AND lower(ia.status) IN ('pending', 'accepted')
-             ),
-             0
-           ),
-           updated_at = datetime('now')
-           WHERE id = ?`,
-        ).bind(internshipId).run();
       });
     } catch (error) {
       if (error instanceof Error) return conflict(error.message);
@@ -4276,7 +4268,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               i.industry_id,
               i.is_paid,
               i.fee,
-              i.vacancy,
+              COALESCE(i.total_vacancy, 0) AS total_vacancy,
+              COALESCE(i.filled_vacancy, 0) AS filled_vacancy,
               d.name AS department_name
        FROM internship_applications ia
        INNER JOIN internships i ON i.id = ia.internship_id
@@ -4288,43 +4281,38 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     if (!app) return errorResponse(404, 'Application not found for this department');
 
-    await env.DB.prepare(
-      `UPDATE internship_applications
-       SET status = 'accepted',
-           reviewed_by_industry_id = COALESCE(?, reviewed_by_industry_id),
-           reviewed_at = datetime('now'),
-           updated_at = datetime('now')
-       WHERE id = ?`,
-    ).bind(app.industry_id ?? null, applicationId).run();
-    await env.DB.prepare(
-      `UPDATE internships
-       SET filled_vacancy = (
-         SELECT COUNT(*)
-         FROM internship_applications ia
-         WHERE ia.internship_id = internships.id
-           AND lower(ia.status) = 'accepted'
-       ),
-       available_vacancy = MAX(
-         COALESCE(total_vacancy, vacancy, 0) - (
-           SELECT COUNT(*)
-           FROM internship_applications ia
-           WHERE ia.internship_id = internships.id
-             AND lower(ia.status) IN ('pending', 'accepted')
-          ),
-         0
-       ),
-       remaining_vacancy = MAX(
-         COALESCE(total_vacancy, vacancy, 0) - (
-           SELECT COUNT(*)
-           FROM internship_applications ia
-           WHERE ia.internship_id = internships.id
-             AND lower(ia.status) IN ('pending', 'accepted')
-          ),
-         0
-       ),
-       updated_at = datetime('now')
-       WHERE id = (SELECT internship_id FROM internship_applications WHERE id = ?)`,
-    ).bind(applicationId).run();
+    if (Number(app.filled_vacancy ?? 0) >= Number(app.total_vacancy ?? 0)) {
+      return conflict('No vacancies available');
+    }
+
+    try {
+      await runAtomic(env, null, async () => {
+        const vacancyUpdate = await env.DB.prepare(
+          `UPDATE internships
+           SET filled_vacancy = filled_vacancy + 1,
+               available_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
+               remaining_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
+               status = CASE WHEN total_vacancy - (filled_vacancy + 1) <= 0 THEN 'FULL' ELSE status END,
+               updated_at = datetime('now')
+           WHERE id = ?
+             AND filled_vacancy < total_vacancy`,
+        ).bind(app.internship_id).run();
+        if ((vacancyUpdate.meta.changes ?? 0) === 0) throw new Error('No vacancies available');
+
+        const appUpdate = await env.DB.prepare(
+          `UPDATE internship_applications
+           SET status = 'accepted',
+               reviewed_by_industry_id = COALESCE(?, reviewed_by_industry_id),
+               reviewed_at = datetime('now'),
+               updated_at = datetime('now')
+           WHERE id = ?
+             AND lower(status) != 'accepted'`,
+        ).bind(app.industry_id ?? null, applicationId).run();
+        if ((appUpdate.meta.changes ?? 0) === 0) throw new Error('Application already accepted');
+      });
+    } catch (error) {
+      return conflict(error instanceof Error ? error.message : 'Unable to accept application');
+    }
 
     await sendAcceptanceEmail(env, {
       to: app.student_email,
@@ -4351,6 +4339,15 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
 
+    const prior = await env.DB.prepare(
+      `SELECT ia.internship_id, lower(ia.status) AS previous_status
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ia.id = ?
+         AND i.department_id = ?`,
+    ).bind(rejectDepartmentAppMatch[1], actor.id).first<{ internship_id: string; previous_status: string }>();
+    if (!prior) return errorResponse(404, 'Application not found for this department');
+
     const result = await env.DB.prepare(
       `UPDATE internship_applications
        SET status = 'rejected', updated_at = datetime('now')
@@ -4361,29 +4358,17 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       .run();
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found for this department');
-    await env.DB.prepare(
-      `UPDATE internships
-       SET available_vacancy = MAX(
-             COALESCE(total_vacancy, vacancy, 0) - (
-               SELECT COUNT(*)
-               FROM internship_applications ia
-               WHERE ia.internship_id = internships.id
-                 AND lower(ia.status) IN ('pending', 'accepted')
-             ),
-             0
-           ),
-           remaining_vacancy = MAX(
-             COALESCE(total_vacancy, vacancy, 0) - (
-               SELECT COUNT(*)
-               FROM internship_applications ia
-               WHERE ia.internship_id = internships.id
-                 AND lower(ia.status) IN ('pending', 'accepted')
-             ),
-             0
-           ),
-           updated_at = datetime('now')
-       WHERE id = (SELECT internship_id FROM internship_applications WHERE id = ?)`,
-    ).bind(rejectDepartmentAppMatch[1]).run();
+    if (prior.previous_status === 'accepted') {
+      await env.DB.prepare(
+        `UPDATE internships
+         SET filled_vacancy = MAX(filled_vacancy - 1, 0),
+             available_vacancy = MIN(total_vacancy, MAX(total_vacancy - MAX(filled_vacancy - 1, 0), 0)),
+             remaining_vacancy = MIN(total_vacancy, MAX(total_vacancy - MAX(filled_vacancy - 1, 0), 0)),
+             status = CASE WHEN status = 'FULL' THEN 'PUBLISHED' ELSE status END,
+             updated_at = datetime('now')
+         WHERE id = ?`,
+      ).bind(prior.internship_id).run();
+    }
     return ok('Application rejected');
   }
 
@@ -5339,6 +5324,44 @@ async function runAtomic(
   await operation();
 }
 
+async function syncInternshipVacancy(env: EnvBindings, internshipId: string): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE internships
+     SET filled_vacancy = (
+           SELECT COUNT(*)
+           FROM internship_applications ia
+           WHERE ia.internship_id = internships.id
+             AND lower(ia.status) = 'accepted'
+         ),
+         available_vacancy = MAX(total_vacancy - (
+           SELECT COUNT(*)
+           FROM internship_applications ia
+           WHERE ia.internship_id = internships.id
+             AND lower(ia.status) = 'accepted'
+         ), 0),
+         remaining_vacancy = MAX(total_vacancy - (
+           SELECT COUNT(*)
+           FROM internship_applications ia
+           WHERE ia.internship_id = internships.id
+             AND lower(ia.status) = 'accepted'
+         ), 0),
+         status = CASE
+           WHEN total_vacancy > 0 AND (
+             total_vacancy - (
+               SELECT COUNT(*)
+               FROM internship_applications ia
+               WHERE ia.internship_id = internships.id
+                 AND lower(ia.status) = 'accepted'
+             )
+           ) <= 0 THEN 'FULL'
+           WHEN status = 'FULL' THEN 'PUBLISHED'
+           ELSE status
+         END,
+         updated_at = datetime('now')
+     WHERE id = ?`,
+  ).bind(internshipId).run();
+}
+
 async function loadStudentDashboard(env: EnvBindings, studentId: string): Promise<Response> {
   const student = await env.DB.prepare(
     `SELECT s.college_id, s.department_id, s.sex, s.name AS student_name, s.university_reg_number, c.name AS college_name
@@ -5391,7 +5414,9 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
       `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name, c.id AS college_id,
               COALESCE(i.is_external, 0) AS is_external,
               COALESCE(i.created_by, 'INDUSTRY') AS created_by,
-              COALESCE(i.available_vacancy, i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS vacancy,
+              COALESCE(i.total_vacancy, 0) AS total_vacancy,
+              COALESCE(i.filled_vacancy, 0) AS filled_vacancy,
+              MAX(COALESCE(i.total_vacancy, 0) - COALESCE(i.filled_vacancy, 0), 0) AS available_vacancy,
               ia.id AS application_id, ia.status AS application_status, ia.industry_feedback, ia.industry_score,
               (
                 SELECT AVG(orx.weighted_score)
@@ -5467,7 +5492,9 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
       industryId: row.industry_id,
       collegeName: row.college_name,
       departmentName: row.department_name,
-      vacancy: row.vacancy,
+      totalVacancy: Number(row.total_vacancy ?? 0),
+      filledVacancy: Number(row.filled_vacancy ?? 0),
+      availableVacancy: Math.max(Number(row.available_vacancy ?? 0), 0),
       applied: Boolean(row.application_id),
       applicationId: row.application_id,
       status: row.application_status ? String(row.application_status).toUpperCase() : undefined,

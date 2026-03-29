@@ -38,7 +38,9 @@ export interface StudentDashboard {
     ipoId?: string | null;
     collegeName?: string;
     departmentName: string;
-    vacancy?: number | null;
+    totalVacancy?: number | null;
+    filledVacancy?: number | null;
+    availableVacancy?: number | null;
     applied: boolean;
     applicationId?: string | null;
     status?: string;
