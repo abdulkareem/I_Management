@@ -69,7 +69,6 @@ export default function DepartmentDashboardPage() {
   const [selectedInternalIPOId, setSelectedInternalIPOId] = useState('');
   const [selectedInternalProgramId, setSelectedInternalProgramId] = useState('');
   const [internalMappings, setInternalMappings] = useState<{ po: string[]; pso: string[]; ipo: string[]; co: string[] }>({ po: [], pso: [], ipo: [], co: [] });
-  const [markSection, setMarkSection] = useState<'CCA' | 'ESE' | 'FINAL'>('CCA');
   const [internshipCos, setInternshipCos] = useState<OutcomeDefinition[]>([]);
   const [internshipPos, setInternshipPos] = useState<OutcomeDefinition[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -79,13 +78,8 @@ export default function DepartmentDashboardPage() {
   const [advertisementDrafts, setAdvertisementDrafts] = useState<Record<string, { programId: string; mappedCo: string[]; mappedPo: string[]; mappedPso: string[] }>>({});
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false);
   const [outcomeForm, setOutcomeForm] = useState<{ type: 'CO' | 'PO'; code: string; description: string }>({ type: 'CO', code: '', description: '' });
-  const [markEntryModal, setMarkEntryModal] = useState<{ open: boolean; applicationId: string | null }>({ open: false, applicationId: null });
-  const [markForm, setMarkForm] = useState({ attendanceMarks: '0', workRegisterMarks: '0', presentationMarks: '0', vivaMarks: '0', reportMarks: '0' });
-  const [outcomeAssessmentModal, setOutcomeAssessmentModal] = useState<{ open: boolean; applicationId: string | null }>({ open: false, applicationId: null });
-  const [outcomeAssessmentForm, setOutcomeAssessmentForm] = useState({ outcomeType: 'CO', outcomeId: '', studentScore: '0', supervisorScore: '0', coordinatorScore: '0' });
   const [summary, setSummary] = useState<DepartmentSummary | null>(null);
   const [analytics, setAnalytics] = useState<DepartmentAnalytics | null>(null);
-  const [feedbackViewModal, setFeedbackViewModal] = useState<{ open: boolean; data: any | null }>({ open: false, data: null });
 
   async function load() {
     const [internshipsRes, internalApplicationsRes, externalApplicationsRes, requestsRes, linkedIposRes, programsRes, cosRes, posRes, profileRes, summaryRes, analyticsRes] = await Promise.all([
@@ -125,23 +119,6 @@ export default function DepartmentDashboardPage() {
     setDepartmentProfile(profileRes.data ?? null);
     setSummary(summaryRes.data ?? null);
     setAnalytics(analyticsRes.data ?? null);
-  }
-
-  async function openFeedbackForm(applicationId: string) {
-    const payload = await fetchWithSession(`/api/industry/applications/${applicationId}/feedback-form`);
-    setFeedbackViewModal({ open: true, data: payload.data });
-  }
-
-  async function downloadApplicationDocumentPack(applicationId: string) {
-    const session = localStorage.getItem('internsuite.session');
-    const token = session ? JSON.parse(session).token : '';
-    const res = await fetch(`${API_BASE_URL}/api/department/applications/${applicationId}/documents/pdf`, { headers: { Authorization: `Bearer ${token}` } });
-    const blob = await res.blob();
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `application-${applicationId}-documents.pdf`;
-    link.click();
-    URL.revokeObjectURL(link.href);
   }
 
   async function downloadFullDepartmentReport() {
@@ -393,53 +370,21 @@ export default function DepartmentDashboardPage() {
     await load();
   }
 
-  async function acceptApplication(id: string) {
-    await fetchWithSession(`/api/department/applications/${id}/accept`, { method: 'POST' });
-    await load();
-  }
-
   async function rejectApplication(id: string) {
     await fetchWithSession(`/api/department/applications/${id}/reject`, { method: 'POST' });
     await load();
   }
 
-  async function completeApplication(id: string) {
-    await fetchWithSession(`/api/department/applications/${id}/complete`, { method: 'POST' });
-    await load();
-  }
+  function getApplicationStatusLabel(app: any): string {
+    const normalizedStatus = String(app.status ?? '').toLowerCase();
+    const isAccepted = normalizedStatus === 'accepted';
+    const isCompleted = Boolean(app.completed_at);
+    const hasFeedback = Boolean((app as any).performance_feedback_id);
 
-  async function saveEvaluationMarks() {
-    if (!markEntryModal.applicationId) return;
-    await fetchWithSession(`/api/department/applications/${markEntryModal.applicationId}/evaluation`, {
-      method: 'POST',
-      body: JSON.stringify({
-        attendanceMarks: Number(markForm.attendanceMarks || 0),
-        workRegisterMarks: Number(markForm.workRegisterMarks || 0),
-        presentationMarks: Number(markForm.presentationMarks || 0),
-        vivaMarks: Number(markForm.vivaMarks || 0),
-        reportMarks: Number(markForm.reportMarks || 0),
-      }),
-    });
-    setMarkEntryModal({ open: false, applicationId: null });
-    setMarkForm({ attendanceMarks: '0', workRegisterMarks: '0', presentationMarks: '0', vivaMarks: '0', reportMarks: '0' });
-    await load();
-  }
-
-  async function saveOutcomeAssessment() {
-    if (!outcomeAssessmentModal.applicationId || !outcomeAssessmentForm.outcomeId.trim()) return;
-    await fetchWithSession(`/api/department/applications/${outcomeAssessmentModal.applicationId}/outcome-assessment`, {
-      method: 'POST',
-      body: JSON.stringify({
-        outcomeId: outcomeAssessmentForm.outcomeId.trim(),
-        outcomeType: outcomeAssessmentForm.outcomeType,
-        studentScore: Number(outcomeAssessmentForm.studentScore || 0),
-        supervisorScore: Number(outcomeAssessmentForm.supervisorScore || 0),
-        coordinatorScore: Number(outcomeAssessmentForm.coordinatorScore || 0),
-      }),
-    });
-    setOutcomeAssessmentModal({ open: false, applicationId: null });
-    setOutcomeAssessmentForm({ outcomeType: 'CO', outcomeId: '', studentScore: '0', supervisorScore: '0', coordinatorScore: '0' });
-    await load();
+    if (hasFeedback || normalizedStatus === 'completed') return 'COMPLETED • FEEDBACK RECEIVED';
+    if (isCompleted) return 'COMPLETED';
+    if (isAccepted) return 'ACCEPTED';
+    return String(app.status ?? 'PENDING').toUpperCase();
   }
 
   const metrics = useMemo(() => ({
@@ -784,7 +729,6 @@ export default function DepartmentDashboardPage() {
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Internship</th>
                     <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">IPO Feedback</th>
                     <th className="py-2 pr-3">Actions</th>
                   </tr>
                 </thead>
@@ -794,23 +738,20 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">{app.student_name}</td>
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>
-                      <td className="py-2 pr-3 uppercase">{app.status}</td>
-                      <td className="py-2 pr-3">{(app as any).industry_feedback ? `${(app as any).industry_feedback} (${(app as any).industry_score ?? '-'}/10)` : '-'}</td>
+                      <td className="py-2 pr-3 uppercase">{getApplicationStatusLabel(app)}</td>
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() === 'accepted'}>Accept</Button>
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() !== 'accepted' || Boolean(app.completed_at)}>{(app as any).performance_feedback_id ? 'Completed' : 'Mark Completed'}</Button>
-                          <Button variant="secondary" onClick={() => openFeedbackForm(app.id)} disabled={!(app as any).performance_feedback_id}>Feedback</Button>
-                          <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!(app as any).performance_feedback_id}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!(app as any).performance_feedback_id}>Outcome Assessment Engine</Button>
-                          <Button variant="secondary" onClick={() => downloadApplicationDocumentPack(app.id)}>Documents</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/feedback`)} disabled={!(app as any).performance_feedback_id}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/evaluation`)} disabled={!(app as any).performance_feedback_id}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/outcome-assessment`)} disabled={!(app as any).performance_feedback_id}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/documents`)}>Documents</Button>
                         </div>
                       </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td className="py-2 pr-3 text-slate-600" colSpan={6}>No internal student applications found.</td>
+                      <td className="py-2 pr-3 text-slate-600" colSpan={5}>No internal student applications found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -828,7 +769,6 @@ export default function DepartmentDashboardPage() {
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Internship</th>
                     <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">IPO Feedback</th>
                     <th className="py-2 pr-3">Actions</th>
                   </tr>
                 </thead>
@@ -838,23 +778,20 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">{app.student_name}</td>
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>
-                      <td className="py-2 pr-3 uppercase">{app.status}</td>
-                      <td className="py-2 pr-3">{(app as any).industry_feedback ? `${(app as any).industry_feedback} (${(app as any).industry_score ?? '-'}/10)` : '-'}</td>
+                      <td className="py-2 pr-3 uppercase">{getApplicationStatusLabel(app)}</td>
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() === 'accepted'}>Accept</Button>
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() !== 'accepted' || Boolean(app.completed_at)}>{(app as any).performance_feedback_id ? 'Completed' : 'Mark Completed'}</Button>
-                          <Button variant="secondary" onClick={() => openFeedbackForm(app.id)} disabled={!(app as any).performance_feedback_id}>Feedback</Button>
-                          <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!(app as any).performance_feedback_id}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!(app as any).performance_feedback_id}>Outcome Assessment Engine</Button>
-                          <Button variant="secondary" onClick={() => downloadApplicationDocumentPack(app.id)}>Documents</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/feedback`)} disabled={!(app as any).performance_feedback_id}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/evaluation`)} disabled={!(app as any).performance_feedback_id}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/outcome-assessment`)} disabled={!(app as any).performance_feedback_id}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/documents`)}>Documents</Button>
                         </div>
                       </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td className="py-2 pr-3 text-slate-600" colSpan={6}>No external student applications found.</td>
+                      <td className="py-2 pr-3 text-slate-600" colSpan={5}>No external student applications found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -877,35 +814,6 @@ export default function DepartmentDashboardPage() {
           </Card>
 
           
-
-          <Modal
-            open={feedbackViewModal.open}
-            title="INTERNSHIP PERFORMANCE FEEDBACK FORM"
-            onClose={() => setFeedbackViewModal({ open: false, data: null })}
-            footer={<div className="flex justify-end"><Button variant="secondary" onClick={() => setFeedbackViewModal({ open: false, data: null })}>Close</Button></div>}
-          >
-            {feedbackViewModal.data ? (
-              <div className="grid gap-1 text-sm">
-                <p>Student Name: {feedbackViewModal.data.student_name}</p>
-                <p>Register Number: {feedbackViewModal.data.register_number}</p>
-                <p>Organization: {feedbackViewModal.data.organization}</p>
-                <p>Duration: {feedbackViewModal.data.duration}</p>
-                <p>Supervisor Name: {feedbackViewModal.data.supervisor_name}</p>
-                <p>A. Weekly / Final Evaluation</p>
-                <p>Attendance & Punctuality: {feedbackViewModal.data.attendance_punctuality}/5</p>
-                <p>Technical Skills: {feedbackViewModal.data.technical_skills}/5</p>
-                <p>Problem Solving Ability: {feedbackViewModal.data.problem_solving_ability}/5</p>
-                <p>Communication Skills: {feedbackViewModal.data.communication_skills}/5</p>
-                <p>Teamwork: {feedbackViewModal.data.teamwork}/5</p>
-                <p>Professional Ethics: {feedbackViewModal.data.professional_ethics}/5</p>
-                <p>B. Overall Performance: {feedbackViewModal.data.overall_performance}</p>
-                <p>C. Remarks: {feedbackViewModal.data.remarks || '-'}</p>
-                <p>D. Recommendation: {feedbackViewModal.data.recommendation || '-'}</p>
-                <p>Supervisor Signature: {feedbackViewModal.data.supervisor_signature || '-'}</p>
-                <p>Date: {feedbackViewModal.data.feedback_date}</p>
-              </div>
-            ) : <p>No feedback found.</p>}
-          </Modal>
 
           <Modal
             open={outcomeModalOpen}
@@ -940,73 +848,6 @@ export default function DepartmentDashboardPage() {
             </div>
           </Modal>
 
-          <Modal
-            open={markEntryModal.open}
-            title="Internship Evaluation Entry"
-            onClose={() => {
-              setMarkEntryModal({ open: false, applicationId: null });
-              setMarkForm({ attendanceMarks: '0', workRegisterMarks: '0', presentationMarks: '0', vivaMarks: '0', reportMarks: '0' });
-            }}
-            footer={(
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => setMarkEntryModal({ open: false, applicationId: null })}>Close</Button>
-                <Button variant="secondary" onClick={() => setMarkSection('CCA')}>CCA Evaluation</Button>
-                <Button variant="secondary" onClick={() => setMarkSection('ESE')}>ESE Evaluation</Button>
-                <Button variant="secondary" onClick={() => setMarkSection('FINAL')}>Final Evaluation</Button>
-                <Button onClick={saveEvaluationMarks}>Save All</Button>
-              </div>
-            )}
-          >
-            <div className="grid gap-3">
-              {(markSection === 'CCA' || markSection === 'FINAL') ? (
-                <div className="grid gap-3 md:grid-cols-2 rounded-lg border border-slate-200 p-3">
-                  <p className="md:col-span-2 text-sm font-semibold">CCA (15): Attendance & Performance Feedback (9) + Work Register (6)</p>
-                  <label className="grid gap-1 text-sm">Attendance & Performance Feedback (0-9)<input type="number" min={0} max={9} value={markForm.attendanceMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, attendanceMarks: e.target.value }))} /></label>
-                  <label className="grid gap-1 text-sm">Work Register (0-6)<input type="number" min={0} max={6} value={markForm.workRegisterMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, workRegisterMarks: e.target.value }))} /></label>
-                </div>
-              ) : null}
-              {(markSection === 'ESE' || markSection === 'FINAL') ? (
-                <div className="grid gap-3 md:grid-cols-2 rounded-lg border border-slate-200 p-3">
-                  <p className="md:col-span-2 text-sm font-semibold">ESE (35): Presentation (14) + Viva (14) + Report (7)</p>
-                  <label className="grid gap-1 text-sm">Presentation (0-14)<input type="number" min={0} max={14} value={markForm.presentationMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, presentationMarks: e.target.value }))} /></label>
-                  <label className="grid gap-1 text-sm">Viva Voce (0-14)<input type="number" min={0} max={14} value={markForm.vivaMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, vivaMarks: e.target.value }))} /></label>
-                  <label className="grid gap-1 text-sm md:col-span-2">Internship Report (0-7)<input type="number" min={0} max={7} value={markForm.reportMarks} onChange={(e) => setMarkForm((prev) => ({ ...prev, reportMarks: e.target.value }))} /></label>
-                </div>
-              ) : null}
-              <div className="rounded-lg border border-slate-200 p-3 text-sm">
-                <p><strong>Final Evaluation</strong>: CCA + ESE = 50</p>
-                <p>Current Total: {Number(markForm.attendanceMarks || 0) + Number(markForm.workRegisterMarks || 0) + Number(markForm.presentationMarks || 0) + Number(markForm.vivaMarks || 0) + Number(markForm.reportMarks || 0)} / 50</p>
-              </div>
-            </div>
-          </Modal>
-
-          <Modal
-            open={outcomeAssessmentModal.open}
-            title="Outcome Assessment Engine"
-            onClose={() => {
-              setOutcomeAssessmentModal({ open: false, applicationId: null });
-              setOutcomeAssessmentForm({ outcomeType: 'CO', outcomeId: '', studentScore: '0', supervisorScore: '0', coordinatorScore: '0' });
-            }}
-            footer={(
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: false, applicationId: null })}>Close</Button>
-                <Button onClick={saveOutcomeAssessment}>Save</Button>
-              </div>
-            )}
-          >
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1 text-sm">Outcome Type
-                <select value={outcomeAssessmentForm.outcomeType} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, outcomeType: e.target.value }))}>
-                  <option value="CO">CO</option>
-                  <option value="PO">PO</option>
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm">Outcome Code<input value={outcomeAssessmentForm.outcomeId} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, outcomeId: e.target.value }))} placeholder="CO1 / PO2" /></label>
-              <label className="grid gap-1 text-sm">Student Score (0-5)<input type="number" min={0} max={5} value={outcomeAssessmentForm.studentScore} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, studentScore: e.target.value }))} /></label>
-              <label className="grid gap-1 text-sm">Supervisor Score (0-5)<input type="number" min={0} max={5} value={outcomeAssessmentForm.supervisorScore} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, supervisorScore: e.target.value }))} /></label>
-              <label className="grid gap-1 text-sm md:col-span-2">Coordinator Score (0-5)<input type="number" min={0} max={5} value={outcomeAssessmentForm.coordinatorScore} onChange={(e) => setOutcomeAssessmentForm((prev) => ({ ...prev, coordinatorScore: e.target.value }))} /></label>
-            </div>
-          </Modal>
         </>
       )}
     </RoleDashboardShell>
