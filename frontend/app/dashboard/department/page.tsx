@@ -469,10 +469,17 @@ export default function DepartmentDashboardPage() {
     const normalizedStatus = String(item.status ?? '').toUpperCase();
     return normalizedStatus === 'SENT_TO_DEPARTMENT' || normalizedStatus === 'SENT_TO_DEPT';
   });
-  const internalApps = (dashboard?.applications ?? []).filter((item: any) => item.is_internal_student === 1 && item.status !== 'rejected');
+  const internalApps = (dashboard?.applications ?? []).filter((item: any) => {
+    const status = String(item.status ?? '').toLowerCase();
+    const explicitInternal = Number(item.is_internal_student ?? 0) === 1;
+    const inferredInternal = Boolean(item.student_id) && !Boolean(item.external_student_id) && Number(item.is_external ?? 0) !== 1;
+    return (explicitInternal || inferredInternal) && status !== 'rejected';
+  });
   const externalApps = (dashboard?.applications ?? []).filter((item: any) => {
+    const status = String(item.status ?? '').toLowerCase();
     const differentCollege = item.is_external_by_college === 1;
-    return (item.is_external === 1 || differentCollege) && item.status !== 'rejected';
+    const inferredExternal = Boolean(item.external_student_id) || Number(item.is_external ?? 0) === 1;
+    return (inferredExternal || differentCollege) && status !== 'rejected';
   });
   const parseMappings = (value?: string | null) => value?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
   const internshipTitleById = useMemo(
@@ -802,24 +809,28 @@ export default function DepartmentDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {internalApps.map((app) => (
+                  {internalApps.length ? internalApps.map((app) => (
                     <tr key={app.id} className="border-t border-slate-200">
                       <td className="py-2 pr-3">{app.student_name}</td>
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>
                       <td className="py-2 pr-3 uppercase">{app.status}</td>
-                      <td className="py-2 pr-3">{(app as any).ipo_feedback ? `${(app as any).ipo_feedback} (${(app as any).ipo_score ?? '-'}/10)` : '-'}</td>
+                      <td className="py-2 pr-3">{(app as any).industry_feedback ? `${(app as any).industry_feedback} (${(app as any).industry_score ?? '-'}/10)` : '-'}</td>
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
-                          {app.status !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
+                          <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() === 'accepted'}>Accept</Button>
+                          {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
+                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
                           <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
                           <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )) : (
+                    <tr>
+                      <td className="py-2 pr-3 text-slate-600" colSpan={6}>No internal student applications found.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -840,24 +851,28 @@ export default function DepartmentDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {externalApps.map((app) => (
+                  {externalApps.length ? externalApps.map((app) => (
                     <tr key={app.id} className="border-t border-slate-200">
                       <td className="py-2 pr-3">{app.student_name}</td>
                       <td className="py-2 pr-3">{app.student_email}</td>
                       <td className="py-2 pr-3">{app.internship_title}</td>
                       <td className="py-2 pr-3 uppercase">{app.status}</td>
-                      <td className="py-2 pr-3">{(app as any).ipo_feedback ? `${(app as any).ipo_feedback} (${(app as any).ipo_score ?? '-'}/10)` : '-'}</td>
+                      <td className="py-2 pr-3">{(app as any).industry_feedback ? `${(app as any).industry_feedback} (${(app as any).industry_score ?? '-'}/10)` : '-'}</td>
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={app.status === 'accepted'}>Accept</Button>
-                          {app.status !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={app.status !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
+                          <Button variant="secondary" onClick={() => acceptApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() === 'accepted'}>Accept</Button>
+                          {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
+                          <Button variant="secondary" onClick={() => completeApplication(app.id)} disabled={String(app.status ?? '').toLowerCase() !== 'accepted' || Boolean(app.completed_at)}>Mark Completed</Button>
                           <Button variant="secondary" onClick={() => setMarkEntryModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Enter Evaluation</Button>
                           <Button variant="secondary" onClick={() => setOutcomeAssessmentModal({ open: true, applicationId: app.id })} disabled={!Boolean(app.completed_at)}>Outcome Assessment Engine</Button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )) : (
+                    <tr>
+                      <td className="py-2 pr-3 text-slate-600" colSpan={6}>No external student applications found.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

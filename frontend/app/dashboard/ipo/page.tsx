@@ -98,6 +98,7 @@ export default function IPODashboardPage() {
   const [internshipForms, setInternshipForms] = useState<Record<string, { title: string; description: string; vacancy: string; internshipCategory: InternshipCategory; fee: string; stipendAmount: string; stipendDuration: StipendDuration; minimumDays: string; maximumDays: string; genderPreference: 'BOTH' | 'BOYS' | 'GIRLS' }>>({});
   const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>([]);
   const [docPreview, setDocPreview] = useState<string | null>(null);
+  const [feedbackEditorOpenFor, setFeedbackEditorOpenFor] = useState<string | null>(null);
   const connectFormRef = useRef<HTMLFormElement | null>(null);
 
   async function load() {
@@ -307,17 +308,18 @@ export default function IPODashboardPage() {
   }
 
   async function completeApplication(applicationId: string) {
-    await fetchWithSession(`/api/ipo/applications/${applicationId}/complete`, { method: 'POST' });
+    await fetchWithSession(`/api/industry/applications/${applicationId}/complete`, { method: 'POST' });
     await load();
   }
 
   async function submitFeedback(applicationId: string) {
     const data = feedbackDraft[applicationId];
     if (!data?.feedback || !data?.score) return;
-    await fetchWithSession(`/api/ipo/applications/${applicationId}/feedback`, {
+    await fetchWithSession(`/api/industry/applications/${applicationId}/feedback`, {
       method: 'POST',
       body: JSON.stringify({ feedback: data.feedback, score: Number(data.score) }),
     });
+    setFeedbackEditorOpenFor(null);
     await load();
   }
 
@@ -682,10 +684,29 @@ export default function IPODashboardPage() {
                   <p className="mt-1 text-xs text-slate-400">Completed: {application.completedAt ?? 'Not completed'}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => completeApplication(application.id)} disabled={Boolean(application.completedAt)}>Completed</Button>
-                    <Input placeholder="Feedback" value={feedbackDraft[application.id]?.feedback ?? application.ipoFeedback ?? ''} onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: event.target.value, score: prev[application.id]?.score ?? String(application.ipoScore ?? '') } }))} />
-                    <Input placeholder="Score /10" value={feedbackDraft[application.id]?.score ?? String(application.ipoScore ?? '')} onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: prev[application.id]?.feedback ?? application.ipoFeedback ?? '', score: event.target.value } }))} />
-                    <Button variant="secondary" onClick={() => submitFeedback(application.id)}>Save Feedback</Button>
+                    <Button
+                      variant="secondary"
+                      disabled={!Boolean(application.completedAt)}
+                      onClick={() => setFeedbackEditorOpenFor((prev) => (prev === application.id ? null : application.id))}
+                    >
+                      {feedbackEditorOpenFor === application.id ? 'Close Feedback Tab' : 'Open Feedback Form'}
+                    </Button>
                   </div>
+                  {feedbackEditorOpenFor === application.id ? (
+                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_160px_auto]">
+                      <Input
+                        placeholder="Feedback"
+                        value={feedbackDraft[application.id]?.feedback ?? (application as any).industryFeedback ?? application.ipoFeedback ?? ''}
+                        onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: event.target.value, score: prev[application.id]?.score ?? String((application as any).industryScore ?? application.ipoScore ?? '') } }))}
+                      />
+                      <Input
+                        placeholder="Score /10"
+                        value={feedbackDraft[application.id]?.score ?? String((application as any).industryScore ?? application.ipoScore ?? '')}
+                        onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: prev[application.id]?.feedback ?? (application as any).industryFeedback ?? application.ipoFeedback ?? '', score: event.target.value } }))}
+                      />
+                      <Button variant="secondary" onClick={() => submitFeedback(application.id)}>Save Feedback</Button>
+                    </div>
+                  ) : null}
                 </div>
               )) : <p className="text-slate-700">No accepted applications found.</p>}
             </div>
