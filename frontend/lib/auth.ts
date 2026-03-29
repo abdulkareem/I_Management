@@ -6,6 +6,14 @@ export type SessionState = SessionProfile;
 
 const SESSION_KEY = 'internsuite.session';
 
+
+function normalizeRole(role: string): Role {
+  const normalized = role.toUpperCase();
+  if (normalized === 'DEPARTMENT') return 'DEPARTMENT_COORDINATOR';
+  return normalized as Role;
+}
+
+
 export function saveSession(session: SessionState) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -14,7 +22,9 @@ export function saveSession(session: SessionState) {
 export function loadSession(): SessionState | null {
   if (typeof window === 'undefined') return null;
   const raw = window.localStorage.getItem(SESSION_KEY);
-  return raw ? (JSON.parse(raw) as SessionState) : null;
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as SessionState;
+  return { ...parsed, user: { ...parsed.user, role: normalizeRole(parsed.user.role) } };
 }
 
 export function clearSession() {
@@ -106,7 +116,7 @@ export function dashboardPathFor(role: Role) {
   if (role === 'SUPER_ADMIN' || role === 'ADMIN') return '/superadmin/dashboard';
   if (role === 'STUDENT' || role === 'EXTERNAL_STUDENT') return '/dashboard/student';
   if (role === 'INDUSTRY') return '/dashboard/ipo';
-  if (role === 'DEPARTMENT_COORDINATOR' || role === 'COORDINATOR') return '/dashboard/department';
+  if (role === 'DEPARTMENT_COORDINATOR' || role === 'COORDINATOR' || role === 'DEPARTMENT') return '/dashboard/department';
   if (role === 'COLLEGE' || role === 'COLLEGE_ADMIN' || role === 'COLLEGE_COORDINATOR') return '/dashboard/college';
   return '/dashboard';
 }

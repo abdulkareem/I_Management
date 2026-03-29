@@ -8,7 +8,8 @@ export type Role =
   | 'EXTERNAL_STUDENT'
   | 'ADMIN'
   | 'COLLEGE'
-  | 'COORDINATOR';
+  | 'COORDINATOR'
+  | 'DEPARTMENT';
 
 export interface SessionUser {
   id: string;
