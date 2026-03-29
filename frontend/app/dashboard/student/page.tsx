@@ -222,7 +222,9 @@ export default function StudentDashboardPage() {
                       <th className="py-2 pr-2">IPO</th>
                       <th className="py-2 pr-2">Department</th>
                       <th className="py-2 pr-2">College</th>
-                      <th className="py-2 pr-2">Vacancy</th>
+                      <th className="py-2 pr-2">Total Seats</th>
+                      <th className="py-2 pr-2">Filled Seats</th>
+                      <th className="py-2 pr-2">Available Seats</th>
                       <th className="py-2 pr-2">Status</th>
                       <th className="py-2 pr-2">IPO feedback</th>
                       <th className="py-2 pr-2">Evaluation marks</th>
@@ -234,7 +236,8 @@ export default function StudentDashboardPage() {
                   <tbody>
                     {dashboard?.externalInternships?.length ? dashboard.externalInternships.map((item) => {
                       const disabledByRule = item.eligible === false;
-                      const disabled = item.applied || !canApply || disabledByRule;
+                      const noVacancy = Number(item.availableVacancy ?? 0) <= 0;
+                      const disabled = item.applied || !canApply || disabledByRule || noVacancy;
                       return (
                         <tr key={item.id} className="border-b border-slate-200">
                           <td className="py-3 pr-2">
@@ -247,11 +250,13 @@ export default function StudentDashboardPage() {
                           <td className="py-3 pr-2"><button type="button" className="text-indigo-700 underline" onClick={() => openIpoProfile(item.ipoId)}>{item.ipoName}</button></td>
                           <td className="py-3 pr-2">{item.departmentName}</td>
                           <td className="py-3 pr-2">{item.collegeName ?? '-'}</td>
-                          <td className="py-3 pr-2">{item.vacancy ?? 0}</td>
+                          <td className="py-3 pr-2">{item.totalVacancy ?? 0}</td>
+                          <td className="py-3 pr-2">{item.filledVacancy ?? 0}</td>
+                          <td className="py-3 pr-2">{item.availableVacancy ?? 0}</td>
                           <td className="py-3">
-                            <StatusBadge status={item.applied ? item.status ?? 'PUBLISHED' : 'PUBLISHED'} />
+                            <StatusBadge status={noVacancy ? 'FULL' : (item.applied ? item.status ?? 'PUBLISHED' : 'PUBLISHED')} />
                             <p className={`mt-1 text-xs ${disabledByRule ? 'text-rose-600' : 'text-emerald-700'}`}>
-                              {item.eligibilityMessage ?? (disabled ? 'Application limit reached' : 'You are eligible')}
+                              {item.eligibilityMessage ?? (noVacancy ? 'No vacancies available' : (disabled ? 'Application limit reached' : 'You are eligible'))}
                             </p>
                           </td>
                           <td className="py-3 pr-2 text-slate-600">{item.ipoFeedback ?? (item.applied ? 'Pending feedback' : '-')}</td>
@@ -283,7 +288,7 @@ export default function StudentDashboardPage() {
                       );
                     }) : (
                       <tr>
-                        <td className="py-3 text-slate-600" colSpan={13}>No internships from other organizations available right now.</td>
+                        <td className="py-3 text-slate-600" colSpan={14}>No internships from other organizations available right now.</td>
                       </tr>
                     )}
                   </tbody>
