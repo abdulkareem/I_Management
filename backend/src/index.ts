@@ -106,6 +106,15 @@ const evaluateSchema = z.object({
   co_po_score: z.record(z.string(), z.coerce.number().min(0).max(100)),
 });
 
+const industryTypeSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+});
+
+const industrySubtypeSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  industry_type_id: z.string().trim().min(1),
+});
+
 export default {
   async fetch(request: Request, env: EnvBindings): Promise<Response> {
     const url = new URL(request.url);
@@ -169,12 +178,37 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   if (pathname === '/api/student/register') {
     await ensureStudentRegistrationSchema(env);
   }
+  if (
+    pathname === '/api/dashboard/metrics'
+    || pathname === '/api/logs'
+    || pathname.startsWith('/api/industry-subtypes')
+    || pathname.startsWith('/api/industry-types')
+    || pathname === '/api/colleges'
+    || pathname === '/api/industries'
+    || pathname === '/api/departments'
+    || /^\/api\/colleges\/[^/]+\/(approve|reject)$/.test(pathname)
+    || /^\/api\/colleges\/[^/]+$/.test(pathname)
+    || /^\/api\/industries\/[^/]+\/(approve|reject)$/.test(pathname)
+    || /^\/api\/industries\/[^/]+$/.test(pathname)
+  ) {
+    await ensureSuperAdminControlSchema(env);
+  }
 
   if (request.method === 'GET' && pathname === '/api/health') {
     return ok('API healthy', { now: new Date().toISOString() });
   }
 
   if (request.method === 'GET' && pathname === '/api/colleges') {
+    const actor = parseSessionToken((request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim());
+    if (actor && (actor.role === 'SUPER_ADMIN' || actor.role === 'ADMIN')) {
+      const rows = await env.DB.prepare(
+        `SELECT id, name, coordinator_name AS coordinator, coordinator_email AS email, status
+         FROM colleges
+         ORDER BY created_at DESC`,
+      ).all();
+      return ok('Colleges fetched', rows.results ?? []);
+    }
+
     const rows = await env.DB.prepare(
       `SELECT id, name
        FROM colleges
@@ -185,6 +219,26 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/departments') {
+    const actor = parseSessionToken((request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim());
+    if (actor && (actor.role === 'SUPER_ADMIN' || actor.role === 'ADMIN')) {
+      const collegeId = toText(url.searchParams.get('college_id') ?? url.searchParams.get('collegeId'));
+      const rows = collegeId
+        ? await env.DB.prepare(
+          `SELECT d.id, d.name, d.coordinator_name AS coordinator, d.coordinator_email AS email, d.college_id, c.name AS college_name
+           FROM departments d
+           INNER JOIN colleges c ON c.id = d.college_id
+           WHERE d.college_id = ?
+           ORDER BY d.name ASC`,
+        ).bind(collegeId).all()
+        : await env.DB.prepare(
+          `SELECT d.id, d.name, d.coordinator_name AS coordinator, d.coordinator_email AS email, d.college_id, c.name AS college_name
+           FROM departments d
+           INNER JOIN colleges c ON c.id = d.college_id
+           ORDER BY d.name ASC`,
+        ).all();
+      return ok('Departments fetched', rows.results ?? []);
+    }
+
     const collegeId = toText(url.searchParams.get('collegeId'));
     if (!collegeId) return badRequest('collegeId is required');
 
@@ -228,6 +282,56 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Industry types fetched', rows.results ?? []);
   }
 
+  if (request.method === 'POST' && pathname === '/api/industry-subtypes') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const body = industrySubtypeSchema.safeParse(await readBody(request));
+    if (!body.success) return badRequest(body.error.issues[0]?.message ?? 'Invalid payload');
+
+    const type = await env.DB.prepare('SELECT id FROM industry_types WHERE id = ? AND is_active = 1')
+      .bind(body.data.industry_type_id)
+      .first<{ id: string }>();
+    if (!type) return badRequest('Invalid industry_type_id');
+
+    const duplicate = await env.DB.prepare(
+      'SELECT id FROM industry_subtypes WHERE industry_type_id = ? AND lower(name) = lower(?)',
+    ).bind(body.data.industry_type_id, body.data.name).first<{ id: string }>();
+    if (duplicate) return conflict('Industry subtype already exists under this type');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      'INSERT INTO industry_subtypes (id, name, industry_type_id) VALUES (?, ?, ?)',
+    ).bind(id, body.data.name, body.data.industry_type_id).run();
+    return created('Industry subtype added', { id, ...body.data });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/industry-subtypes') {
+    const typeId = toText(url.searchParams.get('type_id'));
+    const rows = typeId
+      ? await env.DB.prepare(
+        'SELECT id, name, industry_type_id FROM industry_subtypes WHERE industry_type_id = ? ORDER BY name ASC',
+      ).bind(typeId).all()
+      : await env.DB.prepare(
+        'SELECT id, name, industry_type_id FROM industry_subtypes ORDER BY name ASC',
+      ).all();
+    return ok('Industry subtypes fetched', rows.results ?? []);
+  }
+
+  const industrySubtypeByIdMatch = pathname.match(/^\/api\/industry-subtypes\/([^/]+)$/);
+  if (industrySubtypeByIdMatch && request.method === 'DELETE') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const result = await env.DB.prepare('DELETE FROM industry_subtypes WHERE id = ?').bind(industrySubtypeByIdMatch[1]).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry subtype not found');
+    await insertAuditLog(env, {
+      action: 'DELETE',
+      entity: 'industry_subtypes',
+      entityId: industrySubtypeByIdMatch[1],
+      performedBy: actor.id,
+    });
+    return ok('Industry subtype deleted');
+  }
+
   const industryTypeByIdMatch = pathname.match(/^\/api\/industry-types\/([^/]+)$/);
   if (industryTypeByIdMatch && request.method === 'PUT') {
     const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
@@ -249,17 +353,22 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   if (industryTypeByIdMatch && request.method === 'DELETE') {
     const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
     if (actor instanceof Response) return actor;
+    const subtypeCount = await env.DB.prepare('SELECT COUNT(*) AS count FROM industry_subtypes WHERE industry_type_id = ?')
+      .bind(industryTypeByIdMatch[1])
+      .first<{ count: number }>();
+    if (Number(subtypeCount?.count ?? 0) > 0) return badRequest('Delete subtypes first to prevent orphan records');
     const result = await env.DB.prepare('UPDATE industry_types SET is_active = 0 WHERE id = ?').bind(industryTypeByIdMatch[1]).run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry type not found');
+    await insertAuditLog(env, { action: 'DELETE', entity: 'industry_types', entityId: industryTypeByIdMatch[1], performedBy: actor.id });
     return ok('Industry type deleted');
   }
 
   if (request.method === 'POST' && pathname === '/api/industry-types') {
     const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
     if (actor instanceof Response) return actor;
-    const body = await readBody(request);
-    const name = required(body, ['name']);
-    if (!name) return badRequest('name is required');
+    const body = industryTypeSchema.safeParse(await readBody(request));
+    if (!body.success) return badRequest(body.error.issues[0]?.message ?? 'Invalid payload');
+    const name = body.data.name;
 
     const existing = await env.DB.prepare('SELECT id FROM industry_types WHERE lower(name) = lower(?)').bind(name).first<{ id: string }>();
     if (existing) return conflict('Industry type already exists');
@@ -267,6 +376,20 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const id = crypto.randomUUID();
     await env.DB.prepare('INSERT INTO industry_types (id, name, is_active) VALUES (?, ?, 1)').bind(id, name.trim()).run();
     return created('Industry type added', { id, name: name.trim() });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/industries') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const rows = await env.DB.prepare(
+      `SELECT i.id, i.name, i.email, i.status, i.industry_type_id, i.industry_subtype_id,
+              it.name AS industry_type_name, ist.name AS industry_subtype_name
+       FROM industries i
+       LEFT JOIN industry_types it ON it.id = i.industry_type_id
+       LEFT JOIN industry_subtypes ist ON ist.id = i.industry_subtype_id
+       ORDER BY i.created_at DESC`,
+    ).all();
+    return ok('Industries fetched', rows.results ?? []);
   }
 
   if (request.method === 'POST' && pathname === '/api/college/register') {
@@ -3912,6 +4035,91 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     });
   }
 
+  const collegeActionMatch = pathname.match(/^\/api\/colleges\/([^/]+)\/(approve|reject)$/);
+  if (collegeActionMatch && request.method === 'PATCH') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const [, collegeId, action] = collegeActionMatch;
+    const status = action === 'approve' ? 'approved' : 'rejected';
+    const isActive = action === 'approve' ? 1 : 0;
+    const result = await env.DB.prepare(
+      "UPDATE colleges SET status = ?, is_active = ?, approved_by_admin_id = ?, approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+    ).bind(status, isActive, actor.id, collegeId).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'College not found');
+    await insertAuditLog(env, { action: action.toUpperCase(), entity: 'colleges', entityId: collegeId, performedBy: actor.id });
+    return ok(`College ${status}`);
+  }
+
+  const industryActionMatch = pathname.match(/^\/api\/industries\/([^/]+)\/(approve|reject)$/);
+  if (industryActionMatch && request.method === 'PATCH') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const [, industryId, action] = industryActionMatch;
+    const status = action === 'approve' ? 'approved' : 'rejected';
+    const isActive = action === 'approve' ? 1 : 0;
+    const result = await env.DB.prepare(
+      "UPDATE industries SET status = ?, is_active = ?, approved_by_admin_id = ?, approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+    ).bind(status, isActive, actor.id, industryId).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
+    await insertAuditLog(env, { action: action.toUpperCase(), entity: 'industries', entityId: industryId, performedBy: actor.id });
+    return ok(`Industry ${status}`);
+  }
+
+  const collegeDeleteMatch = pathname.match(/^\/api\/colleges\/([^/]+)$/);
+  if (collegeDeleteMatch && request.method === 'DELETE') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const result = await env.DB.prepare("UPDATE colleges SET is_active = 0, status = 'rejected', updated_at = datetime('now') WHERE id = ?")
+      .bind(collegeDeleteMatch[1]).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'College not found');
+    await insertAuditLog(env, { action: 'DELETE', entity: 'colleges', entityId: collegeDeleteMatch[1], performedBy: actor.id });
+    return ok('College deleted');
+  }
+
+  const industryDeleteMatch = pathname.match(/^\/api\/industries\/([^/]+)$/);
+  if (industryDeleteMatch && request.method === 'DELETE') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const result = await env.DB.prepare("UPDATE industries SET is_active = 0, status = 'rejected', updated_at = datetime('now') WHERE id = ?")
+      .bind(industryDeleteMatch[1]).run();
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry not found');
+    await insertAuditLog(env, { action: 'DELETE', entity: 'industries', entityId: industryDeleteMatch[1], performedBy: actor.id });
+    return ok('Industry deleted');
+  }
+
+  if (request.method === 'GET' && pathname === '/api/dashboard/metrics') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const [collegeCount, industryCount, departmentCount, internshipCount, pendingApprovals, activeInternships] = await Promise.all([
+      env.DB.prepare('SELECT COUNT(*) AS count FROM colleges').first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM industries').first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM departments').first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM internships').first<{ count: number }>(),
+      env.DB.prepare("SELECT (SELECT COUNT(*) FROM colleges WHERE status = 'pending') + (SELECT COUNT(*) FROM industries WHERE status = 'pending') AS count").first<{ count: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM internships WHERE status IN ('OPEN', 'PUBLISHED', 'ACTIVE')").first<{ count: number }>(),
+    ]);
+    return ok('Dashboard metrics fetched', {
+      totalColleges: Number(collegeCount?.count ?? 0),
+      totalIndustries: Number(industryCount?.count ?? 0),
+      totalDepartments: Number(departmentCount?.count ?? 0),
+      totalInternships: Number(internshipCount?.count ?? 0),
+      pendingApprovals: Number(pendingApprovals?.count ?? 0),
+      activeInternships: Number(activeInternships?.count ?? 0),
+    });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/logs') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+    const rows = await env.DB.prepare(
+      `SELECT id, action, entity, entity_id, performed_by, timestamp
+       FROM logs
+       ORDER BY datetime(timestamp) DESC
+       LIMIT 500`,
+    ).all();
+    return ok('Logs fetched', rows.results ?? []);
+  }
+
   return errorResponse(404, 'Route not found');
 }
 
@@ -4635,6 +4843,49 @@ async function ensureInternshipAllocationsTable(env: EnvBindings): Promise<void>
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_allocations_external_student ON internship_allocations(external_student_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_allocations_industry ON internship_allocations(industry_id)').run(),
   ]);
+}
+
+async function ensureSuperAdminControlSchema(env: EnvBindings): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS industry_subtypes (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      industry_type_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (industry_type_id) REFERENCES industry_types(id) ON DELETE CASCADE,
+      UNIQUE (industry_type_id, name)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS logs (
+      id TEXT PRIMARY KEY,
+      action TEXT NOT NULL,
+      entity TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      performed_by TEXT NOT NULL,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ).run();
+
+  const industryColumns = new Set((await getTableColumns(env, 'industries')).map((column) => column.name));
+  if (!industryColumns.has('industry_subtype_id')) {
+    await env.DB.prepare('ALTER TABLE industries ADD COLUMN industry_subtype_id TEXT').run();
+  }
+
+  await Promise.all([
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_industry_subtypes_type ON industry_subtypes(industry_type_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_logs_entity ON logs(entity, timestamp)').run(),
+  ]);
+}
+
+async function insertAuditLog(
+  env: EnvBindings,
+  payload: { action: string; entity: string; entityId: string; performedBy: string },
+): Promise<void> {
+  await env.DB.prepare(
+    'INSERT INTO logs (id, action, entity, entity_id, performed_by, timestamp) VALUES (?, ?, ?, ?, ?, datetime(\'now\'))',
+  ).bind(crypto.randomUUID(), payload.action, payload.entity, payload.entityId, payload.performedBy).run();
 }
 
 async function ensureDepartmentCompatibility(env: EnvBindings): Promise<void> {
