@@ -1471,7 +1471,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       env.DB.prepare(
         `SELECT id, title, description
          FROM internships
-         WHERE industry_id = ?
+         WHERE COALESCE(industry_id, ipo_id) = ?
          ORDER BY created_at DESC`,
       ).bind(actor.id).all(),
       env.DB.prepare(
@@ -1494,11 +1494,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
                 ind.supervisor_name AS supervisor_name
          FROM internship_applications ia
          INNER JOIN internships i ON i.id = ia.internship_id
+         LEFT JOIN industries ind ON ind.id = COALESCE(i.industry_id, i.ipo_id)
          LEFT JOIN internship_performance_feedback ipf ON ipf.application_id = ia.id
          LEFT JOIN students s ON s.id = ia.student_id
          LEFT JOIN external_students es ON es.id = ia.external_student_id
          LEFT JOIN colleges c ON c.id = s.college_id
-         WHERE i.industry_id = ?
+         WHERE COALESCE(i.industry_id, i.ipo_id) = ?
          ORDER BY ia.created_at DESC`,
       ).bind(actor.id).all(),
     ]);
