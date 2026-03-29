@@ -2046,8 +2046,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               c.name AS college_name,
               d.name AS department_name,
               i.status,
-              COALESCE(i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS vacancy,
-              i.internship_category,
+              i.programme,
+              COALESCE(i.total_vacancy, i.vacancy, i.remaining_vacancy, 0) AS vacancy,
+              i.internship_category AS category,
               i.student_visibility,
               i.created_at
        FROM internships i
@@ -2416,6 +2417,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       `UPDATE internships
        SET student_visibility = 1,
            status = 'PUBLISHED',
+           vacancy = ?,
            total_vacancy = ?,
            remaining_vacancy = MAX(? - COALESCE(filled_vacancy, 0), 0),
            available_vacancy = MAX(? - COALESCE(filled_vacancy, 0), 0),
@@ -2429,6 +2431,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            updated_at = datetime('now')
        WHERE id = ? AND industry_id = ?`,
     ).bind(
+      Math.floor(vacancy),
       Math.floor(vacancy),
       Math.floor(vacancy),
       Math.floor(vacancy),
@@ -2512,11 +2515,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (maximumDays !== null && (Number.isNaN(maximumDays) || maximumDays <= 0)) return badRequest('maximumDays must be a positive number');
 
     const existingInternship = await env.DB.prepare(
-      `SELECT id, COALESCE(filled_vacancy, 0) AS filled_vacancy
+      `SELECT id, status, COALESCE(filled_vacancy, 0) AS filled_vacancy
        FROM internships
-       WHERE id = ? AND industry_id = ? AND status = 'SENT_TO_INDUSTRY'`,
-    ).bind(updateIndustryInternshipMatch[1], actor.id).first<{ id: string; filled_vacancy: number }>();
-    if (!existingInternship) return errorResponse(404, 'Industry internship not found or not editable');
+       WHERE id = ? AND industry_id = ?`,
+    ).bind(updateIndustryInternshipMatch[1], actor.id).first<{ id: string; status: string; filled_vacancy: number }>();
+    if (!existingInternship) return errorResponse(404, 'Industry internship not found');
+    if (!['SENT_TO_INDUSTRY', 'ACCEPTED', 'PUBLISHED', 'CLOSED', 'FULL'].includes(existingInternship.status)) {
+      return badRequest('Internship status does not allow editing');
+    }
     if (Math.floor(vacancy) < Number(existingInternship.filled_vacancy ?? 0)) {
       return badRequest('Cannot reduce vacancy below already filled seats');
     }
@@ -2526,6 +2532,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        SET title = ?,
            description = ?,
            internship_category = ?,
+           vacancy = ?,
            total_vacancy = ?,
            remaining_vacancy = MAX(? - COALESCE(filled_vacancy, 0), 0),
            available_vacancy = MAX(? - COALESCE(filled_vacancy, 0), 0),
@@ -2537,12 +2544,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            gender_preference = ?,
            updated_at = datetime('now')
        WHERE id = ?
-         AND industry_id = ?
-         AND status = 'SENT_TO_INDUSTRY'`,
+         AND industry_id = ?`,
     ).bind(
       title,
       description,
       internshipCategory,
+      Math.floor(vacancy),
       Math.floor(vacancy),
       Math.floor(vacancy),
       Math.floor(vacancy),

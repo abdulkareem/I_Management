@@ -776,9 +776,9 @@ export default function IPODashboardPage() {
                       <td className="py-3 pr-2">{item.category || '-'}</td>
                       <td className="py-3 pr-2">{item.vacancy ?? '-'}</td>
                       <td className="py-3 pr-2">
-                        <Badge className={item.status === 'DRAFT' ? 'bg-slate-600' : item.status === 'SENT_TO_DEPARTMENT' ? 'bg-blue-600' : item.status === 'ACCEPTED' ? (item.student_visibility ? 'bg-purple-600' : 'bg-green-600') : 'bg-slate-600'}>{item.status}</Badge>
+                        <Badge className={item.status === 'DRAFT' ? 'bg-slate-600' : item.status === 'SENT_TO_DEPARTMENT' ? 'bg-blue-600' : item.status === 'PUBLISHED' ? 'bg-purple-600' : item.status === 'ACCEPTED' ? (item.student_visibility ? 'bg-purple-600' : 'bg-green-600') : 'bg-slate-600'}>{item.status}</Badge>
                       </td>
-                      <td className="py-3">{item.status === 'ACCEPTED' && item.student_visibility ? 'Visible in student dashboard' : 'Not published yet'}</td>
+                      <td className="py-3">{item.student_visibility ? 'Visible in student dashboard' : 'Not published yet'}</td>
                       <td className="py-3 pr-2">{item.created_at ? new Date(item.created_at).toLocaleDateString() : '-'}</td>
                       <td className="py-3">
                         <div className="flex flex-wrap gap-2">
