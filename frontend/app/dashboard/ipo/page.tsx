@@ -40,7 +40,7 @@ type Department = { id: string; name: string };
 type Program = { id: string; name: string };
 type InternshipCategory = 'FREE' | 'PAID' | 'STIPEND';
 type StipendDuration = 'DAY' | 'WEEK' | 'MONTH';
-type IpoProfile = { id: string; name: string; email: string; company_address?: string | null; contact_number?: string | null; registration_number?: string | null; registration_year?: number | null };
+type IpoProfile = { id: string; name: string; email: string; company_address?: string | null; contact_number?: string | null; registration_number?: string | null; registration_year?: number | null; supervisor_name?: string | null };
 type IPOInternship = {
   id: string;
   internship_title: string;
@@ -60,6 +60,7 @@ type IPOInternship = {
   stipend_duration?: StipendDuration | null;
   status: string;
   student_visibility: number;
+  created_at?: string | null;
 };
 
 const EMPTY_CONNECT = {
@@ -114,9 +115,10 @@ export default function IPODashboardPage() {
   const [ideaActionSubmitting, setIdeaActionSubmitting] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [internshipForms, setInternshipForms] = useState<Record<string, { title: string; description: string; vacancy: string; internshipCategory: InternshipCategory; fee: string; stipendAmount: string; stipendDuration: StipendDuration; minimumDays: string; maximumDays: string; genderPreference: 'BOTH' | 'BOYS' | 'GIRLS' }>>({});
-  const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>([]);
+  const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>([]);
   const [docPreview, setDocPreview] = useState<string | null>(null);
   const [feedbackEditorOpenFor, setFeedbackEditorOpenFor] = useState<string | null>(null);
+  const [internshipsSort, setInternshipsSort] = useState<{ key: 'internship_title' | 'college_name' | 'department_name' | 'programme' | 'category' | 'vacancy' | 'status' | 'student_visibility' | 'created_at'; direction: 'asc' | 'desc' }>({ key: 'created_at', direction: 'desc' });
   const connectFormRef = useRef<HTMLFormElement | null>(null);
 
   async function load() {
@@ -126,7 +128,7 @@ export default function IPODashboardPage() {
       fetchWithSession<College[]>('/api/ipo/colleges'),
       fetchWithSession<IpoProfile>('/api/ipo/profile'),
       fetchWithSession<IPOInternship[]>('/api/ipo/internships'),
-      fetchWithSession<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>('/api/documents/my'),
+      fetchWithSession<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>('/api/documents/my'),
     ]);
     setDashboard(dashboardRes.data);
     setIdeas(ideasRes.data);
@@ -351,6 +353,7 @@ export default function IPODashboardPage() {
         email: ipoProfile.email,
         registrationNumber: ipoProfile.registration_number,
         registrationYear: ipoProfile.registration_year,
+        supervisorName: ipoProfile.supervisor_name,
       }),
     });
     setProfileOpen(false);
@@ -414,6 +417,32 @@ export default function IPODashboardPage() {
     }
   }
 
+  async function closeInternship(internshipId: string) {
+    setIdeaActionSubmitting(internshipId);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      await fetchWithSession(`/api/ipo/internships/${internshipId}/close`, { method: 'POST' });
+      setSuccessMessage('Internship closed.');
+      await load();
+    } finally {
+      setIdeaActionSubmitting(null);
+    }
+  }
+
+  async function removeInternship(internshipId: string) {
+    setIdeaActionSubmitting(internshipId);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      await fetchWithSession(`/api/ipo/internships/${internshipId}`, { method: 'DELETE' });
+      setSuccessMessage('Internship removed.');
+      await load();
+    } finally {
+      setIdeaActionSubmitting(null);
+    }
+  }
+
   const pendingApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'PENDING') ?? [], [dashboard]);
   const acceptedApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'ACCEPTED') ?? [], [dashboard]);
   const departmentSuggestedInternships = useMemo(
@@ -421,6 +450,17 @@ export default function IPODashboardPage() {
     [ipoInternships],
   );
   const ideaPageSize = 5;
+  const sortedInternships = useMemo(() => {
+    const rows = [...ipoInternships];
+    const sign = internshipsSort.direction === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      const av = a[internshipsSort.key];
+      const bv = b[internshipsSort.key];
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sign;
+      return String(av ?? '').localeCompare(String(bv ?? ''), undefined, { numeric: true, sensitivity: 'base' }) * sign;
+    });
+    return rows;
+  }, [ipoInternships, internshipsSort]);
   const paginatedIdeas = useMemo(() => {
     const visibleIdeas = ideas.filter((idea) => idea.status === 'PENDING');
     const totalPages = Math.max(1, Math.ceil(visibleIdeas.length / ideaPageSize));
@@ -463,6 +503,7 @@ export default function IPODashboardPage() {
                 <Input placeholder="Email" value={ipoProfile.email ?? ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, email: event.target.value } : prev))} />
                 <Input placeholder="Registration number" value={ipoProfile.registration_number ?? ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, registration_number: event.target.value } : prev))} />
                 <Input placeholder="Registration year" value={ipoProfile.registration_year ? String(ipoProfile.registration_year) : ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, registration_year: Number(event.target.value || 0) || null } : prev))} />
+                <Input placeholder="Supervisor name" value={ipoProfile.supervisor_name ?? ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, supervisor_name: event.target.value } : prev))} />
               </div>
               <div className="mt-4"><Button onClick={saveProfile}>Save IPO Profile</Button></div>
             </Card>
@@ -627,23 +668,54 @@ export default function IPODashboardPage() {
               <h2 className="text-2xl font-semibold text-slate-900">Accepted Ideas (Published for Students)</h2>
               <Button variant="secondary" onClick={() => { void load(); }}>Refresh</Button>
             </div>
+            {docPreview ? <iframe title="Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[960px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-300 text-slate-700">
-                    <th className="py-2 pr-2">Internship</th>
-                    <th className="py-2 pr-2">College</th>
-                    <th className="py-2 pr-2">Department</th>
-                    <th className="py-2 pr-2">Programme</th>
-                    <th className="py-2 pr-2">Category</th>
-                    <th className="py-2 pr-2">Vacancy</th>
-                    <th className="py-2 pr-2">Status</th>
-                    <th className="py-2">Student visibility</th>
+                    {([
+                      ['internship_title', 'Internship'],
+                      ['college_name', 'College'],
+                      ['department_name', 'Department'],
+                      ['programme', 'Programme'],
+                      ['category', 'Category'],
+                      ['vacancy', 'Vacancy'],
+                      ['status', 'Status'],
+                      ['student_visibility', 'Student visibility'],
+                      ['created_at', 'Created date'],
+                    ] as const).map(([key, label]) => (
+                      <th key={key} className="py-2 pr-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1"
+                          onClick={() => setInternshipsSort((prev) => ({
+                            key,
+                            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
+                          }))}
+                        >
+                          {label}
+                          <span>{internshipsSort.key === key ? (internshipsSort.direction === 'asc' ? '↑' : '↓') : '↕'}</span>
+                        </button>
+                      </th>
+                    ))}
                     <th className="py-2">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ipoInternships.length ? ipoInternships.map((item) => (
+                  {sortedInternships.length ? sortedInternships.map((item) => {
+                    const form = internshipForms[item.id] ?? {
+                      title: item.internship_title ?? '',
+                      description: item.description ?? '',
+                      vacancy: String(item.vacancy ?? 1),
+                      internshipCategory: item.category ?? 'FREE',
+                      fee: item.fee ? String(item.fee) : '',
+                      stipendAmount: item.stipend_amount ? String(item.stipend_amount) : '',
+                      stipendDuration: item.stipend_duration ?? 'MONTH',
+                      minimumDays: String(item.minimum_days ?? 60),
+                      maximumDays: String(item.maximum_days ?? 90),
+                      genderPreference: item.gender_preference ?? 'BOTH',
+                    };
+                    return (
                     <tr key={item.id} className="border-b border-slate-200">
                       <td className="py-3 pr-2">{item.internship_title || '-'}</td>
                       <td className="py-3 pr-2">{item.college_name || '-'}</td>
@@ -655,17 +727,20 @@ export default function IPODashboardPage() {
                         <Badge className={item.status === 'DRAFT' ? 'bg-slate-600' : item.status === 'SENT_TO_DEPARTMENT' ? 'bg-blue-600' : item.status === 'ACCEPTED' ? (item.student_visibility ? 'bg-purple-600' : 'bg-green-600') : 'bg-slate-600'}>{item.status}</Badge>
                       </td>
                       <td className="py-3">{item.status === 'ACCEPTED' && item.student_visibility ? 'Visible in student dashboard' : 'Not published yet'}</td>
+                      <td className="py-3 pr-2">{item.created_at ? new Date(item.created_at).toLocaleDateString() : '-'}</td>
                       <td className="py-3">
-                        {item.status === 'ACCEPTED' && !item.student_visibility ? (
-                          <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void publishInternship(item.id)}>
-                            {ideaActionSubmitting === item.id ? 'Publishing...' : 'Publish'}
-                          </Button>
-                        ) : '-'}
+                        <div className="flex flex-wrap gap-2">
+                          <Input className="max-w-[100px]" type="number" min={0} value={form.vacancy} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, vacancy: e.target.value } }))} />
+                          <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void saveDepartmentSuggestedInternship(item.id)}>{ideaActionSubmitting === item.id ? 'Saving...' : 'Edit Vacancy'}</Button>
+                          <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void closeInternship(item.id)}>{ideaActionSubmitting === item.id ? 'Closing...' : 'Close'}</Button>
+                          <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void removeInternship(item.id)}>{ideaActionSubmitting === item.id ? 'Removing...' : 'Remove'}</Button>
+                        </div>
                       </td>
                     </tr>
-                  )) : (
+                    );
+                  }) : (
                     <tr>
-                      <td className="py-3 text-slate-700" colSpan={9}>No internships yet.</td>
+                      <td className="py-3 text-slate-700" colSpan={10}>No internships yet.</td>
                     </tr>
                   )}
                 </tbody>
@@ -696,12 +771,18 @@ export default function IPODashboardPage() {
             <div className="mt-5 space-y-3">
               {acceptedApplications.length ? acceptedApplications.map((application) => (
                 <div key={application.id} className="rounded-[24px] border border-slate-200 bg-white p-4">
+                  {(() => {
+                    const approvalDocument = documents.find((doc) => doc.type === 'approval' && doc.internship_id === application.internshipId && (application.studentId ? doc.student_id === application.studentId : true));
+                    return (
+                      <>
                   <p className="font-semibold text-slate-900">{application.studentName}</p>
                   <p className="mt-1 text-sm text-slate-700">{application.studentEmail ?? '-'} • {application.collegeName}</p>
                   <p className="mt-1 text-sm text-slate-700">{application.opportunityTitle}</p>
                   <p className="mt-1 text-xs text-slate-400">Completed: {application.completedAt ?? 'Not completed'}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => completeApplication(application.id)} disabled={Boolean(application.completedAt)}>Completed</Button>
+                    <Button variant="secondary" disabled={!approvalDocument} onClick={() => approvalDocument && previewDocument(approvalDocument.id)}>Preview Approval Letter</Button>
+                    <Button variant="secondary" disabled={!approvalDocument} onClick={() => approvalDocument && downloadDocument(approvalDocument.id)}>Download Approval Letter</Button>
                     <Button variant="secondary" disabled={!Boolean(application.completedAt)} onClick={() => {
                       const today = new Date().toISOString().slice(0, 10);
                       setFeedbackDraft((prev) => ({
@@ -730,6 +811,9 @@ export default function IPODashboardPage() {
                       Open Feedback Form
                     </Button>
                   </div>
+                  </>
+                    );
+                  })()}
                 </div>
               )) : <p className="text-slate-700">No accepted applications found.</p>}
             </div>
@@ -749,8 +833,18 @@ export default function IPODashboardPage() {
                     <Input placeholder="Organization" value={f.organization} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, organization: e.target.value } }))} />
                     <Input placeholder="Duration" value={f.duration} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, duration: e.target.value } }))} />
                     <Input placeholder="Supervisor Name" value={f.supervisorName} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, supervisorName: e.target.value } }))} />
-                    {(['attendancePunctuality', 'technicalSkills', 'problemSolvingAbility', 'communicationSkills', 'teamwork', 'professionalEthics'] as const).map((key) => (
-                      <Input key={key} type="number" min={1} max={5} value={f[key]} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, [key]: e.target.value } }))} />
+                    {([
+                      ['attendancePunctuality', '1. Attendance and punctuality (1-5)'],
+                      ['technicalSkills', '2. Technical skills (1-5)'],
+                      ['problemSolvingAbility', '3. Problem-solving ability (1-5)'],
+                      ['communicationSkills', '4. Communication skills (1-5)'],
+                      ['teamwork', '5. Teamwork and collaboration (1-5)'],
+                      ['professionalEthics', '6. Professional ethics and discipline (1-5)'],
+                    ] as const).map(([key, label]) => (
+                      <div key={key} className="space-y-1">
+                        <label className="text-xs font-medium text-slate-700">{label}</label>
+                        <Input type="number" min={1} max={5} value={f[key]} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, [key]: e.target.value } }))} />
+                      </div>
                     ))}
                     <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={f.overallPerformance} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, overallPerformance: e.target.value as 'Excellent' | 'Good' | 'Average' | 'Poor' } }))}>
                       <option>Excellent</option><option>Good</option><option>Average</option><option>Poor</option>
@@ -765,22 +859,6 @@ export default function IPODashboardPage() {
             ) : null}
           </Modal>
 
-          <Card className="rounded-[30px] p-6">
-            <h2 className="text-2xl font-semibold text-slate-900">System Generated Documents</h2>
-            <p className="mt-2 text-sm text-slate-600">Download Internship Approval Letter and IPO Reply Letter.</p>
-            <div className="mt-4 space-y-2">
-              {documents.length ? documents.map((doc) => (
-                <div key={doc.id} className="flex flex-wrap items-center justify-between rounded-xl border border-slate-200 p-3">
-                  <p className="text-sm text-slate-700">{doc.type.toUpperCase()} • Internship {doc.internship_id} • {new Date(doc.generated_at).toLocaleString()}</p>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => previewDocument(doc.id)}>Preview</Button>
-                    <Button variant="secondary" onClick={() => downloadDocument(doc.id)}>Download PDF</Button>
-                  </div>
-                </div>
-              )) : <p className="text-sm text-slate-700">No ipo documents available yet.</p>}
-            </div>
-            {docPreview ? <iframe title="Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
-          </Card>
         </>
       )}
     </RoleDashboardShell>

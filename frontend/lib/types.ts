@@ -72,7 +72,7 @@ export interface IPODashboard {
   ipo: { id: string; name: string; description?: string | null; emblem?: string | null };
   stats: { liveOpportunities?: number; pendingApplications?: number; acceptedApplications?: number; attendanceToday?: number; internships?: number };
   opportunities?: Array<{ id: string; title: string; description: string; applications: number }>;
-  applications?: Array<{ id: string; studentName: string; studentEmail?: string | null; collegeName: string; opportunityTitle: string; status: string; createdAt?: string; completedAt?: string | null; ipoFeedback?: string | null; ipoScore?: number | null; performanceFeedbackId?: string | null }>;
+  applications?: Array<{ id: string; studentId?: string | null; internshipId?: string | null; studentName: string; studentEmail?: string | null; collegeName: string; opportunityTitle: string; status: string; createdAt?: string; completedAt?: string | null; ipoFeedback?: string | null; ipoScore?: number | null; performanceFeedbackId?: string | null }>;
   approvedColleges?: Array<{ id: string; name: string }>;
 }
 
