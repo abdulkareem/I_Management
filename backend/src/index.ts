@@ -793,9 +793,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
           COUNT(DISTINCT a.id) AS total_students_applied,
           SUM(CASE WHEN UPPER(COALESCE(a.status, '')) IN ('ALLOTTED','SELECTED','COMPLETED','ACCEPTED') THEN 1 ELSE 0 END) AS students_placed,
           SUM(CASE WHEN UPPER(COALESCE(a.status, '')) IN ('APPLIED','PENDING') THEN 1 ELSE 0 END) AS pending_allocations,
-          SUM(CASE WHEN COALESCE(a.is_external, 0) = 1 THEN 1 ELSE 0 END) AS external_applications_count
+          SUM(CASE WHEN COALESCE(a.is_external, CASE WHEN a.external_student_id IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END) AS external_applications_count
          FROM internships i
-         LEFT JOIN applications a ON a.internship_id = i.id
+         LEFT JOIN internship_applications a ON a.internship_id = i.id
          WHERE i.college_id = ?`,
       ).bind(collegeId).first<any>(),
       env.DB.prepare(
@@ -816,7 +816,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
           END AS evaluation_status
          FROM departments d
          LEFT JOIN students s ON s.department_id = d.id
-         LEFT JOIN applications a ON a.student_id = s.id
+         LEFT JOIN internship_applications a ON a.student_id = s.id
          LEFT JOIN internship_evaluations ie ON ie.application_id = a.id
          WHERE d.college_id = ?
          GROUP BY d.id, d.name
@@ -838,7 +838,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
           END AS alert
          FROM internships i
          LEFT JOIN departments d ON d.id = i.department_id
-         LEFT JOIN applications a ON a.internship_id = i.id
+         LEFT JOIN internship_applications a ON a.internship_id = i.id
          WHERE i.college_id = ?
          GROUP BY i.id, i.title, i.created_by, i.source_type, d.name, i.filled_vacancy, i.total_vacancy, i.vacancy, i.status
          ORDER BY i.created_at DESC`,
@@ -865,10 +865,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
           a.status,
           a.created_at,
           i.title AS internship_title,
-          CASE WHEN COALESCE(a.is_external, 0) = 1 THEN 'EXTERNAL' ELSE 'INTERNAL' END AS application_type,
+          CASE WHEN COALESCE(a.is_external, CASE WHEN a.external_student_id IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'EXTERNAL' ELSE 'INTERNAL' END AS application_type,
           COALESCE(s.name, 'Student') AS student_name,
           COALESCE(s.email, '') AS student_email
-         FROM applications a
+         FROM internship_applications a
          INNER JOIN internships i ON i.id = a.internship_id
          LEFT JOIN students s ON s.id = a.student_id
          WHERE i.college_id = ?
@@ -885,7 +885,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
           END AS submission_status
          FROM departments d
          LEFT JOIN students s ON s.department_id = d.id
-         LEFT JOIN applications a ON a.student_id = s.id
+         LEFT JOIN internship_applications a ON a.student_id = s.id
          LEFT JOIN internship_evaluations ie ON ie.application_id = a.id
          WHERE d.college_id = ?
          GROUP BY d.id, d.name
