@@ -49,13 +49,13 @@ model User {
   role           UserRole
   collegeId      String?     @map("college_id")
   departmentId   String?     @map("department_id")
-  industryId     String?     @map("industry_id")
+  ipoId          String?     @map("industry_id")
   isActive       Boolean     @default(true) @map("is_active")
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")
   college        College?    @relation(fields: [collegeId], references: [id], onDelete: SetNull)
   department     Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  industry       Industry?   @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  ipo            Ipo?        @relation(fields: [ipoId], references: [id], onDelete: SetNull)
   applications   Application[]
   evaluations    Evaluation[]
   progressLogs   InternshipProgress[]
@@ -101,12 +101,12 @@ model Department {
   @@map("departments")
 }
 
-model Industry {
+model Ipo {
   id           String       @id @default(cuid())
   name         String
   email        String?      @unique
-  industryTypeId String?    @map("industry_type_id")
-  industrySubtypeId String? @map("industry_subtype_id")
+  ipoTypeId      String?    @map("industry_type_id")
+  ipoSubtypeId   String?    @map("industry_subtype_id")
   status       String?      @default("pending")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
@@ -117,7 +117,7 @@ model Industry {
   @@map("industries")
 }
 
-model IndustryType {
+model IpoType {
   id        String   @id @default(cuid())
   name      String   @unique
   isActive  Boolean  @default(true) @map("is_active")
@@ -126,13 +126,13 @@ model IndustryType {
   @@map("industry_types")
 }
 
-model IndustrySubtype {
+model IpoSubtype {
   id             String   @id @default(cuid())
   name           String
-  industryTypeId String   @map("industry_type_id")
+  ipoTypeId      String   @map("industry_type_id")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  @@unique([industryTypeId, name])
+  @@unique([ipoTypeId, name])
   @@map("industry_subtypes")
 }
 
@@ -176,14 +176,14 @@ model Internship {
   internshipCo   Json                 @default("[]") @map("internship_co")
   collegeId      String?              @map("college_id")
   departmentId   String?              @map("department_id")
-  industryId     String?              @map("industry_id")
+  ipoId          String?              @map("industry_id")
   createdById    String?              @map("created_by_id")
   publishedAt    DateTime?            @map("published_at")
   createdAt      DateTime             @default(now()) @map("created_at")
   updatedAt      DateTime             @updatedAt @map("updated_at")
   college        College?             @relation(fields: [collegeId], references: [id], onDelete: SetNull)
   department     Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  industry       Industry?            @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  ipo            Ipo?                 @relation(fields: [ipoId], references: [id], onDelete: SetNull)
   createdBy      User?                @relation(fields: [createdById], references: [id], onDelete: SetNull)
   targets        InternshipTarget[]
   applications   Application[]
@@ -337,7 +337,7 @@ model Result {
   studentId       String       @map("student_id")
   collegeId       String?      @map("college_id")
   departmentId    String?      @map("department_id")
-  industryId      String?      @map("industry_id")
+  ipoId           String?      @map("industry_id")
   finalScore      Float        @default(0) @map("final_score")
   grade           String?
   isPublished     Boolean      @default(false) @map("is_published")
@@ -348,7 +348,7 @@ model Result {
   student         User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
   college         College?     @relation(fields: [collegeId], references: [id], onDelete: SetNull)
   department      Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  industry        Industry?    @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  ipo             Ipo?         @relation(fields: [ipoId], references: [id], onDelete: SetNull)
 
   @@map("results")
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import type { IndustryDashboard } from '@/lib/types';
+import type { IPODashboard } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
 import { API_BASE_URL } from '@/lib/config';
 
-type IndustryIdea = {
+type IPOIdea = {
   id: string;
   internship_title: string;
   description: string;
@@ -40,7 +40,7 @@ type Program = { id: string; name: string };
 type InternshipCategory = 'FREE' | 'PAID' | 'STIPEND';
 type StipendDuration = 'DAY' | 'WEEK' | 'MONTH';
 type IpoProfile = { id: string; name: string; email: string; company_address?: string | null; contact_number?: string | null; registration_number?: string | null; registration_year?: number | null };
-type IndustryInternship = {
+type IPOInternship = {
   id: string;
   internship_title: string;
   description?: string | null;
@@ -75,13 +75,13 @@ const EMPTY_CONNECT = {
   vacancy: '1',
 };
 
-export default function IndustryDashboardPage() {
-  const [dashboard, setDashboard] = useState<IndustryDashboard | null>(null);
-  const [ideas, setIdeas] = useState<IndustryIdea[]>([]);
+export default function IPODashboardPage() {
+  const [dashboard, setDashboard] = useState<IPODashboard | null>(null);
+  const [ideas, setIdeas] = useState<IPOIdea[]>([]);
   const [colleges, setColleges] = useState<College[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
-  const [industryInternships, setIndustryInternships] = useState<IndustryInternship[]>([]);
+  const [ipoInternships, setIPOInternships] = useState<IPOInternship[]>([]);
   const [selectedCollege, setSelectedCollege] = useState('');
   const [connectForm, setConnectForm] = useState(EMPTY_CONNECT);
   const [error, setError] = useState<string | null>(null);
@@ -102,18 +102,18 @@ export default function IndustryDashboardPage() {
 
   async function load() {
     const [dashboardRes, ideasRes, collegeRes, profileRes, internshipsRes, docRes] = await Promise.all([
-      fetchWithSession<IndustryDashboard>('/industry/dashboard'),
-      fetchWithSession<IndustryIdea[]>('/api/industry/ideas'),
-      fetchWithSession<College[]>('/api/industry/colleges'),
-      fetchWithSession<IpoProfile>('/api/industry/profile'),
-      fetchWithSession<IndustryInternship[]>('/api/industry/internships'),
+      fetchWithSession<IPODashboard>('/ipo/dashboard'),
+      fetchWithSession<IPOIdea[]>('/api/ipo/ideas'),
+      fetchWithSession<College[]>('/api/ipo/colleges'),
+      fetchWithSession<IpoProfile>('/api/ipo/profile'),
+      fetchWithSession<IPOInternship[]>('/api/ipo/internships'),
       fetchWithSession<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>('/api/documents/my'),
     ]);
     setDashboard(dashboardRes.data);
     setIdeas(ideasRes.data);
     setColleges(collegeRes.data ?? []);
     setIpoProfile(profileRes.data ?? null);
-    setIndustryInternships(internshipsRes.data ?? []);
+    setIPOInternships(internshipsRes.data ?? []);
     setDocuments(docRes.data ?? []);
   }
 
@@ -144,7 +144,7 @@ export default function IndustryDashboardPage() {
       setPrograms([]);
       return;
     }
-    fetchWithSession<Department[]>(`/api/industry/colleges/${selectedCollege}/departments`)
+    fetchWithSession<Department[]>(`/api/ipo/colleges/${selectedCollege}/departments`)
       .then((res) => setDepartments(res.data ?? []))
       .catch(() => setDepartments([]));
   }, [selectedCollege]);
@@ -191,7 +191,7 @@ export default function IndustryDashboardPage() {
       if (connectForm.departmentId && !connectForm.programme) {
         throw new Error('Please select a programme when a department is selected.');
       }
-      const response = await fetchWithSession('/api/industry/send-to-department', {
+      const response = await fetchWithSession('/api/ipo/send-to-department', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
@@ -212,7 +212,7 @@ export default function IndustryDashboardPage() {
   }
 
   async function updateIdea(ideaId: string, title: string, description: string, payload?: { vacancy: string; internshipCategory: InternshipCategory; fee: string; stipendAmount: string; stipendDuration: StipendDuration; minimumDays: string; maximumDays: string; genderPreference: 'BOTH' | 'BOYS' | 'GIRLS' }) {
-    await fetchWithSession(`/api/industry-requests/${ideaId}/update`, {
+    await fetchWithSession(`/api/ipo-requests/${ideaId}/update`, {
       method: 'PUT',
       body: JSON.stringify({
         internshipTitle: title,
@@ -229,7 +229,7 @@ export default function IndustryDashboardPage() {
     });
   }
 
-  async function saveIdea(idea: IndustryIdea) {
+  async function saveIdea(idea: IPOIdea) {
     const payload = forms[idea.id] ?? {
       vacancy: String(idea.suggested_vacancy ?? 1),
       internshipCategory: idea.suggested_internship_category ?? 'FREE',
@@ -253,15 +253,15 @@ export default function IndustryDashboardPage() {
     }
   }
 
-  async function acceptAndPublishIdea(idea: IndustryIdea) {
+  async function acceptAndPublishIdea(idea: IPOIdea) {
     const payload = forms[idea.id] ?? { vacancy: String(idea.suggested_vacancy ?? 1), internshipCategory: idea.suggested_internship_category ?? 'FREE' as InternshipCategory, fee: idea.suggested_fee ? String(idea.suggested_fee) : '', stipendAmount: idea.suggested_stipend_amount ? String(idea.suggested_stipend_amount) : '', stipendDuration: idea.suggested_stipend_duration ?? 'MONTH' as StipendDuration, minimumDays: String(idea.suggested_minimum_days ?? 7), maximumDays: String(idea.suggested_maximum_days ?? 30), genderPreference: idea.gender_preference ?? 'BOTH' };
     setError(null);
     setSuccessMessage(null);
     setIdeaActionSubmitting(idea.id);
     try {
       await updateIdea(idea.id, idea.internship_title, idea.description, payload);
-      await fetchWithSession(`/api/industry-requests/${idea.id}/respond`, { method: 'POST', body: JSON.stringify({ status: 'ACCEPTED' }) });
-      await fetchWithSession(`/api/industry/ideas/${idea.id}/publish`, {
+      await fetchWithSession(`/api/ipo-requests/${idea.id}/respond`, { method: 'POST', body: JSON.stringify({ status: 'ACCEPTED' }) });
+      await fetchWithSession(`/api/ipo/ideas/${idea.id}/publish`, {
         method: 'POST',
         body: JSON.stringify({
           vacancy: Number(payload.vacancy || 0),
@@ -287,7 +287,7 @@ export default function IndustryDashboardPage() {
     setSuccessMessage(null);
     setIdeaActionSubmitting(ideaId);
     try {
-      await fetchWithSession(`/api/industry-requests/${ideaId}/respond`, { method: 'POST', body: JSON.stringify({ status: 'REJECTED' }) });
+      await fetchWithSession(`/api/ipo-requests/${ideaId}/respond`, { method: 'POST', body: JSON.stringify({ status: 'REJECTED' }) });
       setSuccessMessage('Idea rejected.');
       await load();
     } finally {
@@ -296,24 +296,24 @@ export default function IndustryDashboardPage() {
   }
 
   async function acceptApplication(applicationId: string) {
-    await fetchWithSession(`/api/industry/applications/${applicationId}/accept`, { method: 'POST' });
+    await fetchWithSession(`/api/ipo/applications/${applicationId}/accept`, { method: 'POST' });
     await load();
   }
 
   async function rejectApplication(applicationId: string) {
-    await fetchWithSession(`/api/industry/applications/${applicationId}/reject`, { method: 'POST' });
+    await fetchWithSession(`/api/ipo/applications/${applicationId}/reject`, { method: 'POST' });
     await load();
   }
 
   async function completeApplication(applicationId: string) {
-    await fetchWithSession(`/api/industry/applications/${applicationId}/complete`, { method: 'POST' });
+    await fetchWithSession(`/api/ipo/applications/${applicationId}/complete`, { method: 'POST' });
     await load();
   }
 
   async function submitFeedback(applicationId: string) {
     const data = feedbackDraft[applicationId];
     if (!data?.feedback || !data?.score) return;
-    await fetchWithSession(`/api/industry/applications/${applicationId}/feedback`, {
+    await fetchWithSession(`/api/ipo/applications/${applicationId}/feedback`, {
       method: 'POST',
       body: JSON.stringify({ feedback: data.feedback, score: Number(data.score) }),
     });
@@ -322,7 +322,7 @@ export default function IndustryDashboardPage() {
 
   async function saveProfile() {
     if (!ipoProfile) return;
-    await fetchWithSession('/api/industry/profile', {
+    await fetchWithSession('/api/ipo/profile', {
       method: 'PUT',
       body: JSON.stringify({
         companyAddress: ipoProfile.company_address,
@@ -342,7 +342,7 @@ export default function IndustryDashboardPage() {
     setIdeaActionSubmitting(internshipId);
     try {
       const payload = internshipForms[internshipId];
-      const response = await fetchWithSession('/api/industry/publish', {
+      const response = await fetchWithSession('/api/ipo/publish', {
         method: 'POST',
         body: JSON.stringify({
           id: internshipId,
@@ -371,7 +371,7 @@ export default function IndustryDashboardPage() {
     setSuccessMessage(null);
     setIdeaActionSubmitting(internshipId);
     try {
-      await fetchWithSession(`/api/industry/internships/${internshipId}`, {
+      await fetchWithSession(`/api/ipo/internships/${internshipId}`, {
         method: 'PUT',
         body: JSON.stringify({
           title: payload.title,
@@ -396,8 +396,8 @@ export default function IndustryDashboardPage() {
   const pendingApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'PENDING') ?? [], [dashboard]);
   const acceptedApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'ACCEPTED') ?? [], [dashboard]);
   const departmentSuggestedInternships = useMemo(
-    () => industryInternships.filter((item) => item.status === 'SENT_TO_INDUSTRY'),
-    [industryInternships],
+    () => ipoInternships.filter((item) => item.status === 'SENT_TO_INDUSTRY'),
+    [ipoInternships],
   );
   const ideaPageSize = 5;
   const paginatedIdeas = useMemo(() => {
@@ -409,7 +409,7 @@ export default function IndustryDashboardPage() {
   }, [ideas, ideasPage]);
 
   return (
-    <RoleDashboardShell allowedRoles={['INDUSTRY']} title="Internship Providing Organization Dashboard" subtitle="Review department ideas, connect with colleges, publish student vacancies, and track applications.">
+    <RoleDashboardShell allowedRoles={['INDUSTRY']} title="IPO Dashboard" subtitle="Review department ideas, connect with colleges, publish student vacancies, and track applications.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-800">{error}</Card> : null}
@@ -417,8 +417,8 @@ export default function IndustryDashboardPage() {
           {!dashboard ? <Card className="rounded-[28px] p-4">Loading IPO data...</Card> : null}
 
           <Card className="rounded-[28px] p-5">
-            <p className="text-sm uppercase tracking-[0.24em] text-indigo-700">Industry details</p>
-            <h2 className="mt-2 text-2xl font-semibold text-slate-900">{ipoProfile?.name ?? dashboard?.industry?.name ?? 'Industry'}</h2>
+            <p className="text-sm uppercase tracking-[0.24em] text-indigo-700">IPO details</p>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">{ipoProfile?.name ?? dashboard?.ipo?.name ?? 'IPO'}</h2>
             <p className="mt-2 text-sm text-slate-600">Address: {ipoProfile?.company_address || '-'}</p>
           </Card>
 
@@ -511,7 +511,7 @@ export default function IndustryDashboardPage() {
                     };
                     return (
                       <div key={item.id} className="rounded-[24px] border border-indigo-200 bg-indigo-50/40 p-4">
-                        <p className="text-sm font-semibold text-indigo-700">Sent from department for industry publish</p>
+                        <p className="text-sm font-semibold text-indigo-700">Sent from department for ipo publish</p>
                         <p className="mt-1 text-sm text-slate-700">{item.college_name} • {item.department_name} • {item.programme || '-'}</p>
                         <div className="mt-3 grid gap-2 md:grid-cols-3">
                           <Input placeholder="Internship title" value={form.title} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, title: e.target.value } }))} />
@@ -622,7 +622,7 @@ export default function IndustryDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {industryInternships.length ? industryInternships.map((item) => (
+                  {ipoInternships.length ? ipoInternships.map((item) => (
                     <tr key={item.id} className="border-b border-slate-200">
                       <td className="py-3 pr-2">{item.internship_title || '-'}</td>
                       <td className="py-3 pr-2">{item.college_name || '-'}</td>
@@ -681,8 +681,8 @@ export default function IndustryDashboardPage() {
                   <p className="mt-1 text-xs text-slate-400">Completed: {application.completedAt ?? 'Not completed'}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => completeApplication(application.id)} disabled={Boolean(application.completedAt)}>Completed</Button>
-                    <Input placeholder="Feedback" value={feedbackDraft[application.id]?.feedback ?? application.industryFeedback ?? ''} onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: event.target.value, score: prev[application.id]?.score ?? String(application.industryScore ?? '') } }))} />
-                    <Input placeholder="Score /10" value={feedbackDraft[application.id]?.score ?? String(application.industryScore ?? '')} onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: prev[application.id]?.feedback ?? application.industryFeedback ?? '', score: event.target.value } }))} />
+                    <Input placeholder="Feedback" value={feedbackDraft[application.id]?.feedback ?? application.ipoFeedback ?? ''} onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: event.target.value, score: prev[application.id]?.score ?? String(application.ipoScore ?? '') } }))} />
+                    <Input placeholder="Score /10" value={feedbackDraft[application.id]?.score ?? String(application.ipoScore ?? '')} onChange={(event) => setFeedbackDraft((prev) => ({ ...prev, [application.id]: { feedback: prev[application.id]?.feedback ?? application.ipoFeedback ?? '', score: event.target.value } }))} />
                     <Button variant="secondary" onClick={() => submitFeedback(application.id)}>Save Feedback</Button>
                   </div>
                 </div>
@@ -692,7 +692,7 @@ export default function IndustryDashboardPage() {
 
           <Card className="rounded-[30px] p-6">
             <h2 className="text-2xl font-semibold text-slate-900">System Generated Documents</h2>
-            <p className="mt-2 text-sm text-slate-600">Download Internship Approval Letter and Industry Reply Letter.</p>
+            <p className="mt-2 text-sm text-slate-600">Download Internship Approval Letter and IPO Reply Letter.</p>
             <div className="mt-4 space-y-2">
               {documents.length ? documents.map((doc) => (
                 <div key={doc.id} className="flex flex-wrap items-center justify-between rounded-xl border border-slate-200 p-3">
@@ -702,7 +702,7 @@ export default function IndustryDashboardPage() {
                     <Button variant="secondary" onClick={() => downloadDocument(doc.id)}>Download PDF</Button>
                   </div>
                 </div>
-              )) : <p className="text-sm text-slate-700">No industry documents available yet.</p>}
+              )) : <p className="text-sm text-slate-700">No ipo documents available yet.</p>}
             </div>
             {docPreview ? <iframe title="Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
           </Card>

@@ -8,18 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
 
-type IndustryType = { id: string; name: string };
+type IPOType = { id: string; name: string };
 
-export default function IndustryJoinPage() {
+export default function IPOJoinPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [types, setTypes] = useState<IndustryType[]>([]);
+  const [types, setTypes] = useState<IPOType[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    apiRequest<IndustryType[]>('/api/industry-types')
+    apiRequest<IPOType[]>('/api/ipo-types')
       .then((response) => setTypes(response.data))
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load industry categories.'));
+      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load ipo categories.'));
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -33,19 +33,19 @@ export default function IndustryJoinPage() {
       return;
     }
     try {
-      await apiRequest<{ success: boolean }>('/api/industry/register', {
+      await apiRequest<{ success: boolean }>('/api/ipo/register', {
         method: 'POST',
         body: JSON.stringify({
           companyName: form.get('companyName'),
           email: form.get('email'),
           password: form.get('password'),
           businessActivity: form.get('businessActivity'),
-          industryTypeId: form.get('industryTypeId'),
+          ipoTypeId: form.get('ipoTypeId'),
         }),
       });
       router.push('/login');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to register industry profile.');
+      setError(reason instanceof Error ? reason.message : 'Unable to register ipo profile.');
     } finally {
       setLoading(false);
     }
@@ -57,15 +57,15 @@ export default function IndustryJoinPage() {
         <Link href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-cyan-200 hover:text-cyan-100">
           <ArrowLeft className="h-4 w-4" /> Back
         </Link>
-        <h1 className="text-3xl font-semibold text-white">Join as Internship Providing Organization (IPO)</h1>
+        <h1 className="text-3xl font-semibold text-white">Join as IPO (IPO)</h1>
         <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
           <div className="space-y-2"><label htmlFor="companyName">Company Name</label><input id="companyName" name="companyName" required /></div>
           <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
           <div className="space-y-2 md:col-span-2"><label htmlFor="businessActivity">Activity</label><textarea id="businessActivity" name="businessActivity" required rows={4} /></div>
           <div className="space-y-2">
-            <label htmlFor="industryTypeId">Type of Internship Providing Organization (IPO)</label>
-            <select id="industryTypeId" name="industryTypeId" required defaultValue="">
-              <option value="" disabled>Select industry type</option>
+            <label htmlFor="ipoTypeId">Type of IPO (IPO)</label>
+            <select id="ipoTypeId" name="ipoTypeId" required defaultValue="">
+              <option value="" disabled>Select ipo type</option>
               {types.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
             </select>
           </div>

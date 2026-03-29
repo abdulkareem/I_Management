@@ -34,10 +34,10 @@ export default function ExternalStudentDashboardPage() {
           <DataTable
             title="Available Internships"
             rows={(dashboard?.internships ?? []).map((i) => ({ ...i, id: i.id, action: i.applied ? (i.status ?? 'Applied') : 'Apply' }))}
-            columns={[{ key: 'title', label: 'Title' }, { key: 'industryName', label: 'Industry' }, { key: 'description', label: 'Description' }, { key: 'action', label: 'State' }]}
+            columns={[{ key: 'title', label: 'Title' }, { key: 'ipoName', label: 'IPO' }, { key: 'description', label: 'Description' }, { key: 'action', label: 'State' }]}
             actions={(row) => <Button disabled={row.applied} onClick={() => apply(row.id)}>{row.applied ? row.status ?? 'Applied' : 'Apply'}</Button>}
           />
-          <DataTable title="My Applications" rows={(dashboard?.applications ?? []).map((a) => ({ ...a, id: a.id }))} columns={[{ key: 'internshipTitle', label: 'Internship' }, { key: 'industryName', label: 'Industry' }, { key: 'status', label: 'Status' }]} />
+          <DataTable title="My Applications" rows={(dashboard?.applications ?? []).map((a) => ({ ...a, id: a.id }))} columns={[{ key: 'internshipTitle', label: 'Internship' }, { key: 'ipoName', label: 'IPO' }, { key: 'status', label: 'Status' }]} />
         </>
       )}
     </RoleDashboardShell>

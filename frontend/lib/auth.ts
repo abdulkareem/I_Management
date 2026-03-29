@@ -1,7 +1,7 @@
-import type { CollegeDashboard, IndustryDashboard, Role, SessionProfile, StudentDashboard } from '@/lib/types';
+import type { CollegeDashboard, IPODashboard, Role, SessionProfile, StudentDashboard } from '@/lib/types';
 import { apiRequest } from './api';
 
-export type DashboardPayload = StudentDashboard | CollegeDashboard | IndustryDashboard;
+export type DashboardPayload = StudentDashboard | CollegeDashboard | IPODashboard;
 export type SessionState = SessionProfile;
 
 const SESSION_KEY = 'internsuite.session';

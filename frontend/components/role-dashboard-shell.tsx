@@ -15,7 +15,7 @@ const roleLabel: Record<Role, string> = {
   SUPER_ADMIN: 'Super Admin',
   STUDENT: 'Student space',
   EXTERNAL_STUDENT: 'Student space',
-  INDUSTRY: 'Industry space',
+  INDUSTRY: 'IPO space',
   COLLEGE: 'College space',
   COLLEGE_ADMIN: 'College space',
   COORDINATOR: 'Department space',

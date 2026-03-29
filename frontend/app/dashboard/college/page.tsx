@@ -38,7 +38,7 @@ type InternshipItem = {
   alert: string;
 };
 
-type ApprovalQueueItem = { id: string; title: string; industry_name: string; assigned_department: string; status: string };
+type ApprovalQueueItem = { id: string; title: string; ipo_name: string; assigned_department: string; status: string };
 type ApplicationItem = { id: string; student_name: string; student_email: string; internship_title: string; status: string; created_at: string; application_type: 'INTERNAL' | 'EXTERNAL' };
 type EvaluationItem = { department: string; students_evaluated: number; pending_evaluations: number; submission_status: string };
 type ChartPoint = { label: string; value: number };
@@ -133,7 +133,7 @@ export default function CollegeDashboardPage() {
     { title: 'Internship Governance', description: 'Approve, reject, and close internships across all departments.' },
     { title: 'Application Control', description: 'Process internal/external applications and bulk decisions.' },
     { title: 'Department Analytics', description: 'Track participation, completion, and evaluation submissions.' },
-    { title: 'Industry Partnership (IPO)', description: 'Monitor active industry collaborations and engagement load.' },
+    { title: 'IPO Partnership (IPO)', description: 'Monitor active ipo collaborations and engagement load.' },
     { title: 'Compliance & Alerts', description: 'Review notifications, pending evaluations, and risk signals.' },
     { title: 'Capacity Planning', description: 'Watch vacancy fill ratios and prioritize department demand.' },
   ];
@@ -171,7 +171,7 @@ export default function CollegeDashboardPage() {
               <DataTable
                 title="Internship Approval Queue"
                 rows={data.approvalQueue.map((item) => ({ ...item, id: item.id }))}
-                columns={[{ key: 'title', label: 'Internship' }, { key: 'industry_name', label: 'Industry' }, { key: 'assigned_department', label: 'Assigned Dept' }, { key: 'status', label: 'Status' }]}
+                columns={[{ key: 'title', label: 'Internship' }, { key: 'ipo_name', label: 'IPO' }, { key: 'assigned_department', label: 'Assigned Dept' }, { key: 'status', label: 'Status' }]}
                 actions={(row) => (
                   <div className="flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => updateInternship(row.id, 'approve')}>Approve</Button>
@@ -188,7 +188,7 @@ export default function CollegeDashboardPage() {
 
               <DataTable
                 title="All Internships (College View)"
-                rows={data.internships.map((row) => ({ ...row, created_by: row.created_by === 'INDUSTRY' ? 'Industry' : 'Dept/College' })) as any}
+                rows={data.internships.map((row) => ({ ...row, created_by: row.created_by === 'INDUSTRY' ? 'IPO' : 'Dept/College' })) as any}
                 columns={[{ key: 'title', label: 'Internship Title' }, { key: 'created_by', label: 'Created By' }, { key: 'target_department', label: 'Target Department' }, { key: 'vacancy', label: 'Vacancy (Filled/Total)' }, { key: 'applications_count', label: 'Applications' }, { key: 'status', label: 'Status' }, { key: 'alert', label: 'Alert' }] as any}
                 actions={(row: any) => (
                   <div className="flex flex-wrap gap-2">

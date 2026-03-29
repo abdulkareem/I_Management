@@ -3,13 +3,13 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 const buttonStyles = {
-  primary: 'bg-blue-600 text-white shadow-sm hover:bg-blue-700',
-  secondary: 'border border-slate-300 bg-white text-slate-900 hover:bg-slate-100',
-  ghost: 'text-slate-900 hover:bg-slate-100',
+  primary: 'bg-indigo-600 text-white shadow-md shadow-indigo-200 hover:bg-indigo-700 focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:bg-slate-400',
+  secondary: 'border border-slate-300 bg-white text-slate-900 shadow-sm hover:bg-slate-50 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-slate-300 disabled:bg-slate-100',
+  ghost: 'text-slate-900 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-slate-300',
 } as const;
 
 const baseClass =
-  'inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-60';
+  'inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-70';
 
 export function Button({
   className,
