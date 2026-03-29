@@ -2532,47 +2532,82 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/applications/internal') {
-    const actor = requireRole(request, ['COLLEGE']);
+    const actor = requireRole(request, ['COLLEGE', 'DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
 
-    const rows = await env.DB.prepare(
-      `SELECT ia.id, ia.status, ia.created_at,
-              s.id AS student_id, s.name AS student_name, s.email AS student_email,
-              i.title AS internship_title,
-              d.name AS department_name
-       FROM internship_applications ia
-       INNER JOIN students s ON s.id = ia.student_id
-       INNER JOIN internships i ON i.id = ia.internship_id
-       INNER JOIN departments d ON d.id = s.department_id
-       WHERE s.college_id = ?
-         AND ia.status = 'pending'
-       ORDER BY ia.created_at DESC`,
-    ).bind(actor.id).all();
+    let rows;
+    if (actor.role === 'COLLEGE') {
+      rows = await env.DB.prepare(
+        `SELECT ia.id, ia.status, ia.created_at,
+                s.id AS student_id, s.name AS student_name, s.email AS student_email,
+                i.title AS internship_title,
+                d.name AS department_name
+         FROM internship_applications ia
+         INNER JOIN students s ON s.id = ia.student_id
+         INNER JOIN internships i ON i.id = ia.internship_id
+         INNER JOIN departments d ON d.id = s.department_id
+         WHERE s.college_id = ?
+           AND ia.status = 'pending'
+         ORDER BY ia.created_at DESC`,
+      ).bind(actor.id).all();
+    } else {
+      rows = await env.DB.prepare(
+        `SELECT ia.id, ia.status, ia.created_at,
+                COALESCE(s.id, es.id) AS student_id,
+                COALESCE(s.name, es.name) AS student_name,
+                COALESCE(s.email, es.email) AS student_email,
+                i.title AS internship_title
+         FROM internship_applications ia
+         INNER JOIN internships i ON i.id = ia.internship_id
+         LEFT JOIN students s ON s.id = ia.student_id
+         LEFT JOIN external_students es ON es.id = ia.external_student_id
+         WHERE i.department_id = ?
+           AND ia.student_id IS NOT NULL
+         ORDER BY ia.created_at DESC`,
+      ).bind(actor.id).all();
+    }
 
     return ok('Internal applications fetched', rows.results ?? []);
   }
 
   if (request.method === 'GET' && pathname === '/api/applications/external') {
-    const actor = requireRole(request, ['COLLEGE']);
+    const actor = requireRole(request, ['COLLEGE', 'DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
 
-    const rows = await env.DB.prepare(
-      `SELECT ia.id, ia.status, ia.created_at,
-              COALESCE(es.name, s.name) AS student_name,
-              COALESCE(es.email, s.email) AS student_email,
-              i.title AS internship_title,
-              c.name AS college_name
-       FROM internship_applications ia
-       INNER JOIN internships i ON i.id = ia.internship_id
-       INNER JOIN departments d ON d.id = i.department_id
-       INNER JOIN colleges c ON c.id = d.college_id
-       LEFT JOIN students s ON s.id = ia.student_id
-       LEFT JOIN external_students es ON es.id = ia.external_student_id
-       WHERE c.id = ?
-         AND (s.college_id IS NULL OR s.college_id <> c.id)
-         AND ia.status = 'pending'
-       ORDER BY ia.created_at DESC`,
-    ).bind(actor.id).all();
+    let rows;
+    if (actor.role === 'COLLEGE') {
+      rows = await env.DB.prepare(
+        `SELECT ia.id, ia.status, ia.created_at,
+                COALESCE(es.name, s.name) AS student_name,
+                COALESCE(es.email, s.email) AS student_email,
+                i.title AS internship_title,
+                c.name AS college_name
+         FROM internship_applications ia
+         INNER JOIN internships i ON i.id = ia.internship_id
+         INNER JOIN departments d ON d.id = i.department_id
+         INNER JOIN colleges c ON c.id = d.college_id
+         LEFT JOIN students s ON s.id = ia.student_id
+         LEFT JOIN external_students es ON es.id = ia.external_student_id
+         WHERE c.id = ?
+           AND (s.college_id IS NULL OR s.college_id <> c.id)
+           AND ia.status = 'pending'
+         ORDER BY ia.created_at DESC`,
+      ).bind(actor.id).all();
+    } else {
+      rows = await env.DB.prepare(
+        `SELECT ia.id, ia.status, ia.created_at,
+                COALESCE(es.name, s.name) AS student_name,
+                COALESCE(es.email, s.email) AS student_email,
+                i.title AS internship_title
+         FROM internship_applications ia
+         INNER JOIN internships i ON i.id = ia.internship_id
+         LEFT JOIN students s ON s.id = ia.student_id
+         LEFT JOIN external_students es ON es.id = ia.external_student_id
+         WHERE i.department_id = ?
+           AND (ia.external_student_id IS NOT NULL OR ia.is_external = 1)
+         ORDER BY ia.created_at DESC`,
+      ).bind(actor.id).all();
+    }
 
     return ok('External applications fetched', rows.results ?? []);
   }
