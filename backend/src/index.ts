@@ -4003,6 +4003,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     });
 
     if (app.student_id) {
+      await generateDocument(env, { type: 'approval', internshipId: app.internship_id, studentId: app.student_id, actor });
       await generateDocument(env, { type: 'allotment', internshipId: app.internship_id, studentId: app.student_id, actor });
       await generateDocument(env, { type: 'feedback', internshipId: app.internship_id, studentId: app.student_id, actor });
     }
@@ -6338,7 +6339,7 @@ async function canAccessDocument(env: EnvBindings, actor: { id: string; role: Au
     return Boolean(match) && ['approval', 'reply', 'feedback'].includes(String(row.type));
   }
   if (actor.role === 'STUDENT') {
-    return row.student_id === actor.id && ['allotment', 'feedback'].includes(String(row.type));
+    return row.student_id === actor.id && ['approval', 'allotment', 'feedback'].includes(String(row.type));
   }
   return false;
 }
@@ -6347,7 +6348,7 @@ async function listDocumentsForActor(env: EnvBindings, actor: { id: string; role
   if (actor.role === 'STUDENT') {
     const rows = await env.DB.prepare(
       `SELECT id, internship_id, student_id, type, generated_at, file_url, generated_by
-       FROM documents WHERE student_id = ? AND type IN ('allotment', 'feedback')
+       FROM documents WHERE student_id = ? AND type IN ('approval', 'allotment', 'feedback')
        ORDER BY generated_at DESC`,
     ).bind(actor.id).all<any>();
     return rows.results ?? [];
@@ -6405,13 +6406,21 @@ function renderDocumentHtml(type: DocumentType, data: any): string {
 
   const period = `${escapeHtml(data.internship.duration)}`;
   if (type === 'approval') {
-    return base.replace('{{BODY}}', `<h1>Internship Approval Letter</h1>
-      <p>To: ${escapeHtml(data.internship.industry_name)}</p>
-      <p>Department: ${escapeHtml(data.internship.department_name)}</p>
-      <p>College: ${escapeHtml(data.internship.college_name)}</p>
-      <p>Internship Title: ${escapeHtml(data.internship.title)}</p>
-      <p>Duration: ${period}</p>
-      <p>Type: ${escapeHtml(data.internship.internship_category ?? 'FREE')}</p>`);
+    return base.replace('{{BODY}}', `<h1>INTERNSHIP APPROVAL LETTER</h1>
+      <p>Ref No: _____________________ &nbsp;&nbsp;&nbsp; Date: ${escapeHtml(data.systemLog.generatedOn)}</p>
+      <p><strong>To</strong><br/>The Manager / Authorized Signatory<br/>${escapeHtml(data.internship.industry_name)}</p>
+      <p><strong>Subject:</strong> Approval of Internship Proposal-reg.</p>
+      <p>This is to inform that the Department of ${escapeHtml(data.internship.department_name)}, ${escapeHtml(data.internship.college_name)}, has reviewed and approved the internship proposal in collaboration with your organization.</p>
+      <p>The internship titled “${escapeHtml(data.internship.title)}” is aligned with the prescribed Programme Outcomes (PO), Programme Specific Outcomes (PSO), and Course Outcomes (CO).</p>
+      <ul>
+        <li>Department: ${escapeHtml(data.internship.department_name)}</li>
+        <li>Programme: ${escapeHtml(data.internship.department_name)}</li>
+        <li>Duration: ${period} hours</li>
+        <li>Mode: Offline</li>
+        <li>Name of Student: ${escapeHtml(data.student?.name ?? '-')}</li>
+        <li>University Reg. No.: ${escapeHtml(data.student?.university_reg_number ?? '-')}</li>
+      </ul>
+      <p>You are requested to facilitate the internship and assign a supervisor for monitoring the student.</p>`);
   }
   if (type === 'reply') {
     return base.replace('{{BODY}}', `<h1>Industry Reply Letter</h1>
@@ -6425,13 +6434,16 @@ function renderDocumentHtml(type: DocumentType, data: any): string {
   }
   if (type === 'allotment') {
     return base.replace('{{BODY}}', `<h1>Student Internship Allotment Letter</h1>
+      <p>Ref No: _____________________ &nbsp;&nbsp;&nbsp; Date: ${escapeHtml(data.systemLog.generatedOn)}</p>
       <p>Student Name: ${escapeHtml(data.student?.name ?? '-')}</p>
       <p>Register Number: ${escapeHtml(data.student?.university_reg_number ?? '-')}</p>
+      <p>Programme: ${escapeHtml(data.internship.department_name)}</p>
       <p>Organization: ${escapeHtml(data.internship.industry_name)}</p>
       <p>Duration: ${period}</p>
       <p>Period: ${period}</p>
-      <p><strong>Instructions:</strong></p>
-      <ul><li>No direct communication with industry</li><li>Follow department instructions</li></ul>`);
+      <p><strong>You are required to:</strong></p>
+      <ul><li>Maintain a Work Register (daily log)</li><li>Follow discipline and ethical standards</li><li>Submit Internship Report after completion</li></ul>
+      <p>Your performance will be evaluated based on attendance, work register, report and viva.</p>`);
   }
   return base.replace('{{BODY}}', `<h1>Performance Feedback Form (Industry)</h1>
     <p>Student Name: ${escapeHtml(data.student?.name ?? '-')}</p>
