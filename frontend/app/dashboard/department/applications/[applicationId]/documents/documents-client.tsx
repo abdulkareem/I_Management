@@ -17,6 +17,7 @@ export default function DocumentsClient({ applicationId }: DocumentsClientProps)
   const [hasFeedback, setHasFeedback] = useState(false);
   const [hasEvaluation, setHasEvaluation] = useState(false);
   const [hasOutcomes, setHasOutcomes] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!applicationId) return;
@@ -32,6 +33,15 @@ export default function DocumentsClient({ applicationId }: DocumentsClientProps)
         setHasEvaluation(false);
         setHasOutcomes(false);
       });
+    const session = localStorage.getItem('internsuite.session');
+    const token = session ? JSON.parse(session).token : '';
+    fetch(`${API_BASE_URL}/api/department/applications/${applicationId}/documents/pdf`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => res.blob())
+      .then((blob) => setPdfUrl(URL.createObjectURL(blob)))
+      .catch(() => setPdfUrl(null));
+    return () => {
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    };
   }, [applicationId]);
 
   async function downloadBundle() {
@@ -71,6 +81,7 @@ export default function DocumentsClient({ applicationId }: DocumentsClientProps)
           <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${applicationId}/evaluation`)}>Open Evaluation</Button>
           <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${applicationId}/outcome-assessment`)}>Open Outcome</Button>
         </div>
+        {pdfUrl ? <iframe title="Application Documents PDF" className="mt-4 h-[640px] w-full rounded-lg border border-slate-200" src={pdfUrl} /> : null}
         </Card>
       )}
     </RoleDashboardShell>

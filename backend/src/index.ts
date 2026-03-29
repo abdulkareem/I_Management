@@ -19,6 +19,12 @@ type Role =
 
 type JsonMap = Record<string, unknown>;
 type DocumentType = 'approval' | 'reply' | 'allotment' | 'feedback';
+
+function generateReferenceNumber(date = new Date()): string {
+  const year = date.getUTCFullYear();
+  const serial = Math.floor(100000 + Math.random() * 900000);
+  return `IPO/${serial}/${year}`;
+}
 type DepartmentDocumentType = DocumentType;
 
 type AuthSession = {
@@ -1478,10 +1484,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
                 ia.student_id,
                 ia.internship_id,
                 ipf.id AS performance_feedback_id,
+                s.university_reg_number AS student_register_number,
                 COALESCE(s.name, es.name) AS student_name,
                 COALESCE(s.email, es.email) AS student_email,
                 COALESCE(c.name, es.college, 'External') AS college_name,
-                i.title AS opportunity_title
+                i.title AS opportunity_title,
+                i.duration AS internship_duration,
+                ind.name AS organization_name,
+                ind.supervisor_name AS supervisor_name
          FROM internship_applications ia
          INNER JOIN internships i ON i.id = ia.internship_id
          LEFT JOIN internship_performance_feedback ipf ON ipf.application_id = ia.id
@@ -1522,6 +1532,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         studentEmail: row.student_email,
         collegeName: row.college_name,
         opportunityTitle: row.opportunity_title,
+        registerNumber: row.student_register_number ?? '',
+        internshipDuration: row.internship_duration ?? '',
+        organizationName: row.organization_name ?? '',
+        supervisorName: row.supervisor_name ?? '',
         status: row.status.toUpperCase(),
         createdAt: row.created_at,
         completedAt: row.completed_at,
@@ -1673,24 +1687,38 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(applicationId, actor.id).first<any>();
     if (!row) return errorResponse(404, 'Application not found');
 
-    const feedback = await env.DB.prepare(
-      `SELECT * FROM internship_performance_feedback WHERE application_id = ?`,
-    ).bind(applicationId).first<any>();
+    const feedback = await env.DB.prepare(`SELECT * FROM internship_performance_feedback WHERE application_id = ?`).bind(applicationId).first<any>();
     const evaluation = await env.DB.prepare(
-      `SELECT marks, feedback FROM evaluations WHERE application_id = ?`,
+      `SELECT attendance_marks, work_register_marks, presentation_marks, viva_marks, report_marks, final_total
+       FROM internship_evaluations WHERE application_id = ?`,
     ).bind(applicationId).first<any>();
-    const outcome = await env.DB.prepare(
-      `SELECT AVG(weighted_score) AS outcome_score FROM outcome_results WHERE application_id = ?`,
-    ).bind(applicationId).first<any>();
+    const outcomes = await env.DB.prepare(
+      `SELECT outcome_id, outcome_type, weighted_score, percentage
+       FROM outcome_results WHERE application_id = ? ORDER BY outcome_type, outcome_id`,
+    ).bind(applicationId).all<any>();
+    const docs = await env.DB.prepare(
+      `SELECT id, type FROM documents
+       WHERE internship_id = ? AND ifnull(student_id, '') = ifnull(?, '')
+       ORDER BY generated_at ASC`,
+    ).bind(row.internship_id, row.student_id ?? null).all<any>();
     const lines = [
       'INTERNSHIP CONSOLIDATED DOCUMENT PACK',
       '',
-      '1) Internship Approval & Allotment Summary',
+      '1) Internship Approval Letter',
       `Student: ${row.student_name ?? '-'}`,
       `Register Number: ${row.register_number ?? '-'}`,
       `Internship: ${row.internship_title ?? '-'}`,
       `Organization: ${row.industry_name ?? '-'}`,
       '',
+    ];
+    for (const doc of (docs.results ?? [])) {
+      const payload = await fetchDocumentPayload(env, String(doc.id), actor);
+      if (!payload) continue;
+      lines.push(`--- ${String(doc.type).toUpperCase()} LETTER ---`);
+      lines.push(...payload.html.replace(/<[^>]+>/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 80));
+      lines.push('');
+    }
+    lines.push(
       '2) Internship Performance Feedback Form',
       `Supervisor: ${feedback?.supervisor_name ?? '-'}`,
       `Duration: ${feedback?.duration ?? '-'}`,
@@ -1705,19 +1733,25 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       `Recommendation: ${feedback?.recommendation ?? '-'}`,
       '',
       '3) Evaluation and Marksheet',
-      `Evaluation Marks: ${evaluation?.marks ?? '-'}`,
-      `Evaluation Feedback: ${evaluation?.feedback ?? '-'}`,
+      `Attendance Marks: ${evaluation?.attendance_marks ?? '-'}`,
+      `Work Register Marks: ${evaluation?.work_register_marks ?? '-'}`,
+      `Presentation Marks: ${evaluation?.presentation_marks ?? '-'}`,
+      `Viva Marks: ${evaluation?.viva_marks ?? '-'}`,
+      `Report Marks: ${evaluation?.report_marks ?? '-'}`,
+      `Final Total: ${evaluation?.final_total ?? '-'}`,
       '',
       '4) Outcome Evaluation Sheet',
-      `Outcome Score (Average): ${outcome?.outcome_score ?? '-'}`,
-    ];
+    );
+    for (const item of (outcomes.results ?? [])) {
+      lines.push(`${item.outcome_type}-${item.outcome_id}: ${item.weighted_score}/5 (${item.percentage}%)`);
+    }
     const pdfBytes = buildSimplePdf(lines);
     return new Response(pdfBytes.buffer as ArrayBuffer, {
       status: 200,
       headers: {
         ...CORS_HEADERS,
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="application-${applicationId}-documents.pdf"`,
+        'Content-Disposition': `inline; filename="application-${applicationId}-documents.pdf"`,
       },
     });
   }
@@ -3188,6 +3222,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     await generateDocument(env, {
       type: 'reply',
       internshipId: application.internship_id,
+      studentId: application.student_id ?? undefined,
       actor,
       supervisorName: application.supervisor_name ?? 'Industry Supervisor',
       supervisorDesignation: 'Industry Supervisor',
@@ -6603,6 +6638,9 @@ async function generateDocument(
   const metadataJson = JSON.stringify({
     supervisorName: params.supervisorName ?? null,
     supervisorDesignation: params.supervisorDesignation ?? null,
+    referenceNo: generateReferenceNumber(),
+    issuedDate: generatedAt.slice(0, 10),
+    place: 'Tirurangadi',
   });
   if (existing?.id) {
     await env.DB.prepare(
@@ -6638,10 +6676,11 @@ async function generateDocument(
 
 async function buildDocumentData(
   env: EnvBindings,
-  params: { type: DocumentType; internshipId: string; studentId?: string; actor: { id: string; role: AuthSession['user']['role'] }; supervisorName?: string; supervisorDesignation?: string },
+  params: { type: DocumentType; internshipId: string; studentId?: string; actor: { id: string; role: AuthSession['user']['role'] }; supervisorName?: string; supervisorDesignation?: string; documentMeta?: { referenceNo?: string; issuedDate?: string; place?: string } },
 ) {
   const internship = await env.DB.prepare(
     `SELECT i.id, i.title, i.duration, i.internship_category, i.created_at, i.updated_at, i.department_id, i.industry_id,
+            i.programme, i.mapped_po, i.mapped_pso, i.mapped_co,
             d.name AS department_name, c.name AS college_name, ind.name AS industry_name
      FROM internships i
      LEFT JOIN departments d ON d.id = i.department_id
@@ -6697,6 +6736,7 @@ async function buildDocumentData(
     },
     supervisorName: params.supervisorName ?? null,
     supervisorDesignation: params.supervisorDesignation ?? null,
+    documentMeta: params.documentMeta ?? null,
   };
 }
 
@@ -6713,6 +6753,11 @@ async function fetchDocumentPayload(env: EnvBindings, documentId: string, actor:
     actor,
     supervisorName: metadata.supervisorName ?? undefined,
     supervisorDesignation: metadata.supervisorDesignation ?? undefined,
+    documentMeta: {
+      referenceNo: metadata.referenceNo ?? undefined,
+      issuedDate: metadata.issuedDate ?? undefined,
+      place: metadata.place ?? undefined,
+    },
   });
   const html = renderDocumentHtml(row.type, data);
   return {
@@ -6776,7 +6821,7 @@ async function canAccessDocument(env: EnvBindings, actor: { id: string; role: Au
     return Boolean(match) && ['approval', 'reply', 'feedback'].includes(String(row.type));
   }
   if (actor.role === 'STUDENT') {
-    return row.student_id === actor.id && ['approval', 'allotment', 'feedback'].includes(String(row.type));
+    return row.student_id === actor.id && ['approval', 'reply', 'allotment', 'feedback'].includes(String(row.type));
   }
   return false;
 }
@@ -6785,7 +6830,7 @@ async function listDocumentsForActor(env: EnvBindings, actor: { id: string; role
   if (actor.role === 'STUDENT') {
     const rows = await env.DB.prepare(
       `SELECT id, internship_id, student_id, type, generated_at, file_url, generated_by
-       FROM documents WHERE student_id = ? AND type IN ('approval', 'allotment', 'feedback')
+       FROM documents WHERE student_id = ? AND type IN ('approval', 'reply', 'allotment', 'feedback')
        ORDER BY generated_at DESC`,
     ).bind(actor.id).all<any>();
     return rows.results ?? [];
@@ -6842,40 +6887,63 @@ function renderDocumentHtml(type: DocumentType, data: any): string {
     </body></html>`;
 
   const period = `${escapeHtml(data.internship.duration)}`;
+  const referenceNo = escapeHtml(data.documentMeta?.referenceNo ?? generateReferenceNumber());
+  const issuedDate = escapeHtml(data.documentMeta?.issuedDate ?? new Date().toISOString().slice(0, 10));
+  const place = escapeHtml(data.documentMeta?.place ?? 'Tirurangadi');
+  const programme = escapeHtml(data.internship.programme ?? data.internship.department_name ?? '-');
+  const mappedPO = escapeHtml(data.internship.mapped_po ?? '-');
+  const mappedPSO = escapeHtml(data.internship.mapped_pso ?? '-');
+  const mappedCO = escapeHtml(data.internship.mapped_co ?? '-');
   if (type === 'approval') {
-    return base.replace('{{BODY}}', `<h1>INTERNSHIP APPROVAL LETTER</h1>
-      <p>Ref No: _____________________ &nbsp;&nbsp;&nbsp; Date: ${escapeHtml(data.systemLog.generatedOn)}</p>
+    return base.replace('{{BODY}}', `<h1>DEPARTMENT OF ${escapeHtml(data.internship.department_name)}</h1>
+      <h2>INTERNSHIP APPROVAL LETTER</h2>
+      <p>Ref No: ${referenceNo} &nbsp;&nbsp;&nbsp; Date: ${issuedDate}</p>
       <p><strong>To</strong><br/>The Manager / Authorized Signatory<br/>${escapeHtml(data.internship.industry_name)}</p>
       <p><strong>Subject:</strong> Approval of Internship Proposal-reg.</p>
       <p>This is to inform that the Department of ${escapeHtml(data.internship.department_name)}, ${escapeHtml(data.internship.college_name)}, has reviewed and approved the internship proposal in collaboration with your organization.</p>
       <p>The internship titled “${escapeHtml(data.internship.title)}” is aligned with the prescribed Programme Outcomes (PO), Programme Specific Outcomes (PSO), and Course Outcomes (CO).</p>
       <ul>
         <li>Department: ${escapeHtml(data.internship.department_name)}</li>
-        <li>Programme: ${escapeHtml(data.internship.department_name)}</li>
+        <li>Programme: ${programme}</li>
         <li>Duration: ${period} hours</li>
         <li>Mode: Offline</li>
+        <li>Mapped POs: ${mappedPO}</li>
+        <li>Mapped PSOs: ${mappedPSO}</li>
+        <li>Mapped COs: ${mappedCO}</li>
         <li>Assigned Supervisor: ${escapeHtml(data.supervisorName ?? 'Not specified')}</li>
         <li>Name of Student: ${escapeHtml(data.student?.name ?? '-')}</li>
         <li>University Reg. No.: ${escapeHtml(data.student?.university_reg_number ?? '-')}</li>
       </ul>
-      <p>You are requested to facilitate the internship and assign a supervisor for monitoring the student.</p>`);
+      <p>You are requested to facilitate the internship and assign a supervisor for monitoring the student.</p>
+      <div style="page-break-before: always;"></div>
+      <h1>DEPARTMENT OF ${escapeHtml(data.internship.department_name)}</h1>
+      <h2>STUDENT INTERNSHIP ALLOTMENT LETTER</h2>
+      <p>Ref No: ${referenceNo} &nbsp;&nbsp;&nbsp; Date: ${issuedDate}</p>
+      <p>To ${escapeHtml(data.student?.name ?? '-')}<br/>Register No: ${escapeHtml(data.student?.university_reg_number ?? '-')}<br/>Programme: ${programme}</p>
+      <p>You are hereby allotted to undergo internship at ${escapeHtml(data.internship.industry_name)}. Duration: ${period} hours.</p>`);
   }
   if (type === 'reply') {
-    return base.replace('{{BODY}}', `<h1>Industry Reply Letter</h1>
-      <p>Internship Title: ${escapeHtml(data.internship.title)}</p>
-      <p>Department Name: ${escapeHtml(data.internship.department_name)}</p>
-      <p>College Name: ${escapeHtml(data.internship.college_name)}</p>
-      <p>Assigned Supervisor: ${escapeHtml(data.supervisorName ?? 'Not specified')}</p>
-      <p>Designation: ${escapeHtml(data.supervisorDesignation ?? 'Not specified')}</p>
-      <p>Confirmation: We confirm support for monitoring and evaluation.</p>
-      <p><strong>Supervisor assigned for monitoring and evaluation.</strong></p>`);
+    return base.replace('{{BODY}}', `<h1>Acceptance / Invitation Letter</h1>
+      <p>Ref No: ${referenceNo} &nbsp;&nbsp;&nbsp; Date: ${issuedDate}</p>
+      <p>To<br/>The Head of the Department<br/>Department of ${escapeHtml(data.internship.department_name)}<br/>${escapeHtml(data.internship.college_name)}<br/>Affiliated to University of Calicut<br/>${place}</p>
+      <p><strong>Subject:</strong> Acceptance of Internship Proposal and Student Invitation-reg.</p>
+      <p>With reference to your Internship Approval Letter, we are pleased to inform you that our organization has accepted the internship proposal titled: “${escapeHtml(data.internship.title)}”.</p>
+      <ul>
+        <li>Department: ${escapeHtml(data.internship.department_name)}</li>
+        <li>Programme: ${programme}</li>
+        <li>Mode: Offline</li>
+        <li>Duration: ${period} hours</li>
+        <li>Internship Type: ${escapeHtml(data.internship.internship_category ?? 'FREE')}</li>
+      </ul>
+      <p><strong>Student Details</strong><br/>Name: ${escapeHtml(data.student?.name ?? '-')}<br/>University Register No.: ${escapeHtml(data.student?.university_reg_number ?? '-')}</p>
+      <p><strong>Supervisor Details (IPO)</strong><br/>Name: ${escapeHtml(data.supervisorName ?? '-')}<br/>Designation: ${escapeHtml(data.supervisorDesignation ?? '-')}</p>`);
   }
   if (type === 'allotment') {
     return base.replace('{{BODY}}', `<h1>Student Internship Allotment Letter</h1>
-      <p>Ref No: _____________________ &nbsp;&nbsp;&nbsp; Date: ${escapeHtml(data.systemLog.generatedOn)}</p>
+      <p>Ref No: ${referenceNo} &nbsp;&nbsp;&nbsp; Date: ${issuedDate}</p>
       <p>Student Name: ${escapeHtml(data.student?.name ?? '-')}</p>
       <p>Register Number: ${escapeHtml(data.student?.university_reg_number ?? '-')}</p>
-      <p>Programme: ${escapeHtml(data.internship.department_name)}</p>
+      <p>Programme: ${programme}</p>
       <p>Organization: ${escapeHtml(data.internship.industry_name)}</p>
       <p>Duration: ${period}</p>
       <p>Period: ${period}</p>
