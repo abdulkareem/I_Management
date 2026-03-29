@@ -21,6 +21,24 @@ type DepartmentProfile = { id: string; name: string; coordinator_name: string };
 type InternshipType = 'FREE' | 'PAID' | 'STIPEND';
 type StipendFrequency = 'DAY' | 'WEEK' | 'MONTH';
 type ApplicableTo = 'INTERNAL' | 'EXTERNAL';
+type DepartmentSummary = {
+  name: string;
+  coordinator_name: string;
+  coordinator_email: string;
+  internships_count: number;
+  pending_count: number;
+  ideas_count: number;
+  programmes_count: number;
+};
+type DepartmentAnalytics = {
+  total_students: number;
+  total_internships: number;
+  completed_internships: number;
+  ongoing_internships: number;
+  pending_evaluations: number;
+  ipo_engagement_count: number;
+  department_performance_score: number;
+};
 
 export default function DepartmentDashboardPage() {
   const router = useRouter();
@@ -67,18 +85,23 @@ export default function DepartmentDashboardPage() {
   const [outcomeAssessmentForm, setOutcomeAssessmentForm] = useState({ outcomeType: 'CO', outcomeId: '', studentScore: '0', supervisorScore: '0', coordinatorScore: '0' });
   const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>([]);
   const [docPreview, setDocPreview] = useState<string | null>(null);
+  const [summary, setSummary] = useState<DepartmentSummary | null>(null);
+  const [analytics, setAnalytics] = useState<DepartmentAnalytics | null>(null);
 
   async function load() {
-    const [internshipsRes, applicationsRes, requestsRes, iposRes, programsRes, cosRes, posRes, docsRes, profileRes] = await Promise.all([
+    const [internshipsRes, internalApplicationsRes, externalApplicationsRes, requestsRes, linkedIposRes, programsRes, cosRes, posRes, docsRes, profileRes, summaryRes, analyticsRes] = await Promise.all([
       fetchWithSession<DepartmentDashboard['internships']>('/api/department/internships'),
-      fetchWithSession<DepartmentDashboard['applications']>('/api/department/applications'),
+      fetchWithSession<DepartmentDashboard['applications']>('/api/applications/internal'),
+      fetchWithSession<DepartmentDashboard['applications']>('/api/applications/external'),
       fetchWithSession<DepartmentDashboard['ipoRequests']>('/api/department/ipo-requests'),
-      fetchWithSession<IPO[]>('/api/department/ipos'),
+      fetchWithSession<IPO[]>('/api/department/linked-ipos'),
       fetchWithSession<DepartmentProgram[]>('/api/department/programs'),
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-cos'),
       fetchWithSession<OutcomeDefinition[]>('/api/department/internship-pos'),
       fetchWithSession<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>('/api/documents/my'),
       fetchWithSession<DepartmentProfile>('/api/department/profile'),
+      fetchWithSession<DepartmentSummary>('/api/department/dashboard-summary'),
+      fetchWithSession<DepartmentAnalytics>('/api/department/analytics'),
     ]);
 
     const loadedPrograms = (programsRes.data ?? []).map((item: any) => ({
@@ -96,13 +119,15 @@ export default function DepartmentDashboardPage() {
     );
 
     setProgramOutcomes(Object.fromEntries(outcomesEntries));
-    setDashboard({ internships: internshipsRes.data, applications: applicationsRes.data, ipoRequests: requestsRes.data });
-    setIPOs((iposRes.data ?? []).map((item: any) => ({ id: item.id, name: item.name, is_linked: item.is_linked })));
+    setDashboard({ internships: internshipsRes.data, applications: [...(internalApplicationsRes.data ?? []), ...(externalApplicationsRes.data ?? [])], ipoRequests: requestsRes.data });
+    setIPOs((linkedIposRes.data ?? []).map((item: any) => ({ id: item.id, name: item.name, is_linked: 1 })));
     setPrograms(loadedPrograms);
     setInternshipCos(cosRes.data ?? []);
     setInternshipPos(posRes.data ?? []);
     setDocuments(docsRes.data ?? []);
     setDepartmentProfile(profileRes.data ?? null);
+    setSummary(summaryRes.data ?? null);
+    setAnalytics(analyticsRes.data ?? null);
   }
 
   async function downloadDocument(documentId: string) {
@@ -130,6 +155,18 @@ export default function DepartmentDashboardPage() {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `student-${studentId}-documents.zip`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  async function downloadFullDepartmentReport() {
+    const session = localStorage.getItem('internsuite.session');
+    const token = session ? JSON.parse(session).token : '';
+    const res = await fetch(`${API_BASE_URL}/api/department/report/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `department-report.pdf`;
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -420,7 +457,12 @@ export default function DepartmentDashboardPage() {
     await load();
   }
 
-  const metrics = useMemo(() => ({ internships: dashboard?.internships.length ?? 0, pendingApplications: dashboard?.applications.filter((item) => item.status === 'pending').length ?? 0, ipoIdeas: dashboard?.ipoRequests.length ?? 0, programs: programs.length }), [dashboard, programs]);
+  const metrics = useMemo(() => ({
+    internships: summary?.internships_count ?? dashboard?.internships.length ?? 0,
+    pendingApplications: summary?.pending_count ?? dashboard?.applications.filter((item) => item.status === 'pending').length ?? 0,
+    ipoIdeas: summary?.ideas_count ?? dashboard?.ipoRequests.length ?? 0,
+    programs: summary?.programmes_count ?? programs.length,
+  }), [dashboard, programs, summary]);
   const session = loadSession();
   const dashboardTitle = `${session?.user?.email?.split('@')[0] ?? 'Department'} Dashboard`;
   const ipoAdvertisements = (dashboard?.internships ?? []).filter((item: any) => {
@@ -457,8 +499,9 @@ export default function DepartmentDashboardPage() {
           {error ? <Card className="rounded-[20px] p-4 text-rose-800">{error}</Card> : null}
           {successMessage ? <Card className="rounded-[20px] p-4 text-emerald-800">{successMessage}</Card> : null}
           <section className="grid gap-4 md:grid-cols-4">
-            <Card className="rounded-[20px] p-4">Department: {departmentProfile?.name ?? '-'}</Card>
-            <Card className="rounded-[20px] p-4">Coordinator: {departmentProfile?.coordinator_name ?? '-'}</Card>
+            <Card className="rounded-[20px] p-4">Department: {summary?.name ?? departmentProfile?.name ?? '-'}</Card>
+            <Card className="rounded-[20px] p-4">Coordinator: {summary?.coordinator_name ?? departmentProfile?.coordinator_name ?? '-'}</Card>
+            <Card className="rounded-[20px] p-4">Coordinator Email: {summary?.coordinator_email ?? '-'}</Card>
             <Card className="rounded-[20px] p-4">Internships: {metrics.internships}</Card>
             <Card className="rounded-[20px] p-4">Pending: {metrics.pendingApplications}</Card>
             <Card className="rounded-[20px] p-4">Ideas: {metrics.ipoIdeas}</Card>
@@ -466,6 +509,7 @@ export default function DepartmentDashboardPage() {
           </section>
 
           <div className="flex justify-end">
+            <Button variant="secondary" onClick={downloadFullDepartmentReport}>Download Full Department Report</Button>
             <Link href="/forgot-password" className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-900">Reset Password</Link>
           </div>
 
@@ -889,6 +933,19 @@ export default function DepartmentDashboardPage() {
               )) : <p className="text-sm text-slate-700">No documents generated yet.</p>}
             </div>
             {docPreview ? <iframe title="Department Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
+          </Card>
+
+          <Card className="rounded-[20px] p-5">
+            <h2 className="mb-3 text-xl font-semibold">Department Analytics</h2>
+            <div className="grid gap-2 text-sm md:grid-cols-2">
+              <p>Total Students: {analytics?.total_students ?? 0}</p>
+              <p>Total Internships: {analytics?.total_internships ?? 0}</p>
+              <p>Completed Internships: {analytics?.completed_internships ?? 0}</p>
+              <p>Ongoing Internships: {analytics?.ongoing_internships ?? 0}</p>
+              <p>Pending Evaluations: {analytics?.pending_evaluations ?? 0}</p>
+              <p>IPO Engagement Count: {analytics?.ipo_engagement_count ?? 0}</p>
+              <p className="md:col-span-2 font-semibold">Department Performance Score: {analytics?.department_performance_score ?? 0}</p>
+            </div>
           </Card>
 
           <Card className="rounded-[20px] p-5">
