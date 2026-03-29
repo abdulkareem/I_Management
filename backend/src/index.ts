@@ -822,7 +822,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        INNER JOIN colleges c ON c.id = d.college_id
        WHERE c.status = 'approved'
          AND c.is_active = 1
-         AND i.status = 'ACCEPTED'
+         AND i.status IN ('ACCEPTED', 'PUBLISHED')
          AND COALESCE(i.student_visibility, 0) = 1
        ORDER BY i.created_at DESC`,
     ).all<{
@@ -3724,8 +3724,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
            updated_at = datetime('now')
        WHERE id = ?
          AND (department_id = ? OR (department_id IS NULL AND college_id = (SELECT college_id FROM departments WHERE id = ?)))
-         AND COALESCE(industry_id, '') <> ''`,
-    ).bind(programId ?? null, mappedCo, mappedPo, mappedPso, INTERNSHIP_STATUS.ACCEPTED, submitDepartmentAdvertisementMatch[1], actor.id, actor.id).run();
+         AND (COALESCE(industry_id, '') <> '' OR COALESCE(ipo_id, '') <> '')`,
+    ).bind(programId ?? null, mappedCo, mappedPo, mappedPso, 'PUBLISHED', submitDepartmentAdvertisementMatch[1], actor.id, actor.id).run();
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Industry internship not found for this department');
     await generateDocument(env, { type: 'approval', internshipId: submitDepartmentAdvertisementMatch[1], actor });
@@ -4998,7 +4998,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
          ON ia.internship_id = i.id AND ia.student_id = ?
        LEFT JOIN industry_internships ii ON ii.title = i.title
        LEFT JOIN industries ind ON ind.id = ii.industry_id
-       WHERE i.status = 'ACCEPTED' AND COALESCE(i.student_visibility, 0) = 1
+       WHERE i.status IN ('ACCEPTED', 'PUBLISHED') AND COALESCE(i.student_visibility, 0) = 1
        ORDER BY i.created_at DESC`,
     ).bind(studentId).all(),
     env.DB.prepare(
@@ -5017,12 +5017,10 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        INNER JOIN colleges c ON c.id = d.college_id
        WHERE d.college_id = ?
          AND d.id = ?
-         AND i.status = 'ACCEPTED'
+         AND i.status IN ('ACCEPTED', 'PUBLISHED')
          AND COALESCE(i.student_visibility, 0) = 1
-         AND NOT (
-           COALESCE(i.is_external, 0) = 1
-           AND COALESCE(i.created_by, 'INDUSTRY') IN ('COLLEGE', 'DEPARTMENT')
-         )
+         AND COALESCE(i.is_external, 0) = 1
+         AND COALESCE(i.created_by, 'INDUSTRY') IN ('COLLEGE', 'DEPARTMENT')
          AND (
            COALESCE(i.gender_preference, 'BOTH') = 'BOTH'
            OR (COALESCE(i.gender_preference, 'BOTH') = 'BOYS' AND ? = 'MALE')
@@ -5047,7 +5045,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        LEFT JOIN industry_internships ii ON ii.title = i.title
        LEFT JOIN industries ind ON ind.id = ii.industry_id
        LEFT JOIN internship_applications ia ON ia.internship_id = i.id AND ia.student_id = ?
-       WHERE i.status = 'ACCEPTED'
+       WHERE i.status IN ('ACCEPTED', 'PUBLISHED')
          AND d.id = ?
          AND COALESCE(i.student_visibility, 0) = 1
          AND (

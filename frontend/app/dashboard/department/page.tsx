@@ -475,6 +475,10 @@ export default function DepartmentDashboardPage() {
     return (item.is_external === 1 || differentCollege) && item.status !== 'rejected';
   });
   const parseMappings = (value?: string | null) => value?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
+  const internshipTitleById = useMemo(
+    () => new Map((dashboard?.internships ?? []).map((item: any) => [item.id, item.title])),
+    [dashboard?.internships],
+  );
 
   const toggleDraftSelection = (internshipId: string, field: 'mappedCo' | 'mappedPo' | 'mappedPso', value: string) => {
     setAdvertisementDrafts((prev) => {
@@ -615,65 +619,6 @@ export default function DepartmentDashboardPage() {
                   <Button>Add Programme</Button>
                 </form>
               ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and manage programme entries.</p>}
-            </Card>
-            <Card className="rounded-[20px] p-4">
-              <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, ideas: !prev.ideas }))}>
-                Internship Suggestions Received from IPO
-              </button>
-              {expandedCard.ideas ? (
-                <form className="mt-3 grid gap-3" onSubmit={createIPORequest}>
-                  <select name="ipoId" value={selectedIPO} onChange={(e) => setSelectedIPO(e.target.value)} required>
-                    <option value="">Select registered Internship Provider Organization (IPO)</option>
-                    {ipos.map((ipo) => <option key={ipo.id} value={ipo.id}>{ipo.name}{ipo.is_linked ? '' : ' (auto-link on submit)'}</option>)}
-                  </select>
-                  {ipoDetails ? (
-                    <div className="rounded-lg border border-slate-200 p-2 text-sm text-slate-700">
-                      <p>Activity: {ipoDetails.business_activity}</p>
-                      <p>Category: {ipoDetails.category || '-'}</p>
-                      {!ipoDetails.is_linked ? <p className="mt-1 text-amber-200">This IPO is registered but not linked to your college yet. It will be linked automatically when you submit this idea.</p> : null}
-                      <p className="mt-1 font-semibold">Internship Provider Organization (IPO) listings & vacancies:</p>
-                      {ipoDetails.listings.map((listing) => (
-                        <p key={listing.id}>• {listing.title} ({listing.vacancy ?? 0} vacancy)</p>
-                      ))}
-                    </div>
-                  ) : null}
-                  <input name="internshipTitle" placeholder="Internship title" required />
-                  <textarea name="description" placeholder="Idea description" required />
-                  <select name="programId" value={selectedProgramForIdea} onChange={(e) => setSelectedProgramForIdea(e.target.value)}>
-                    <option value="">Select programme</option>
-                    {programs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
-                  {selectedProgramForIdea ? (
-                    <div className="grid gap-2 md:grid-cols-2">
-                      <div>
-                        <p className="text-sm font-semibold">Map Internship CO</p>
-                        {internshipCos.map((entry) => (
-                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedCo" value={entry.code} />{entry.code}</label>
-                        ))}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">Map Internship PO</p>
-                        {internshipPos.map((entry) => (
-                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPo" value={entry.code} />{entry.code}</label>
-                        ))}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">Map Programme PO</p>
-                        {selectedProgramOutcomes.filter((entry) => entry.type === 'PO').map((entry) => (
-                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedProgramPo" value={entry.value} />{entry.value}</label>
-                        ))}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">Map Programme PSO</p>
-                        {selectedProgramOutcomes.filter((entry) => entry.type === 'PSO').map((entry) => (
-                          <label key={entry.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="mappedPso" value={entry.value} />{entry.value}</label>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  <Button disabled={ideaSubmitting}>{ideaSubmitting ? 'Submitting...' : 'Submit Idea'}</Button>
-                </form>
-              ) : <p className="mt-2 text-sm text-slate-700">Tap to expand and propose internships to Internship Provider Organizations (IPOs).</p>}
             </Card>
             <Card className="rounded-[20px] p-4">
               <button type="button" className="w-full text-left text-lg font-semibold" onClick={() => setExpandedCard((prev) => ({ ...prev, outcomes: !prev.outcomes }))}>
@@ -924,7 +869,7 @@ export default function DepartmentDashboardPage() {
             <div className="space-y-2">
               {documents.length ? documents.map((doc) => (
                 <div key={doc.id} className="flex flex-wrap items-center justify-between rounded-lg border border-slate-200 p-3">
-                  <p className="text-sm text-slate-700">{doc.type.toUpperCase()} • Internship {doc.internship_id} • Student {doc.student_id ?? 'N/A'}</p>
+                  <p className="text-sm text-slate-700">{doc.type.toUpperCase()} • Internship {internshipTitleById.get(doc.internship_id) ?? 'Untitled internship'} • Student {doc.student_id ?? 'N/A'}</p>
                   <div className="flex gap-2">
                     <Button variant="secondary" onClick={() => previewDocument(doc.id)}>Preview</Button>
                     <Button variant="secondary" onClick={() => downloadDocument(doc.id)}>Download PDF</Button>
