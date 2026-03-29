@@ -157,7 +157,20 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (rawPathname === '/api/ipo/register') return '/api/industry/register';
     if (rawPathname === '/api/ipo/login') return '/api/industry/login';
     if (rawPathname.startsWith('/api/ipo/')) {
-      const keep = new Set(['/api/ipo/internship', '/api/ipo/application/accept', '/api/ipo/complete']);
+      const keep = new Set([
+        '/api/ipo/internship',
+        '/api/ipo/application/accept',
+        '/api/ipo/complete',
+        '/api/ipo/profile',
+        '/api/ipo/connect',
+        '/api/ipo/internship/suggest',
+        '/api/ipo/suggestions',
+        '/api/ipo/internships',
+        '/api/ipo/applications',
+        '/api/ipo/documents/generate',
+        '/api/ipo/analytics',
+        '/api/ipo/report/pdf',
+      ]);
       if (!keep.has(rawPathname)) return rawPathname.replace('/api/ipo/', '/api/industry/');
     }
     return rawPathname;
@@ -171,7 +184,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     || pathname.startsWith('/api/industry')
     || pathname.startsWith('/api/documents')
     || pathname.startsWith('/api/dashboard/industry')
+    || pathname.startsWith('/api/dashboard/ipo')
     || pathname === '/industry/dashboard'
+    || pathname === '/ipo/dashboard'
     || pathname.startsWith('/api/ipo')
     || pathname.startsWith('/api/applications')
     || pathname.startsWith('/api/industry-requests')
@@ -194,9 +209,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     || pathname === '/api/ipo/complete'
     || pathname === '/api/department/evaluate'
     || pathname.startsWith('/api/documents')
+    || pathname.startsWith('/api/ipo/documents')
+    || pathname === '/api/ipo/report/pdf'
   ) {
     await ensureInternshipWorkflowSchema(env);
     await ensureDocumentSchema(env);
+    await ensureIPOExtensionSchema(env);
   }
   if (pathname === '/api/student/register') {
     await ensureStudentRegistrationSchema(env);
@@ -1418,7 +1436,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     });
   }
 
-  if (request.method === 'GET' && (pathname === '/api/dashboard/industry' || pathname === '/industry/dashboard')) {
+  if (request.method === 'GET' && (pathname === '/api/dashboard/industry' || pathname === '/api/dashboard/ipo' || pathname === '/industry/dashboard' || pathname === '/ipo/dashboard')) {
     const actor = requireRole(request, ['INDUSTRY']);
     if (actor instanceof Response) return actor;
 
@@ -1808,6 +1826,289 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       .run();
 
     return ok('IPO profile updated');
+  }
+
+  if (request.method === 'GET' && pathname === '/api/ipo/profile') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+
+    const [profile, linkedColleges, publishedInternships, pendingApplications, acceptedApplications] = await Promise.all([
+      env.DB.prepare('SELECT name, company_address AS address, email FROM industries WHERE id = ?').bind(actor.id).first<{ name: string; address: string | null; email: string }>(),
+      env.DB.prepare("SELECT COUNT(DISTINCT college_id) AS count FROM college_industry_links WHERE industry_id = ? AND status IN ('approved', 'active')").bind(actor.id).first<{ count: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM internships WHERE industry_id = ? AND status = 'PUBLISHED'").bind(actor.id).first<{ count: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM internship_applications ia INNER JOIN internships i ON i.id = ia.internship_id WHERE i.industry_id = ? AND lower(ia.status) = 'pending'").bind(actor.id).first<{ count: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM internship_applications ia INNER JOIN internships i ON i.id = ia.internship_id WHERE i.industry_id = ? AND lower(ia.status) = 'accepted'").bind(actor.id).first<{ count: number }>(),
+    ]);
+
+    return ok('IPO profile fetched', {
+      name: profile?.name ?? '',
+      address: profile?.address ?? null,
+      email: profile?.email ?? '',
+      linked_colleges_count: Number(linkedColleges?.count ?? 0),
+      published_internships: Number(publishedInternships?.count ?? 0),
+      pending_applications: Number(pendingApplications?.count ?? 0),
+      accepted_applications: Number(acceptedApplications?.count ?? 0),
+    });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/ipo/connect') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    await ensureIPOExtensionSchema(env);
+
+    const body = await readBody(request);
+    const collegeId = required(body, ['college_id', 'collegeId', 'college']);
+    const departmentId = optional(body, ['department_id', 'departmentId', 'department']);
+
+    if (!collegeId) return badRequest('college_id is required');
+
+    const college = await env.DB.prepare("SELECT id FROM colleges WHERE id = ? AND status = 'approved' AND is_active = 1").bind(collegeId).first<{ id: string }>();
+    if (!college) return badRequest('Invalid college_id');
+
+    if (departmentId) {
+      const department = await env.DB.prepare('SELECT id FROM departments WHERE id = ? AND college_id = ? AND is_active = 1').bind(departmentId, collegeId).first<{ id: string }>();
+      if (!department) return badRequest('Invalid department_id for this college');
+    }
+
+    const duplicate = await env.DB.prepare(
+      `SELECT id FROM ipo_connections
+       WHERE ipo_id = ? AND college_id = ? AND COALESCE(department_id, '') = COALESCE(?, '')`,
+    ).bind(actor.id, collegeId, departmentId).first<{ id: string }>();
+    if (duplicate) return conflict('Connection already exists');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO ipo_connections (id, ipo_id, college_id, department_id) VALUES (?, ?, ?, ?)').bind(id, actor.id, collegeId, departmentId).run();
+
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO college_industry_links (id, college_id, industry_id, status, requested_by, requested_at, created_at)
+       VALUES (?, ?, ?, 'approved', 'industry', datetime('now'), datetime('now'))`,
+    ).bind(crypto.randomUUID(), collegeId, actor.id).run();
+
+    return created('IPO connected successfully', { id, ipo_id: actor.id, college_id: collegeId, department_id: departmentId ?? null });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/ipo/internship/suggest') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    await ensureIPOExtensionSchema(env);
+
+    const body = await readBody(request);
+    const collegeId = required(body, ['college_id', 'collegeId', 'college']);
+    const departmentId = optional(body, ['department_id', 'departmentId', 'department']);
+    const internshipTitle = required(body, ['internship_title', 'internshipTitle', 'title']);
+    const natureOfWork = required(body, ['nature_of_work', 'natureOfWork', 'description']);
+    const genderPreference = (optional(body, ['gender_preference', 'genderPreference']) ?? 'BOTH').toUpperCase();
+    const internshipCategory = (optional(body, ['internship_category', 'internshipCategory', 'paidOrFree']) ?? 'FREE').toUpperCase();
+    const duration = required(body, ['duration']);
+    const vacancy = Number(required(body, ['vacancy']));
+
+    if (!collegeId || !internshipTitle || !natureOfWork || !duration || !Number.isFinite(vacancy) || vacancy <= 0) {
+      return badRequest('college_id, internship_title, nature_of_work, duration and positive vacancy are required');
+    }
+    if (!['BOTH', 'BOYS', 'GIRLS'].includes(genderPreference)) return badRequest('gender_preference must be BOTH, BOYS, or GIRLS');
+    if (!['FREE', 'PAID', 'STIPEND'].includes(internshipCategory)) return badRequest('internship_category must be FREE, PAID, or STIPEND');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO ipo_suggestions (
+        id, ipo_id, college_id, department_id, internship_title, nature_of_work, gender_preference, internship_category, duration, vacancy, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+    ).bind(id, actor.id, collegeId, departmentId, internshipTitle, natureOfWork, genderPreference, internshipCategory, duration, Math.floor(vacancy)).run();
+
+    return created('Internship suggestion sent to department', { id, status: 'PENDING' });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/ipo/suggestions') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    await ensureIPOExtensionSchema(env);
+
+    const rows = await env.DB.prepare(
+      `SELECT s.id, s.internship_title, s.nature_of_work, s.gender_preference, s.internship_category, s.duration, s.vacancy, s.status,
+              c.name AS college_name, d.name AS department_name, s.created_at, s.updated_at
+       FROM ipo_suggestions s
+       INNER JOIN colleges c ON c.id = s.college_id
+       LEFT JOIN departments d ON d.id = s.department_id
+       WHERE s.ipo_id = ?
+       ORDER BY s.created_at DESC`,
+    ).bind(actor.id).all();
+
+    return ok('IPO suggestions fetched', rows.results ?? []);
+  }
+
+
+  if (request.method === 'GET' && pathname === '/api/ipo/internships') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT i.id,
+              i.title AS internship_title,
+              i.description,
+              c.name AS college_name,
+              d.name AS department_name,
+              i.status,
+              COALESCE(i.vacancy, i.remaining_vacancy, i.total_vacancy, 0) AS vacancy,
+              i.internship_category,
+              i.student_visibility,
+              i.created_at
+       FROM internships i
+       LEFT JOIN colleges c ON c.id = i.college_id
+       LEFT JOIN departments d ON d.id = i.department_id
+       WHERE i.industry_id = ?
+       ORDER BY i.created_at DESC`,
+    ).bind(actor.id).all();
+
+    return ok('IPO internships fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/ipo/applications') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const statusFilter = toText(url.searchParams.get('status')).toLowerCase();
+
+    let query = `SELECT ia.id, ia.status, ia.created_at, ia.updated_at,
+                        COALESCE(s.name, es.name) AS student_name,
+                        COALESCE(s.email, es.email) AS student_email,
+                        i.id AS internship_id,
+                        i.title AS internship_title,
+                        c.name AS college_name,
+                        d.name AS department_name
+                 FROM internship_applications ia
+                 INNER JOIN internships i ON i.id = ia.internship_id
+                 LEFT JOIN students s ON s.id = ia.student_id
+                 LEFT JOIN external_students es ON es.id = ia.external_student_id
+                 LEFT JOIN colleges c ON c.id = i.college_id
+                 LEFT JOIN departments d ON d.id = i.department_id
+                 WHERE i.industry_id = ?`;
+    const binds: Array<string> = [actor.id];
+    if (statusFilter) {
+      query += ' AND lower(ia.status) = ?';
+      binds.push(statusFilter);
+    }
+    query += ' ORDER BY ia.created_at DESC';
+
+    const rows = await env.DB.prepare(query).bind(...binds).all();
+    return ok('IPO applications fetched', rows.results ?? []);
+  }
+
+  const ipoApplicationActionMatch = pathname.match(/^\/api\/ipo\/applications\/([^/]+)\/(accept|reject)$/);
+  if (ipoApplicationActionMatch && request.method === 'POST') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const [, applicationId, action] = ipoApplicationActionMatch;
+    const nextStatus = action === 'accept' ? 'accepted' : 'rejected';
+
+    const result = await env.DB.prepare(
+      `UPDATE internship_applications
+       SET status = ?, reviewed_by_industry_id = ?, reviewed_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ? AND internship_id IN (SELECT id FROM internships WHERE industry_id = ?)`,
+    ).bind(nextStatus, actor.id, applicationId, actor.id).run();
+
+    if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
+    return ok(`Application ${action}ed`);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/ipo/documents/generate') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    await ensureIPOExtensionSchema(env);
+
+    const body = await readBody(request);
+    const internshipId = required(body, ['internship_id', 'internshipId']);
+    const applicationId = optional(body, ['application_id', 'applicationId']);
+    const mode = (optional(body, ['mode', 'type']) ?? 'both').toLowerCase();
+    const includeApproval = mode === 'both' || mode === 'approval';
+    const includeReply = mode === 'both' || mode === 'reply';
+    if (!internshipId) return badRequest('internship_id is required');
+
+    const internship = await env.DB.prepare('SELECT id, title FROM internships WHERE id = ? AND industry_id = ?').bind(internshipId, actor.id).first<{ id: string; title: string }>();
+    if (!internship) return badRequest('Invalid internship_id');
+
+    const generated: Array<{ id: string; type: string; file_url: string }> = [];
+    for (const type of ['approval', 'reply'] as const) {
+      if ((type === 'approval' && !includeApproval) || (type === 'reply' && !includeReply)) continue;
+      const id = crypto.randomUUID();
+      const fileUrl = `/api/ipo/documents/${id}/download`;
+      const html = `<!doctype html><html><body><h1>${type === 'approval' ? 'Internship Approval Letter' : 'IPO Reply Letter'}</h1><p>Internship: ${internship.title}</p><p>Generated at: ${new Date().toISOString()}</p></body></html>`;
+      await env.DB.prepare(
+        `INSERT INTO ipo_documents (id, ipo_id, internship_id, application_id, document_type, file_url, payload_html)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, actor.id, internshipId, applicationId, type, fileUrl, html).run();
+      generated.push({ id, type, file_url: fileUrl });
+    }
+
+    return created('IPO documents generated', generated);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/ipo/analytics') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+
+    const [internships, active, applications, accepted, rejected, engagement] = await Promise.all([
+      env.DB.prepare('SELECT COUNT(*) AS count FROM internships WHERE industry_id = ?').bind(actor.id).first<{ count: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM internships WHERE industry_id = ? AND status IN ('PUBLISHED','ACCEPTED','SENT_TO_INDUSTRY')").bind(actor.id).first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM internship_applications ia INNER JOIN internships i ON i.id = ia.internship_id WHERE i.industry_id = ?').bind(actor.id).first<{ count: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM internship_applications ia INNER JOIN internships i ON i.id = ia.internship_id WHERE i.industry_id = ? AND lower(ia.status) = 'accepted'").bind(actor.id).first<{ count: number }>(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM internship_applications ia INNER JOIN internships i ON i.id = ia.internship_id WHERE i.industry_id = ? AND lower(ia.status) = 'rejected'").bind(actor.id).first<{ count: number }>(),
+      env.DB.prepare('SELECT COUNT(DISTINCT college_id) AS count FROM college_industry_links WHERE industry_id = ?').bind(actor.id).first<{ count: number }>(),
+    ]);
+
+    return ok('IPO analytics fetched', {
+      total_internships: Number(internships?.count ?? 0),
+      active_internships: Number(active?.count ?? 0),
+      total_applications: Number(applications?.count ?? 0),
+      accepted_applications: Number(accepted?.count ?? 0),
+      rejected_applications: Number(rejected?.count ?? 0),
+      college_engagement_count: Number(engagement?.count ?? 0),
+    });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/ipo/report/pdf') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+
+    const [profileRes, analyticsRes, connections, documents] = await Promise.all([
+      routeRequest(new Request(`${url.origin}/api/ipo/profile`, { method: 'GET', headers: request.headers }), env, new URL(`${url.origin}/api/ipo/profile`)),
+      routeRequest(new Request(`${url.origin}/api/ipo/analytics`, { method: 'GET', headers: request.headers }), env, new URL(`${url.origin}/api/ipo/analytics`)),
+      env.DB.prepare('SELECT COUNT(*) AS count FROM ipo_connections WHERE ipo_id = ?').bind(actor.id).first<{ count: number }>(),
+      env.DB.prepare('SELECT document_type, COUNT(*) AS count FROM ipo_documents WHERE ipo_id = ? GROUP BY document_type').bind(actor.id).all<{ document_type: string; count: number }>(),
+    ]);
+
+    const profileData = await profileRes.json() as ApiEnvelope<any>;
+    const analyticsData = await analyticsRes.json() as ApiEnvelope<any>;
+    const lines = [
+      'IPO Report',
+      `Generated At: ${new Date().toISOString()}`,
+      '--- IPO Profile ---',
+      `Name: ${profileData.data?.name ?? '-'}`,
+      `Email: ${profileData.data?.email ?? '-'}`,
+      `Address: ${profileData.data?.address ?? '-'}`,
+      '--- Internship Summary ---',
+      `Total Internships: ${analyticsData.data?.total_internships ?? 0}`,
+      `Active Internships: ${analyticsData.data?.active_internships ?? 0}`,
+      '--- Applications Summary ---',
+      `Total Applications: ${analyticsData.data?.total_applications ?? 0}`,
+      `Accepted Applications: ${analyticsData.data?.accepted_applications ?? 0}`,
+      `Rejected Applications: ${analyticsData.data?.rejected_applications ?? 0}`,
+      '--- College Connections ---',
+      `Connection Count: ${Number(connections?.count ?? 0)}`,
+      '--- Department Engagement ---',
+      `College Engagement Count: ${analyticsData.data?.college_engagement_count ?? 0}`,
+      '--- Documents ---',
+      ...((documents.results ?? []).map((doc) => `${doc.document_type}: ${doc.count}`)),
+    ];
+
+    const pdf = buildSimplePdf(lines);
+    return new Response(pdf.buffer as ArrayBuffer, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        ...NO_CACHE_HEADERS,
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="ipo-report-${actor.id}.pdf"`,
+      },
+    });
   }
 
   const ipoProfileMatch = pathname.match(/^\/api\/ipo\/([^/]+)$/);
@@ -6249,6 +6550,51 @@ async function ensureAcademicPathForUnlistedStudent(
   }
 
   return { collegeId, departmentId, programId };
+}
+
+
+async function ensureIPOExtensionSchema(env: EnvBindings): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS ipo_connections (
+      id TEXT PRIMARY KEY,
+      ipo_id TEXT NOT NULL,
+      college_id TEXT NOT NULL,
+      department_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(ipo_id, college_id, department_id)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS ipo_suggestions (
+      id TEXT PRIMARY KEY,
+      ipo_id TEXT NOT NULL,
+      college_id TEXT NOT NULL,
+      department_id TEXT,
+      internship_title TEXT NOT NULL,
+      nature_of_work TEXT NOT NULL,
+      gender_preference TEXT NOT NULL DEFAULT 'BOTH',
+      internship_category TEXT NOT NULL DEFAULT 'FREE',
+      duration TEXT NOT NULL,
+      vacancy INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS ipo_documents (
+      id TEXT PRIMARY KEY,
+      ipo_id TEXT NOT NULL,
+      internship_id TEXT NOT NULL,
+      application_id TEXT,
+      document_type TEXT NOT NULL,
+      file_url TEXT NOT NULL,
+      payload_html TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ).run();
 }
 
 async function getTableColumns(env: EnvBindings, tableName: string): Promise<Array<{ name: string }>> {
