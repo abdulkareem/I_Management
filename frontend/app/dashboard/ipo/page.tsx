@@ -118,6 +118,9 @@ export default function IPODashboardPage() {
   const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>([]);
   const [docPreview, setDocPreview] = useState<string | null>(null);
   const [feedbackEditorOpenFor, setFeedbackEditorOpenFor] = useState<string | null>(null);
+  const [feedbackSubmittingFor, setFeedbackSubmittingFor] = useState<string | null>(null);
+  const [vacancyEditFor, setVacancyEditFor] = useState<string | null>(null);
+  const [internshipsPage, setInternshipsPage] = useState(1);
   const [internshipsSort, setInternshipsSort] = useState<{ key: 'internship_title' | 'college_name' | 'department_name' | 'programme' | 'category' | 'vacancy' | 'status' | 'student_visibility' | 'created_at'; direction: 'asc' | 'desc' }>({ key: 'created_at', direction: 'desc' });
   const connectFormRef = useRef<HTMLFormElement | null>(null);
 
@@ -335,12 +338,20 @@ export default function IPODashboardPage() {
   async function submitFeedback(applicationId: string) {
     const data = feedbackDraft[applicationId];
     if (!data) return;
-    await fetchWithSession(`/api/industry/applications/${applicationId}/feedback`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    setFeedbackEditorOpenFor(null);
-    await load();
+    setFeedbackSubmittingFor(applicationId);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      await fetchWithSession(`/api/industry/applications/${applicationId}/feedback`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      setFeedbackEditorOpenFor(null);
+      setSuccessMessage('Feedback form saved.');
+      await load();
+    } finally {
+      setFeedbackSubmittingFor(null);
+    }
   }
 
   async function saveProfile() {
@@ -366,7 +377,7 @@ export default function IPODashboardPage() {
     setIdeaActionSubmitting(internshipId);
     try {
       const payload = internshipForms[internshipId];
-      const response = await fetchWithSession('/api/ipo/publish', {
+      const response = await fetchWithSession('/api/industry/publish', {
         method: 'POST',
         body: JSON.stringify({
           id: internshipId,
@@ -395,7 +406,7 @@ export default function IPODashboardPage() {
     setSuccessMessage(null);
     setIdeaActionSubmitting(internshipId);
     try {
-      await fetchWithSession(`/api/ipo/internships/${internshipId}`, {
+      await fetchWithSession(`/api/industry/internships/${internshipId}`, {
         method: 'PUT',
         body: JSON.stringify({
           title: payload.title,
@@ -422,8 +433,21 @@ export default function IPODashboardPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      await fetchWithSession(`/api/ipo/internships/${internshipId}/close`, { method: 'POST' });
+      await fetchWithSession(`/api/industry/internships/${internshipId}/close`, { method: 'POST' });
       setSuccessMessage('Internship closed.');
+      await load();
+    } finally {
+      setIdeaActionSubmitting(null);
+    }
+  }
+
+  async function republishInternship(internshipId: string) {
+    setIdeaActionSubmitting(internshipId);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      await fetchWithSession(`/api/industry/internships/${internshipId}/republish`, { method: 'POST' });
+      setSuccessMessage('Internship published again.');
       await load();
     } finally {
       setIdeaActionSubmitting(null);
@@ -435,8 +459,21 @@ export default function IPODashboardPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      await fetchWithSession(`/api/ipo/internships/${internshipId}`, { method: 'DELETE' });
+      await fetchWithSession(`/api/industry/internships/${internshipId}`, { method: 'DELETE' });
       setSuccessMessage('Internship removed.');
+      await load();
+    } finally {
+      setIdeaActionSubmitting(null);
+    }
+  }
+
+  async function generateAndSendLetters(applicationId: string) {
+    setIdeaActionSubmitting(applicationId);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      await fetchWithSession(`/api/industry/applications/${applicationId}/generate-letters`, { method: 'POST' });
+      setSuccessMessage('Acceptance and invitation letters generated and shared.');
       await load();
     } finally {
       setIdeaActionSubmitting(null);
@@ -461,6 +498,13 @@ export default function IPODashboardPage() {
     });
     return rows;
   }, [ipoInternships, internshipsSort]);
+  const internshipPageSize = 10;
+  const paginatedInternships = useMemo(() => {
+    const totalPages = Math.max(1, Math.ceil(sortedInternships.length / internshipPageSize));
+    const safePage = Math.min(internshipsPage, totalPages);
+    const start = (safePage - 1) * internshipPageSize;
+    return { rows: sortedInternships.slice(start, start + internshipPageSize), totalPages, safePage };
+  }, [sortedInternships, internshipsPage]);
   const paginatedIdeas = useMemo(() => {
     const visibleIdeas = ideas.filter((idea) => idea.status === 'PENDING');
     const totalPages = Math.max(1, Math.ceil(visibleIdeas.length / ideaPageSize));
@@ -702,7 +746,7 @@ export default function IPODashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedInternships.length ? sortedInternships.map((item) => {
+                  {paginatedInternships.rows.length ? paginatedInternships.rows.map((item) => {
                     const form = internshipForms[item.id] ?? {
                       title: item.internship_title ?? '',
                       description: item.description ?? '',
@@ -730,9 +774,21 @@ export default function IPODashboardPage() {
                       <td className="py-3 pr-2">{item.created_at ? new Date(item.created_at).toLocaleDateString() : '-'}</td>
                       <td className="py-3">
                         <div className="flex flex-wrap gap-2">
-                          <Input className="max-w-[100px]" type="number" min={0} value={form.vacancy} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, vacancy: e.target.value } }))} />
-                          <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void saveDepartmentSuggestedInternship(item.id)}>{ideaActionSubmitting === item.id ? 'Saving...' : 'Edit Vacancy'}</Button>
-                          <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void closeInternship(item.id)}>{ideaActionSubmitting === item.id ? 'Closing...' : 'Close'}</Button>
+                          {vacancyEditFor === item.id ? (
+                            <>
+                              <Input className="max-w-[100px]" type="number" min={0} value={form.vacancy} onChange={(e) => setInternshipForms((prev) => ({ ...prev, [item.id]: { ...form, vacancy: e.target.value } }))} />
+                              <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={async () => { await saveDepartmentSuggestedInternship(item.id); setVacancyEditFor(null); }}>{ideaActionSubmitting === item.id ? 'Saving...' : 'Save Vacancy'}</Button>
+                            </>
+                          ) : (
+                            <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => setVacancyEditFor(item.id)}>Edit Vacancy</Button>
+                          )}
+                          <Button
+                            variant="secondary"
+                            disabled={ideaActionSubmitting === item.id}
+                            onClick={() => (item.status === 'CLOSED' ? void republishInternship(item.id) : void closeInternship(item.id))}
+                          >
+                            {ideaActionSubmitting === item.id ? (item.status === 'CLOSED' ? 'Publishing...' : 'Closing...') : (item.status === 'CLOSED' ? 'Publish Again' : 'Close')}
+                          </Button>
                           <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void removeInternship(item.id)}>{ideaActionSubmitting === item.id ? 'Removing...' : 'Remove'}</Button>
                         </div>
                       </td>
@@ -745,6 +801,13 @@ export default function IPODashboardPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="mt-3 flex items-center justify-between text-sm text-slate-700">
+              <span>Page {paginatedInternships.safePage} of {paginatedInternships.totalPages}</span>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => setInternshipsPage((prev) => Math.max(1, prev - 1))} disabled={paginatedInternships.safePage <= 1}>←</Button>
+                <Button variant="secondary" onClick={() => setInternshipsPage((prev) => Math.min(paginatedInternships.totalPages, prev + 1))} disabled={paginatedInternships.safePage >= paginatedInternships.totalPages}>→</Button>
+              </div>
             </div>
           </Card>
 
@@ -781,9 +844,9 @@ export default function IPODashboardPage() {
                   <p className="mt-1 text-xs text-slate-400">Completed: {application.completedAt ?? 'Not completed'}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => completeApplication(application.id)} disabled={Boolean(application.completedAt)}>Completed</Button>
-                    <Button variant="secondary" disabled={!approvalDocument} onClick={() => approvalDocument && previewDocument(approvalDocument.id)}>Preview Approval Letter</Button>
-                    <Button variant="secondary" disabled={!approvalDocument} onClick={() => approvalDocument && downloadDocument(approvalDocument.id)}>Download Approval Letter</Button>
-                    <Button variant="secondary" disabled={!Boolean(application.completedAt)} onClick={() => {
+                    <Button variant="secondary" onClick={() => approvalDocument ? previewDocument(approvalDocument.id) : generateAndSendLetters(application.id)}>{approvalDocument ? 'Preview Approval Letter' : 'Generate Approval Letter'}</Button>
+                    <Button variant="secondary" onClick={() => approvalDocument ? downloadDocument(approvalDocument.id) : generateAndSendLetters(application.id)}>{approvalDocument ? 'Download Approval Letter' : 'Generate & Download Letter'}</Button>
+                    <Button variant="secondary" onClick={() => {
                       const today = new Date().toISOString().slice(0, 10);
                       setFeedbackDraft((prev) => ({
                         ...prev,
@@ -810,6 +873,9 @@ export default function IPODashboardPage() {
                     }}>
                       Open Feedback Form
                     </Button>
+                    <Button variant="secondary" disabled={ideaActionSubmitting === application.id} onClick={() => void generateAndSendLetters(application.id)}>
+                      {ideaActionSubmitting === application.id ? 'Generating...' : 'Generate & Send Acceptance/Invitation'}
+                    </Button>
                   </div>
                   </>
                     );
@@ -822,7 +888,7 @@ export default function IPODashboardPage() {
             open={Boolean(feedbackEditorOpenFor)}
             title="INTERNSHIP PERFORMANCE FEEDBACK FORM"
             onClose={() => setFeedbackEditorOpenFor(null)}
-            footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setFeedbackEditorOpenFor(null)}>Close</Button><Button onClick={() => feedbackEditorOpenFor && submitFeedback(feedbackEditorOpenFor)}>Submit</Button></div>}
+            footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setFeedbackEditorOpenFor(null)} disabled={Boolean(feedbackEditorOpenFor && feedbackSubmittingFor === feedbackEditorOpenFor)}>Close</Button><Button disabled={Boolean(feedbackEditorOpenFor && feedbackSubmittingFor === feedbackEditorOpenFor)} onClick={() => feedbackEditorOpenFor && submitFeedback(feedbackEditorOpenFor)}>{feedbackEditorOpenFor && feedbackSubmittingFor === feedbackEditorOpenFor ? 'Saving...' : 'Submit'}</Button></div>}
           >
             {feedbackEditorOpenFor ? (
               <div className="grid gap-2 text-sm">
