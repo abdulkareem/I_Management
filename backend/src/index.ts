@@ -149,6 +149,21 @@ const industrySubtypeSchema = z.object({
   ipo_type_id: z.string().trim().min(1).optional(),
 });
 
+function calculateDepartmentGrade(total: number): string {
+  if (total >= 90) return 'A+';
+  if (total >= 80) return 'A';
+  if (total >= 70) return 'B';
+  if (total >= 60) return 'C';
+  if (total >= 50) return 'D';
+  return 'F';
+}
+
+function calculateAttainmentLevel(avgPo: number): 'Low' | 'Medium' | 'High' {
+  if (avgPo >= 80) return 'High';
+  if (avgPo >= 60) return 'Medium';
+  return 'Low';
+}
+
 export default {
   async fetch(request: Request, env: EnvBindings): Promise<Response> {
     const url = new URL(request.url);
@@ -3326,6 +3341,37 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       payload.teamwork, payload.professionalEthics, payload.overallPerformance, payload.remarks, payload.recommendation,
       payload.supervisorSignature, payload.feedbackDate, industryFeedbackMatch[1], actor.id,
     ).run();
+    await env.DB.prepare(
+      `INSERT INTO feedbacks (
+        id, student_id, internship_id, ipo_id, rating, comments, skills_assessed, submitted_at, created_at, updated_at
+      )
+      SELECT ?, COALESCE(ia.student_id, ia.external_student_id), ia.internship_id, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now')
+      FROM internship_applications ia
+      INNER JOIN internships i ON i.id = ia.internship_id
+      WHERE ia.id = ? AND i.industry_id = ?
+      ON CONFLICT(student_id, internship_id) DO UPDATE SET
+        ipo_id = excluded.ipo_id,
+        rating = excluded.rating,
+        comments = excluded.comments,
+        skills_assessed = excluded.skills_assessed,
+        submitted_at = datetime('now'),
+        updated_at = datetime('now')`,
+    ).bind(
+      crypto.randomUUID(),
+      actor.id,
+      averageScore,
+      summaryFeedback,
+      JSON.stringify({
+        attendancePunctuality: payload.attendancePunctuality,
+        technicalSkills: payload.technicalSkills,
+        problemSolvingAbility: payload.problemSolvingAbility,
+        communicationSkills: payload.communicationSkills,
+        teamwork: payload.teamwork,
+        professionalEthics: payload.professionalEthics,
+      }),
+      industryFeedbackMatch[1],
+      actor.id,
+    ).run();
     return ok('Feedback form saved');
   }
 
@@ -4480,6 +4526,254 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Accepted application not found for this department');
     return ok('Internship marked as completed');
+  }
+
+  const departmentFeedbackByStudentMatch = pathname.match(/^\/api\/department\/feedback\/([^/]+)\/([^/]+)$/);
+  if (departmentFeedbackByStudentMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const internshipId = departmentFeedbackByStudentMatch[1];
+    const studentId = departmentFeedbackByStudentMatch[2];
+
+    const feedback = await env.DB.prepare(
+      `SELECT f.*, i.title AS internship_title, ind.name AS ipo_name
+       FROM feedbacks f
+       INNER JOIN internships i ON i.id = f.internship_id
+       LEFT JOIN industries ind ON ind.id = f.ipo_id
+       WHERE f.internship_id = ?
+         AND f.student_id = ?
+         AND i.department_id = ?
+       ORDER BY f.submitted_at DESC
+       LIMIT 1`,
+    ).bind(internshipId, studentId, actor.id).first<any>();
+
+    if (!feedback) return errorResponse(404, 'No feedback available for this internship and student');
+    return ok('Department feedback fetched', feedback);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/evaluation') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const studentId = required(body, ['student_id', 'studentId']);
+    const internshipId = required(body, ['internship_id', 'internshipId']);
+    const attendanceMarks = Number(required(body, ['attendance_marks', 'attendanceMarks']));
+    const skillMarks = Number(required(body, ['skill_marks', 'skillMarks']));
+    const reportMarks = Number(required(body, ['report_marks', 'reportMarks']));
+    const vivaMarks = Number(required(body, ['viva_marks', 'vivaMarks']));
+    const disciplineMarks = Number(required(body, ['discipline_marks', 'disciplineMarks']));
+
+    if ([attendanceMarks, skillMarks, reportMarks, vivaMarks, disciplineMarks].some((mark) => Number.isNaN(mark) || mark < 0 || mark > 20)) {
+      return badRequest('Each mark must be a number between 0 and 20');
+    }
+
+    const app = await env.DB.prepare(
+      `SELECT ia.id, ia.student_id, ia.external_student_id, ia.internship_id
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ia.internship_id = ?
+         AND (ia.student_id = ? OR ia.external_student_id = ?)
+         AND i.department_id = ?`,
+    ).bind(internshipId, studentId, studentId, actor.id).first<any>();
+    if (!app) return errorResponse(404, 'Application not found for this student/internship');
+
+    const feedbackExists = await env.DB.prepare(
+      'SELECT id FROM feedbacks WHERE internship_id = ? AND student_id = ?',
+    ).bind(internshipId, studentId).first<{ id: string }>();
+    if (!feedbackExists) return badRequest('Feedback must be submitted before evaluation');
+
+    const total = attendanceMarks + skillMarks + reportMarks + vivaMarks + disciplineMarks;
+    const grade = calculateDepartmentGrade(total);
+
+    await env.DB.prepare(
+      `INSERT INTO evaluations (
+        id, application_id, student_id, internship_id, marks, feedback, co_po_score, evaluated_by,
+        attendance_marks, skill_marks, report_marks, viva_marks, discipline_marks, total, grade, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ON CONFLICT(application_id) DO UPDATE SET
+        student_id = excluded.student_id,
+        internship_id = excluded.internship_id,
+        marks = excluded.marks,
+        co_po_score = excluded.co_po_score,
+        evaluated_by = excluded.evaluated_by,
+        attendance_marks = excluded.attendance_marks,
+        skill_marks = excluded.skill_marks,
+        report_marks = excluded.report_marks,
+        viva_marks = excluded.viva_marks,
+        discipline_marks = excluded.discipline_marks,
+        total = excluded.total,
+        grade = excluded.grade,
+        updated_at = datetime('now')`,
+    ).bind(
+      crypto.randomUUID(),
+      app.id,
+      studentId,
+      internshipId,
+      total,
+      '',
+      JSON.stringify({ po1: skillMarks, po2: vivaMarks, po3: skillMarks, po4: reportMarks }),
+      actor.id,
+      attendanceMarks,
+      skillMarks,
+      reportMarks,
+      vivaMarks,
+      disciplineMarks,
+      total,
+      grade,
+    ).run();
+
+    return ok('Evaluation saved', { total, grade });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/department/outcome-assessment') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const studentId = required(body, ['student_id', 'studentId']);
+    const internshipId = required(body, ['internship_id', 'internshipId']);
+
+    const evaluation = await env.DB.prepare(
+      `SELECT skill_marks, viva_marks, report_marks
+       FROM evaluations e
+       INNER JOIN internships i ON i.id = e.internship_id
+       WHERE e.student_id = ? AND e.internship_id = ? AND i.department_id = ?`,
+    ).bind(studentId, internshipId, actor.id).first<any>();
+    if (!evaluation) return badRequest('Outcome assessment can be generated only after evaluation');
+
+    const po1Score = Number((((Number(evaluation.skill_marks ?? 0) / 20) * 100)).toFixed(2));
+    const po2Score = Number((((Number(evaluation.viva_marks ?? 0) / 20) * 100)).toFixed(2));
+    const po3Score = Number((((Number(evaluation.skill_marks ?? 0) / 20) * 100)).toFixed(2));
+    const po4Score = Number((((Number(evaluation.report_marks ?? 0) / 20) * 100)).toFixed(2));
+    const avgPo = Number(((po1Score + po2Score + po3Score + po4Score) / 4).toFixed(2));
+    const attainmentLevel = calculateAttainmentLevel(avgPo);
+
+    await env.DB.prepare(
+      `INSERT INTO outcomes (
+        id, student_id, internship_id, po1_score, po2_score, po3_score, po4_score, attainment_level, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ON CONFLICT(student_id, internship_id) DO UPDATE SET
+        po1_score = excluded.po1_score,
+        po2_score = excluded.po2_score,
+        po3_score = excluded.po3_score,
+        po4_score = excluded.po4_score,
+        attainment_level = excluded.attainment_level,
+        updated_at = datetime('now')`,
+    ).bind(crypto.randomUUID(), studentId, internshipId, po1Score, po2Score, po3Score, po4Score, attainmentLevel).run();
+
+    return ok('Outcome assessment saved', {
+      po1Score,
+      po2Score,
+      po3Score,
+      po4Score,
+      attainmentLevel,
+      graph: [
+        { outcome: 'PO1', score: po1Score },
+        { outcome: 'PO2', score: po2Score },
+        { outcome: 'PO3', score: po3Score },
+        { outcome: 'PO4', score: po4Score },
+      ],
+    });
+  }
+
+  const outcomeByStudentMatch = pathname.match(/^\/api\/department\/outcome\/([^/]+)\/([^/]+)$/);
+  if (outcomeByStudentMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const studentId = outcomeByStudentMatch[1];
+    const internshipId = outcomeByStudentMatch[2];
+
+    const row = await env.DB.prepare(
+      `SELECT o.*
+       FROM outcomes o
+       INNER JOIN internships i ON i.id = o.internship_id
+       WHERE o.student_id = ? AND o.internship_id = ? AND i.department_id = ?`,
+    ).bind(studentId, internshipId, actor.id).first<any>();
+    if (!row) return errorResponse(404, 'Outcome assessment not found');
+    return ok('Outcome assessment fetched', {
+      ...row,
+      graph: [
+        { outcome: 'PO1', score: Number(row.po1_score ?? 0) },
+        { outcome: 'PO2', score: Number(row.po2_score ?? 0) },
+        { outcome: 'PO3', score: Number(row.po3_score ?? 0) },
+        { outcome: 'PO4', score: Number(row.po4_score ?? 0) },
+      ],
+    });
+  }
+
+  const departmentDocumentsMatch = pathname.match(/^\/api\/department\/documents\/([^/]+)\/([^/]+)$/);
+  if (departmentDocumentsMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const studentId = departmentDocumentsMatch[1];
+    const internshipId = departmentDocumentsMatch[2];
+
+    const app = await env.DB.prepare(
+      `SELECT ia.id, i.title AS internship_title
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ia.internship_id = ?
+         AND (ia.student_id = ? OR ia.external_student_id = ?)
+         AND i.department_id = ?`,
+    ).bind(internshipId, studentId, studentId, actor.id).first<any>();
+    if (!app) return errorResponse(404, 'Application not found');
+
+    const feedback = await env.DB.prepare(
+      'SELECT rating, comments, skills_assessed, submitted_at FROM feedbacks WHERE internship_id = ? AND student_id = ?',
+    ).bind(internshipId, studentId).first<any>();
+    const evaluation = await env.DB.prepare(
+      'SELECT attendance_marks, skill_marks, report_marks, viva_marks, discipline_marks, total, grade FROM evaluations WHERE internship_id = ? AND student_id = ?',
+    ).bind(internshipId, studentId).first<any>();
+    const outcome = await env.DB.prepare(
+      'SELECT po1_score, po2_score, po3_score, po4_score, attainment_level FROM outcomes WHERE internship_id = ? AND student_id = ?',
+    ).bind(internshipId, studentId).first<any>();
+    const docs = await env.DB.prepare(
+      `SELECT type, generated_at
+       FROM documents
+       WHERE internship_id = ? AND (student_id = ? OR student_id IS NULL)
+       ORDER BY generated_at DESC`,
+    ).bind(internshipId, studentId).all<any>();
+
+    const lines = [
+      'Department Consolidated Internship Document',
+      `Internship: ${app.internship_title}`,
+      '',
+      '1) Internship Approval Letter',
+      '2) Allotment Letter',
+      '3) Acceptance Letter',
+      '',
+      '4) IPO Feedback',
+      `Rating: ${feedback?.rating ?? '-'}`,
+      `Skills Assessed: ${feedback?.skills_assessed ?? '-'}`,
+      `Comments: ${feedback?.comments ?? '-'}`,
+      '',
+      '5) Department Evaluation Sheet',
+      `Attendance / Participation: ${evaluation?.attendance_marks ?? '-'}`,
+      `Technical Skills: ${evaluation?.skill_marks ?? '-'}`,
+      `Report Quality: ${evaluation?.report_marks ?? '-'}`,
+      `Viva / Presentation: ${evaluation?.viva_marks ?? '-'}`,
+      `Discipline: ${evaluation?.discipline_marks ?? '-'}`,
+      `Total: ${evaluation?.total ?? '-'} Grade: ${evaluation?.grade ?? '-'}`,
+      '',
+      '6) Outcome Assessment Report',
+      `PO1: ${outcome?.po1_score ?? '-'}%`,
+      `PO2: ${outcome?.po2_score ?? '-'}%`,
+      `PO3: ${outcome?.po3_score ?? '-'}%`,
+      `PO4: ${outcome?.po4_score ?? '-'}%`,
+      `Attainment Level: ${outcome?.attainment_level ?? '-'}`,
+      '',
+      'Generated Documents',
+      ...(docs.results ?? []).map((doc: any, index: number) => `${index + 1}. ${String(doc.type).toUpperCase()} (${doc.generated_at})`),
+    ];
+    const pdfBytes = buildSimplePdf(lines);
+    return new Response(pdfBytes.buffer as ArrayBuffer, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        ...NO_CACHE_HEADERS,
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="department-documents-${studentId}-${internshipId}.pdf"`,
+      },
+    });
   }
 
   const applicationEvaluationMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/evaluation$/);
@@ -6424,6 +6718,63 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
   ).run();
 
   await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS feedbacks (
+      id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL,
+      internship_id TEXT NOT NULL,
+      ipo_id TEXT NOT NULL,
+      rating REAL NOT NULL,
+      comments TEXT,
+      skills_assessed TEXT,
+      submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      UNIQUE(student_id, internship_id)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS evaluations (
+      id TEXT PRIMARY KEY,
+      application_id TEXT NOT NULL UNIQUE,
+      marks REAL NOT NULL,
+      feedback TEXT,
+      co_po_score TEXT NOT NULL,
+      evaluated_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ).run();
+  const evaluationsColumns = new Set((await getTableColumns(env, 'evaluations')).map((column) => column.name));
+  if (!evaluationsColumns.has('student_id')) await env.DB.prepare('ALTER TABLE evaluations ADD COLUMN student_id TEXT').run();
+  if (!evaluationsColumns.has('internship_id')) await env.DB.prepare('ALTER TABLE evaluations ADD COLUMN internship_id TEXT').run();
+  if (!evaluationsColumns.has('attendance_marks')) await env.DB.prepare('ALTER TABLE evaluations ADD COLUMN attendance_marks REAL NOT NULL DEFAULT 0').run();
+  if (!evaluationsColumns.has('skill_marks')) await env.DB.prepare('ALTER TABLE evaluations ADD COLUMN skill_marks REAL NOT NULL DEFAULT 0').run();
+  if (!evaluationsColumns.has('report_marks')) await env.DB.prepare('ALTER TABLE evaluations ADD COLUMN report_marks REAL NOT NULL DEFAULT 0').run();
+  if (!evaluationsColumns.has('viva_marks')) await env.DB.prepare('ALTER TABLE evaluations ADD COLUMN viva_marks REAL NOT NULL DEFAULT 0').run();
+  if (!evaluationsColumns.has('discipline_marks')) await env.DB.prepare('ALTER TABLE evaluations ADD COLUMN discipline_marks REAL NOT NULL DEFAULT 0').run();
+  if (!evaluationsColumns.has('total')) await env.DB.prepare('ALTER TABLE evaluations ADD COLUMN total REAL NOT NULL DEFAULT 0').run();
+  if (!evaluationsColumns.has('grade')) await env.DB.prepare("ALTER TABLE evaluations ADD COLUMN grade TEXT NOT NULL DEFAULT 'F'").run();
+
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS outcomes (
+      id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL,
+      internship_id TEXT NOT NULL,
+      po1_score REAL NOT NULL DEFAULT 0,
+      po2_score REAL NOT NULL DEFAULT 0,
+      po3_score REAL NOT NULL DEFAULT 0,
+      po4_score REAL NOT NULL DEFAULT 0,
+      attainment_level TEXT NOT NULL DEFAULT 'Low' CHECK (attainment_level IN ('Low', 'Medium', 'High')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE,
+      UNIQUE(student_id, internship_id)
+    )`,
+  ).run();
+
+  await env.DB.prepare(
     `CREATE VIEW IF NOT EXISTS internship_provider_organizations AS
      SELECT id, name, email, business_activity, industry_type_id, status, is_active, created_at, updated_at
      FROM industries`,
@@ -6487,6 +6838,10 @@ async function ensureDepartmentDashboardSchema(env: EnvBindings): Promise<void> 
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_po_mapping_internship ON internship_po_mapping(internship_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_evaluations_application ON internship_evaluations(application_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_outcome_results_student ON outcome_results(student_id, external_student_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_feedbacks_student_internship ON feedbacks(student_id, internship_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_evaluations_student_internship ON evaluations(student_id, internship_id)').run(),
+    env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluations_student_internship_unique ON evaluations(student_id, internship_id)').run(),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_outcomes_student_internship ON outcomes(student_id, internship_id)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status, created_at)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_compliance_violations_college ON compliance_violations(college_id, created_at)').run(),
   ]);
