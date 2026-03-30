@@ -1,6 +1,6 @@
-name = "internsuite"
-compatibility_date = "2026-03-25"
-pages_build_output_dir = "frontend/out"
+name = "intern-management"
+main = ".open-next/worker.js"
+compatibility_date = "2024-01-01"
 
-[build]
-command = "npm run pages:build"
+[assets]
+directory = ".open-next/assets"
