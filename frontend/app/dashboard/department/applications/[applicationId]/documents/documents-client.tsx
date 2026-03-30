@@ -21,6 +21,7 @@ export default function DocumentsClient({ applicationId }: DocumentsClientProps)
 
   useEffect(() => {
     if (!applicationId) return;
+    let objectUrl: string | null = null;
     fetchWithSession(`/api/industry/applications/${applicationId}/feedback-form`)
       .then((res) => setHasFeedback(Boolean(res.data)))
       .catch(() => setHasFeedback(false));
@@ -36,11 +37,17 @@ export default function DocumentsClient({ applicationId }: DocumentsClientProps)
     const session = localStorage.getItem('internsuite.session');
     const token = session ? JSON.parse(session).token : '';
     fetch(`${API_BASE_URL}/api/department/applications/${applicationId}/documents/pdf`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => res.blob())
-      .then((blob) => setPdfUrl(URL.createObjectURL(blob)))
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load PDF');
+        return res.blob();
+      })
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setPdfUrl(objectUrl);
+      })
       .catch(() => setPdfUrl(null));
     return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [applicationId]);
 

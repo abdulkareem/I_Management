@@ -1675,7 +1675,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
     const applicationId = departmentApplicationDocsPdfMatch[1];
     const row = await env.DB.prepare(
-      `SELECT ia.id, ia.student_id, ia.external_student_id, ia.internship_id,
+      `SELECT ia.id, ia.student_id, ia.external_student_id, ia.internship_id, ia.status, ia.completed_at,
               COALESCE(s.name, es.name) AS student_name, COALESCE(s.university_reg_number, 'N/A') AS register_number,
               i.title AS internship_title, i.department_id,
               COALESCE(ind.name, 'Industry') AS industry_name
@@ -1699,11 +1699,27 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(applicationId).all<any>();
     const docs = await env.DB.prepare(
       `SELECT id, type FROM documents
-       WHERE internship_id = ? AND ifnull(student_id, '') = ifnull(?, '')
+       WHERE (internship_id = ? AND ifnull(student_id, '') = ifnull(?, ''))
+          OR (internship_id = ? AND student_id IS NULL)
        ORDER BY generated_at ASC`,
-    ).bind(row.internship_id, row.student_id ?? null).all<any>();
+    ).bind(row.internship_id, row.student_id ?? null, row.internship_id).all<any>();
+    const docTypes = new Set((docs.results ?? []).map((doc) => String(doc.type).toLowerCase()));
+    const hasFeedback = Boolean(feedback);
+    const hasEvaluation = Boolean(evaluation);
+    const hasOutcomes = Boolean((outcomes.results ?? []).length);
     const lines = [
       'INTERNSHIP CONSOLIDATED DOCUMENT PACK',
+      '',
+      `Application Status: ${String(row.status ?? 'pending').toUpperCase()}`,
+      `Completion State: ${row.completed_at ? 'COMPLETED' : 'IN PROGRESS'}`,
+      '',
+      'Document Status Snapshot',
+      `- Approval Letter: ${docTypes.has('approval') ? 'GENERATED' : 'NOT GENERATED'}`,
+      `- Reply / Invitation Letter: ${docTypes.has('reply') ? 'GENERATED' : 'NOT GENERATED'}`,
+      `- Allotment Letter: ${docTypes.has('allotment') ? 'GENERATED' : 'NOT GENERATED'}`,
+      `- Performance Feedback Form: ${hasFeedback ? 'SUBMITTED' : 'PENDING'}`,
+      `- Evaluation Marksheet: ${hasEvaluation ? 'AVAILABLE' : 'PENDING'}`,
+      `- Outcome Assessment Sheet: ${hasOutcomes ? 'AVAILABLE' : 'PENDING'}`,
       '',
       '1) Internship Approval Letter',
       `Student: ${row.student_name ?? '-'}`,
@@ -3252,6 +3268,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       `UPDATE internship_applications
        SET industry_feedback = ?,
            industry_score = ?,
+           status = 'completed',
+           completed_at = COALESCE(completed_at, datetime('now')),
            updated_at = datetime('now')
        WHERE id = ?
          AND internship_id IN (SELECT id FROM internships WHERE industry_id = ?)`,
@@ -3389,7 +3407,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               COALESCE(i.published, 0) AS published,
               i.created_at, i.updated_at, i.department_id, d.college_id,
               COALESCE(i.is_paid, 0) AS is_paid, i.fee, i.internship_category, i.is_external, COALESCE(i.vacancy, 0) AS vacancy,
-              i.programme, i.mapped_po, i.mapped_pso, i.mapped_co, COALESCE(i.student_visibility, 0) AS student_visibility
+              i.programme, i.mapped_po, i.mapped_pso, i.mapped_co, COALESCE(i.student_visibility, 0) AS student_visibility,
+              (SELECT COUNT(*) FROM internship_applications ia WHERE ia.internship_id = i.id) AS registered_students_count
        FROM internships i
        INNER JOIN departments d ON d.id = ?
        WHERE i.college_id = d.college_id
@@ -4057,6 +4076,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   if (updateDepartmentInternshipMatch && request.method === 'DELETE') {
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
     if (actor instanceof Response) return actor;
+    const registrations = await env.DB.prepare(
+      'SELECT COUNT(*) AS count FROM internship_applications WHERE internship_id = ?',
+    ).bind(updateDepartmentInternshipMatch[1]).first<{ count: number }>();
+    if (Number(registrations?.count ?? 0) > 0) return badRequest('Cannot delete internship with registered students. Delete is restricted to college login.');
     const result = await env.DB.prepare('DELETE FROM internships WHERE id = ? AND department_id = ?')
       .bind(updateDepartmentInternshipMatch[1], actor.id)
       .run();
