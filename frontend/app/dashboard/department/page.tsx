@@ -769,10 +769,10 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/feedback`)} disabled={!canAccessPostFeedbackActions(app)}>Feedback</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/evaluation`)} disabled={!canAccessPostFeedbackActions(app)}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/outcome-assessment`)} disabled={!canAccessPostFeedbackActions(app)}>Outcome Assessment Engine</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/documents`)}>Documents</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/feedback/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!((app as any).student_id ?? (app as any).external_student_id)}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/evaluation/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!canAccessPostFeedbackActions(app) || !((app as any).student_id ?? (app as any).external_student_id)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/outcome/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!canAccessPostFeedbackActions(app) || !((app as any).student_id ?? (app as any).external_student_id)}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/documents/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!((app as any).student_id ?? (app as any).external_student_id)}>Documents</Button>
                         </div>
                       </td>
                     </tr>
@@ -809,10 +809,10 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/feedback`)} disabled={!canAccessPostFeedbackActions(app)}>Feedback</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/evaluation`)} disabled={!canAccessPostFeedbackActions(app)}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/outcome-assessment`)} disabled={!canAccessPostFeedbackActions(app)}>Outcome Assessment Engine</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${app.id}/documents`)}>Documents</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/feedback/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!((app as any).student_id ?? (app as any).external_student_id)}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/evaluation/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!canAccessPostFeedbackActions(app) || !((app as any).student_id ?? (app as any).external_student_id)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/outcome/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!canAccessPostFeedbackActions(app) || !((app as any).student_id ?? (app as any).external_student_id)}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/documents/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!((app as any).student_id ?? (app as any).external_student_id)}>Documents</Button>
                         </div>
                       </td>
                     </tr>
