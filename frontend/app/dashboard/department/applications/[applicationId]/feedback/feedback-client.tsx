@@ -18,7 +18,7 @@ export default function FeedbackClient({ applicationId }: FeedbackClientProps) {
 
   useEffect(() => {
     if (!applicationId) return;
-    fetchWithSession(`/api/industry/applications/${applicationId}/feedback-form`)
+    fetchWithSession(`/api/department/applications/${applicationId}/feedback-form`)
       .then((res) => setFeedback(res.data ?? null))
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load feedback form'));
   }, [applicationId]);
