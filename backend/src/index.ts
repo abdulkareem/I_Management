@@ -3208,7 +3208,13 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found');
 
-    const application = await env.DB.prepare('SELECT student_id, external_student_id, internship_id FROM internship_applications WHERE id = ?').bind(applicationId).first<{ student_id: string | null; external_student_id: string | null; internship_id: string }>();
+    const application = await env.DB.prepare(
+      `SELECT ia.student_id, ia.external_student_id, ia.internship_id, ind.supervisor_name
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       LEFT JOIN industries ind ON ind.id = i.industry_id
+       WHERE ia.id = ?`,
+    ).bind(applicationId).first<{ student_id: string | null; external_student_id: string | null; internship_id: string; supervisor_name: string | null }>();
     if (application) {
       await ensureInternshipAllocationsTable(env);
       const internship = await env.DB.prepare(`SELECT ii.industry_id FROM internships i LEFT JOIN industry_internships ii ON ii.title = i.title WHERE i.id = ? LIMIT 1`).bind(application.internship_id).first<{ industry_id: string | null }>();
@@ -3218,9 +3224,27 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       )
         .bind(crypto.randomUUID(), application.student_id, application.external_student_id, internship?.industry_id ?? actor.id, application.internship_id, 'Allocated from accepted application')
         .run();
+      if (application.student_id) {
+        await generateDocument(env, {
+          type: 'approval',
+          internshipId: application.internship_id,
+          studentId: application.student_id,
+          actor,
+          supervisorName: application.supervisor_name ?? undefined,
+          supervisorDesignation: 'Industry Supervisor',
+        });
+      }
+      await generateDocument(env, {
+        type: 'reply',
+        internshipId: application.internship_id,
+        studentId: application.student_id ?? undefined,
+        actor,
+        supervisorName: application.supervisor_name ?? 'Industry Supervisor',
+        supervisorDesignation: 'Industry Supervisor',
+      });
     }
 
-    return ok('Application accepted');
+    return ok('Application accepted and letters generated');
   }
 
   const industryCompleteMatch = pathname.match(/^\/api\/industry\/applications\/([^/]+)\/complete$/);
