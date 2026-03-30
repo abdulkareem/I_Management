@@ -10,7 +10,8 @@ import { fetchWithSession } from '@/lib/auth';
 
 type KPI = {
   totalColleges: number;
-  totalIPOs: number;
+  totalIPOs?: number;
+  totalIndustries?: number;
   totalDepartments: number;
   totalInternships: number;
   pendingApprovals: number;
@@ -35,7 +36,7 @@ export default function SuperAdminDashboardPage() {
   const [search, setSearch] = useState('');
   const [departmentCollegeFilter, setDepartmentCollegeFilter] = useState('all');
   const [newTypeName, setNewTypeName] = useState('');
-  const [newSubtypeName, setNewSubtypeName] = useState('');
+  const [newSubtypeNames, setNewSubtypeNames] = useState<string[]>(['']);
   const [selectedType, setSelectedType] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -101,13 +102,14 @@ export default function SuperAdminDashboardPage() {
     await loadDashboard();
   };
 
-  const createSubtype = async () => {
-    if (!newSubtypeName.trim() || !selectedType) return;
-    await fetchWithSession('/api/ipo-subtypes', {
+  const createSubtypes = async () => {
+    const names = newSubtypeNames.map((name) => name.trim()).filter(Boolean);
+    if (!names.length || !selectedType) return;
+    await Promise.all(names.map((name) => fetchWithSession('/api/ipo-subtypes', {
       method: 'POST',
-      body: JSON.stringify({ name: newSubtypeName, ipo_type_id: selectedType }),
-    });
-    setNewSubtypeName('');
+      body: JSON.stringify({ name, ipo_type_id: selectedType }),
+    })));
+    setNewSubtypeNames(['']);
     await loadDashboard();
   };
 
@@ -120,7 +122,7 @@ export default function SuperAdminDashboardPage() {
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
             {[
               ['Total Colleges', metrics?.totalColleges ?? 0],
-              ['Total IPOs', metrics?.totalIPOs ?? 0],
+              ['Total IPOs', metrics?.totalIPOs ?? metrics?.totalIndustries ?? 0],
               ['Total Departments', metrics?.totalDepartments ?? 0],
               ['Total Internships', metrics?.totalInternships ?? 0],
               ['Pending Approvals', metrics?.pendingApprovals ?? 0],
@@ -162,8 +164,16 @@ export default function SuperAdminDashboardPage() {
               <select className="rounded-xl border border-slate-300 bg-white px-3 py-2" value={selectedType} onChange={(event) => setSelectedType(event.target.value)}>
                 {ipoTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
               </select>
-              <Input value={newSubtypeName} onChange={(event) => setNewSubtypeName(event.target.value)} placeholder="Subtype name" />
-              <Button onClick={createSubtype}>Add Subtype</Button>
+              <div className="space-y-2 md:col-span-2">
+                {newSubtypeNames.map((name, index) => (
+                  <div key={`subtype-input-${index}`} className="flex items-center gap-2">
+                    <Input value={name} onChange={(event) => setNewSubtypeNames((prev) => prev.map((item, i) => (i === index ? event.target.value : item)))} placeholder={`Subtype ${index + 1}`} />
+                    {newSubtypeNames.length > 1 ? <Button variant="secondary" onClick={() => setNewSubtypeNames((prev) => prev.filter((_, i) => i !== index))}>Remove</Button> : null}
+                  </div>
+                ))}
+                <Button variant="secondary" onClick={() => setNewSubtypeNames((prev) => [...prev, ''])}>Add More</Button>
+              </div>
+              <Button onClick={createSubtypes}>Save Subtypes</Button>
             </div>
             <div className="space-y-2 text-sm">
               {ipoTypes.map((type) => (
@@ -179,6 +189,7 @@ export default function SuperAdminDashboardPage() {
                         <Button variant="secondary" onClick={async () => { await fetchWithSession(`/api/ipo-subtypes/${sub.id}`, { method: 'DELETE' }); await loadDashboard(); }}>Delete</Button>
                       </div>
                     ))}
+                    {ipoSubtypes.filter((sub) => sub.ipo_type_id === type.id).length === 0 ? <p className="text-slate-500">No subtypes registered.</p> : null}
                   </div>
                 </div>
               ))}
