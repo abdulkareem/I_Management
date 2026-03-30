@@ -2830,17 +2830,20 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       ).bind(actor.id).all();
     } else {
       rows = await env.DB.prepare(
-        `SELECT ia.id, ia.status, ia.created_at,
+        `SELECT ia.id, ia.status, ia.created_at, ia.completed_at, ia.is_external,
+                ipf.id AS performance_feedback_id,
                 COALESCE(s.id, es.id) AS student_id,
                 COALESCE(s.name, es.name) AS student_name,
                 COALESCE(s.email, es.email) AS student_email,
                 i.title AS internship_title
          FROM internship_applications ia
          INNER JOIN internships i ON i.id = ia.internship_id
+         LEFT JOIN internship_performance_feedback ipf ON ipf.application_id = ia.id
          LEFT JOIN students s ON s.id = ia.student_id
          LEFT JOIN external_students es ON es.id = ia.external_student_id
          WHERE i.department_id = ?
            AND ia.student_id IS NOT NULL
+           AND COALESCE(s.department_id, '') = COALESCE(i.department_id, '')
          ORDER BY ia.created_at DESC`,
       ).bind(actor.id).all();
     }
@@ -2873,16 +2876,22 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       ).bind(actor.id).all();
     } else {
       rows = await env.DB.prepare(
-        `SELECT ia.id, ia.status, ia.created_at,
+        `SELECT ia.id, ia.status, ia.created_at, ia.completed_at, ia.is_external,
+                ipf.id AS performance_feedback_id,
                 COALESCE(es.name, s.name) AS student_name,
                 COALESCE(es.email, s.email) AS student_email,
                 i.title AS internship_title
          FROM internship_applications ia
          INNER JOIN internships i ON i.id = ia.internship_id
+         LEFT JOIN internship_performance_feedback ipf ON ipf.application_id = ia.id
          LEFT JOIN students s ON s.id = ia.student_id
          LEFT JOIN external_students es ON es.id = ia.external_student_id
          WHERE i.department_id = ?
-           AND (ia.external_student_id IS NOT NULL OR ia.is_external = 1)
+           AND (
+             ia.external_student_id IS NOT NULL
+             OR (ia.student_id IS NOT NULL AND COALESCE(s.department_id, '') <> COALESCE(i.department_id, ''))
+             OR ia.is_external = 1
+           )
          ORDER BY ia.created_at DESC`,
       ).bind(actor.id).all();
     }
@@ -5477,7 +5486,7 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        ORDER BY i.created_at DESC`,
     ).bind(student.college_id, student.department_id, student.sex ?? '', student.sex ?? '').all(),
     env.DB.prepare(
-      `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.name AS department_name, c.name AS college_name, c.id AS college_id,
+      `SELECT i.id, i.title, i.description, COALESCE(ind.name, 'Industry') AS industry_name, COALESCE(i.industry_id, ii.industry_id) AS industry_id, d.id AS department_id, d.name AS department_name, c.name AS college_name, c.id AS college_id,
               COALESCE(i.is_external, 0) AS is_external,
               COALESCE(i.created_by, 'INDUSTRY') AS created_by,
               COALESCE(i.total_vacancy, 0) AS total_vacancy,
@@ -5496,11 +5505,14 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
        LEFT JOIN industries ind ON ind.id = ii.industry_id
        LEFT JOIN internship_applications ia ON ia.internship_id = i.id AND ia.student_id = ?
        WHERE i.status IN ('ACCEPTED', 'PUBLISHED')
-         AND d.id = ?
          AND COALESCE(i.student_visibility, 0) = 1
          AND (
            COALESCE(i.created_by, 'INDUSTRY') = 'INDUSTRY'
-           OR (COALESCE(i.created_by, 'INDUSTRY') IN ('COLLEGE', 'DEPARTMENT') AND COALESCE(i.is_external, 0) = 1)
+           OR (
+             COALESCE(i.created_by, 'INDUSTRY') IN ('COLLEGE', 'DEPARTMENT')
+             AND COALESCE(i.is_external, 0) = 1
+             AND d.id <> ?
+           )
          )
          AND (
            COALESCE(i.gender_preference, 'BOTH') = 'BOTH'
@@ -5546,8 +5558,9 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
     })),
     externalInternships: externalRows.map((row: any) => {
       const sameCollege = String(row.college_id ?? '') === String(student.college_id ?? '');
+      const sameDepartment = String(row.department_id ?? '') === String(student.department_id ?? '');
       const externalOnlyBlocked = Number(row.is_external ?? 0) === 1
-        && sameCollege
+        && sameDepartment
         && String(row.created_by ?? 'INDUSTRY').toUpperCase() !== 'INDUSTRY';
       const limitReached = eligibility.openApplications >= MAX_ACTIVE_APPLICATIONS || eligibility.activeLock;
       return {
@@ -5569,16 +5582,17 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
       outcomeMarks: row.outcome_marks === null || row.outcome_marks === undefined ? null : Number(row.outcome_marks),
       isExternal: Number(row.is_external ?? 0) === 1,
       sameCollege,
+      sameDepartment,
       eligible: !externalOnlyBlocked && !limitReached,
       eligibilityMessage: externalOnlyBlocked
-        ? 'External-only internship'
+        ? 'Not available for your department'
         : (limitReached ? 'Application limit reached' : 'Available for your college'),
       };
     }),
     activeApplicationLock: eligibility.activeLock,
     maxSelectableApplications: MAX_ACTIVE_APPLICATIONS,
     canApplyForExternal: !eligibility.activeLock && eligibility.openApplications < MAX_ACTIVE_APPLICATIONS,
-    policyNote: 'You can apply to all industry/internal internships. External internships from your own college are blocked.',
+    policyNote: 'You can apply to published internships. Department-created external internships are hidden from students of the same department.',
     journeyCompletion: applicationRows.length > 0 ? 60 : 20,
     journeySteps: [
       { label: 'Profile created', done: true },
@@ -7199,6 +7213,7 @@ async function getTableColumns(env: EnvBindings, tableName: string): Promise<Arr
 function normalizeSessionRole(role: string): AuthSession['user']['role'] | null {
   const normalized = String(role || '').toUpperCase();
   if (normalized === 'DEPARTMENT') return 'DEPARTMENT_COORDINATOR';
+  if (normalized === 'IPO') return 'INDUSTRY';
   if (
     normalized === 'SUPER_ADMIN'
     || normalized === 'ADMIN'

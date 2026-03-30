@@ -10,6 +10,7 @@ const SESSION_KEY = 'internsuite.session';
 function normalizeRole(role: string): Role {
   const normalized = role.toUpperCase();
   if (normalized === 'DEPARTMENT') return 'DEPARTMENT_COORDINATOR';
+  if (normalized === 'IPO') return 'INDUSTRY';
   return normalized as Role;
 }
 
