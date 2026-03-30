@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "deploy": "npx @cloudflare/next-on-pages",
+    "deploy": "opennextjs-cloudflare build",
+    "preview": "opennextjs-cloudflare preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
@@ -24,7 +25,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@cloudflare/next-on-pages": "latest",
+    "@opennextjs/cloudflare": "^1.8.2",
     "@tailwindcss/postcss": "^4.1.11",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",

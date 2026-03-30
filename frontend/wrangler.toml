@@ -1,8 +1,9 @@
-name = "internsuite-web"
+name = "intern-management"
+main = ".open-next/worker.js"
 compatibility_date = "2024-01-01"
 
-[build]
-command = "npm run build"
+[assets]
+directory = ".open-next/assets"
 
 [vars]
 NEXT_PUBLIC_API_BASE_URL = "https://internmanagement.abdulkareem-t.workers.dev"
