@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { IPODashboard } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Modal } from '@/components/ui/modal';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
 import { API_BASE_URL } from '@/lib/config';
@@ -91,24 +91,6 @@ export default function IPODashboardPage() {
   const [editingIdeaId, setEditingIdeaId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [ipoProfile, setIpoProfile] = useState<IpoProfile | null>(null);
-  const [feedbackDraft, setFeedbackDraft] = useState<Record<string, {
-    studentName: string;
-    registerNumber: string;
-    organization: string;
-    duration: string;
-    supervisorName: string;
-    attendancePunctuality: string;
-    technicalSkills: string;
-    problemSolvingAbility: string;
-    communicationSkills: string;
-    teamwork: string;
-    professionalEthics: string;
-    overallPerformance: 'Excellent' | 'Good' | 'Average' | 'Poor';
-    remarks: string;
-    recommendation: string;
-    supervisorSignature: string;
-    feedbackDate: string;
-  }>>({});
   const [ideasPage, setIdeasPage] = useState(1);
   const [connectSubmitting, setConnectSubmitting] = useState(false);
   const [connectSubmitted, setConnectSubmitted] = useState(false);
@@ -116,13 +98,11 @@ export default function IPODashboardPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [internshipForms, setInternshipForms] = useState<Record<string, { title: string; description: string; vacancy: string; internshipCategory: InternshipCategory; fee: string; stipendAmount: string; stipendDuration: StipendDuration; minimumDays: string; maximumDays: string; genderPreference: 'BOTH' | 'BOYS' | 'GIRLS' }>>({});
   const [documents, setDocuments] = useState<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>([]);
-  const [docPreview, setDocPreview] = useState<string | null>(null);
-  const [feedbackEditorOpenFor, setFeedbackEditorOpenFor] = useState<string | null>(null);
-  const [feedbackSubmittingFor, setFeedbackSubmittingFor] = useState<string | null>(null);
   const [vacancyEditFor, setVacancyEditFor] = useState<string | null>(null);
   const [internshipsPage, setInternshipsPage] = useState(1);
   const [internshipsSort, setInternshipsSort] = useState<{ key: 'internship_title' | 'college_name' | 'department_name' | 'programme' | 'category' | 'vacancy' | 'status' | 'student_visibility' | 'created_at'; direction: 'asc' | 'desc' }>({ key: 'created_at', direction: 'desc' });
   const connectFormRef = useRef<HTMLFormElement | null>(null);
+  const router = useRouter();
 
   async function load() {
     const [dashboardRes, ideasRes, collegeRes, profileRes, internshipsRes, docRes] = await Promise.all([
@@ -149,14 +129,23 @@ export default function IPODashboardPage() {
     const blob = await res.blob();
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `document-${documentId}.html`;
+    link.download = `approval-letter-${documentId}.pdf`;
     link.click();
     URL.revokeObjectURL(link.href);
   }
 
-  async function previewDocument(documentId: string) {
-    const payload = await fetchWithSession<{ html: string }>(`/api/documents/${documentId}/preview`);
-    setDocPreview(payload.data?.html ?? null);
+  async function openDocumentPreviewPage(documentId: string) {
+    window.open(`/dashboard/ipo/approval-letter/${documentId}`, '_blank', 'noopener,noreferrer');
+  }
+
+  async function ensureApprovalLetter(application: NonNullable<IPODashboard['applications']>[number]) {
+    const existing = documents.find((doc) => doc.type === 'approval' && doc.internship_id === application.internshipId && (application.studentId ? doc.student_id === application.studentId : true));
+    if (existing) return existing.id;
+    await fetchWithSession(`/api/industry/applications/${application.id}/generate-letters`, { method: 'POST' });
+    const refreshed = await fetchWithSession<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>('/api/documents/my');
+    setDocuments(refreshed.data ?? []);
+    const latest = (refreshed.data ?? []).find((doc) => doc.type === 'approval' && doc.internship_id === application.internshipId && (application.studentId ? doc.student_id === application.studentId : true));
+    return latest?.id ?? null;
   }
 
   useEffect(() => {
@@ -335,24 +324,6 @@ export default function IPODashboardPage() {
     await load();
   }
 
-  async function submitFeedback(applicationId: string) {
-    const data = feedbackDraft[applicationId];
-    if (!data) return;
-    setFeedbackSubmittingFor(applicationId);
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      await fetchWithSession(`/api/industry/applications/${applicationId}/feedback`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-      setFeedbackEditorOpenFor(null);
-      setSuccessMessage('Feedback form saved.');
-      await load();
-    } finally {
-      setFeedbackSubmittingFor(null);
-    }
-  }
 
   async function saveProfile() {
     if (!ipoProfile) return;
@@ -720,7 +691,6 @@ export default function IPODashboardPage() {
               <h2 className="text-2xl font-semibold text-slate-900">Accepted Ideas (Published for Students)</h2>
               <Button variant="secondary" onClick={() => window.location.reload()}>Refresh</Button>
             </div>
-            {docPreview ? <iframe title="Document Preview" className="mt-4 h-96 w-full rounded-lg border border-slate-200" srcDoc={docPreview} /> : null}
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[960px] text-left text-sm">
                 <thead>
@@ -855,36 +825,18 @@ export default function IPODashboardPage() {
                   <p className="mt-1 text-xs text-slate-400">Completed: {application.completedAt ?? 'Not completed'}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => completeApplication(application.id)} disabled={Boolean(application.completedAt)}>Completed</Button>
-                    <Button variant="secondary" disabled={!approvalDocument} onClick={() => approvalDocument && previewDocument(approvalDocument.id)}>Preview Approval Letter</Button>
-                    <Button variant="secondary" disabled={!approvalDocument} onClick={() => approvalDocument && downloadDocument(approvalDocument.id)}>Download Approval Letter</Button>
+                    <Button variant="secondary" onClick={async () => {
+                      const documentId = approvalDocument?.id ?? await ensureApprovalLetter(application);
+                      if (documentId) await openDocumentPreviewPage(documentId);
+                    }}>Preview Approval Letter</Button>
+                    <Button variant="secondary" onClick={async () => {
+                      const documentId = approvalDocument?.id ?? await ensureApprovalLetter(application);
+                      if (documentId) await downloadDocument(documentId);
+                    }}>Download Approval Letter</Button>
                     <Button variant="secondary" disabled={ideaActionSubmitting === application.id} onClick={() => void generateAndSendLetters(application.id)}>
                       {ideaActionSubmitting === application.id ? 'Generating...' : 'Generate & Send Acceptance/Invitation'}
                     </Button>
-                    <Button variant="secondary" onClick={() => {
-                      const today = new Date().toISOString().slice(0, 10);
-                      setFeedbackDraft((prev) => ({
-                        ...prev,
-                        [application.id]: prev[application.id] ?? {
-                          studentName: application.studentName ?? '',
-                          registerNumber: (application as any).registerNumber ?? '',
-                          organization: (application as any).organizationName ?? ipoProfile?.name ?? dashboard?.ipo?.name ?? '',
-                          duration: (application as any).internshipDuration ?? '',
-                          supervisorName: (application as any).supervisorName ?? ipoProfile?.supervisor_name ?? '',
-                          attendancePunctuality: '3',
-                          technicalSkills: '3',
-                          problemSolvingAbility: '3',
-                          communicationSkills: '3',
-                          teamwork: '3',
-                          professionalEthics: '3',
-                          overallPerformance: 'Good',
-                          remarks: '',
-                          recommendation: '',
-                          supervisorSignature: ipoProfile?.name ?? '',
-                          feedbackDate: today,
-                        },
-                      }));
-                      setFeedbackEditorOpenFor(application.id);
-                    }}>
+                    <Button variant="secondary" onClick={() => router.push(`/dashboard/ipo/feedback/${application.id}`)}>
                       Open Feedback Form
                     </Button>
                   </div>
@@ -895,46 +847,7 @@ export default function IPODashboardPage() {
               )) : <p className="text-slate-700">No accepted applications found.</p>}
             </div>
           </Card>
-          <Modal
-            open={Boolean(feedbackEditorOpenFor)}
-            title="INTERNSHIP PERFORMANCE FEEDBACK FORM"
-            onClose={() => setFeedbackEditorOpenFor(null)}
-            footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setFeedbackEditorOpenFor(null)} disabled={Boolean(feedbackEditorOpenFor && feedbackSubmittingFor === feedbackEditorOpenFor)}>Close</Button><Button disabled={Boolean(feedbackEditorOpenFor && feedbackSubmittingFor === feedbackEditorOpenFor)} onClick={() => feedbackEditorOpenFor && submitFeedback(feedbackEditorOpenFor)}>{feedbackEditorOpenFor && feedbackSubmittingFor === feedbackEditorOpenFor ? 'Saving...' : 'Submit'}</Button></div>}
-          >
-            {feedbackEditorOpenFor ? (
-              <div className="grid gap-2 text-sm">
-                {(() => { const f = feedbackDraft[feedbackEditorOpenFor]; if (!f) return null; return (
-                  <>
-                    <Input placeholder="Student Name" value={f.studentName} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, studentName: e.target.value } }))} />
-                    <Input placeholder="Register Number" value={f.registerNumber} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, registerNumber: e.target.value } }))} />
-                    <Input placeholder="Organization" value={f.organization} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, organization: e.target.value } }))} />
-                    <Input placeholder="Duration" value={f.duration} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, duration: e.target.value } }))} />
-                    <Input placeholder="Supervisor Name" value={f.supervisorName} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, supervisorName: e.target.value } }))} />
-                    {([
-                      ['attendancePunctuality', '1. Attendance and punctuality (1-5)'],
-                      ['technicalSkills', '2. Technical skills (1-5)'],
-                      ['problemSolvingAbility', '3. Problem-solving ability (1-5)'],
-                      ['communicationSkills', '4. Communication skills (1-5)'],
-                      ['teamwork', '5. Teamwork and collaboration (1-5)'],
-                      ['professionalEthics', '6. Professional ethics and discipline (1-5)'],
-                    ] as const).map(([key, label]) => (
-                      <div key={key} className="space-y-1">
-                        <label className="text-xs font-medium text-slate-700">{label}</label>
-                        <Input type="number" min={1} max={5} value={f[key]} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, [key]: e.target.value } }))} />
-                      </div>
-                    ))}
-                    <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={f.overallPerformance} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, overallPerformance: e.target.value as 'Excellent' | 'Good' | 'Average' | 'Poor' } }))}>
-                      <option>Excellent</option><option>Good</option><option>Average</option><option>Poor</option>
-                    </select>
-                    <Input placeholder="Remarks" value={f.remarks} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, remarks: e.target.value } }))} />
-                    <Input placeholder="Recommendation" value={f.recommendation} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, recommendation: e.target.value } }))} />
-                    <Input placeholder="Supervisor Signature" value={f.supervisorSignature} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, supervisorSignature: e.target.value } }))} />
-                    <Input type="date" value={f.feedbackDate} onChange={(e) => setFeedbackDraft((p) => ({ ...p, [feedbackEditorOpenFor]: { ...f, feedbackDate: e.target.value } }))} />
-                  </>
-                ); })()}
-              </div>
-            ) : null}
-          </Modal>
+
 
         </>
       )}
