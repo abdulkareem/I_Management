@@ -405,15 +405,13 @@ export default function DepartmentDashboardPage() {
   });
   const internalApps = (dashboard?.applications ?? []).filter((item: any) => {
     const status = String(item.status ?? '').toLowerCase();
-    const explicitInternal = Number(item.is_internal_student ?? 0) === 1;
-    const inferredInternal = Boolean(item.student_id) && !Boolean(item.external_student_id) && Number(item.is_external ?? 0) !== 1;
-    return (explicitInternal || inferredInternal) && status !== 'rejected';
+    const inferredInternal = Boolean(item.student_id) && !Boolean(item.external_student_id);
+    return inferredInternal && status !== 'rejected';
   });
   const externalApps = (dashboard?.applications ?? []).filter((item: any) => {
     const status = String(item.status ?? '').toLowerCase();
-    const differentCollege = item.is_external_by_college === 1;
-    const inferredExternal = Boolean(item.external_student_id) || Number(item.is_external ?? 0) === 1;
-    return (inferredExternal || differentCollege) && status !== 'rejected';
+    const inferredExternal = Boolean(item.external_student_id) || !Boolean(item.student_id);
+    return inferredExternal && status !== 'rejected';
   });
   const parseMappings = (value?: string | null) => value?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
   const toggleDraftSelection = (internshipId: string, field: 'mappedCo' | 'mappedPo' | 'mappedPso', value: string) => {
