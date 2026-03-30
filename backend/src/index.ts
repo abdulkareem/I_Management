@@ -4699,6 +4699,24 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     });
   }
 
+  const feedbackByStudentMatch = pathname.match(/^\/api\/department\/feedback\/([^/]+)\/([^/]+)$/);
+  if (feedbackByStudentMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const studentId = feedbackByStudentMatch[1];
+    const internshipId = feedbackByStudentMatch[2];
+
+    const feedback = await env.DB.prepare(
+      `SELECT f.rating, f.comments, f.skills_assessed, f.submitted_at
+       FROM feedbacks f
+       INNER JOIN internships i ON i.id = f.internship_id
+       WHERE f.student_id = ? AND f.internship_id = ? AND i.department_id = ?`,
+    ).bind(studentId, internshipId, actor.id).first<any>();
+
+    if (!feedback) return errorResponse(404, 'Feedback not found');
+    return ok('Feedback fetched', feedback);
+  }
+
   const outcomeByStudentMatch = pathname.match(/^\/api\/department\/outcome\/([^/]+)\/([^/]+)$/);
   if (outcomeByStudentMatch && request.method === 'GET') {
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
