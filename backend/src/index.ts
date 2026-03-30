@@ -3348,6 +3348,22 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('Feedback form fetched', row);
   }
 
+  const departmentFeedbackFormMatch = pathname.match(/^\/api\/department\/applications\/([^/]+)\/feedback-form$/);
+  if (departmentFeedbackFormMatch && request.method === 'GET') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const row = await env.DB.prepare(
+      `SELECT ipf.*
+       FROM internship_performance_feedback ipf
+       INNER JOIN internship_applications ia ON ia.id = ipf.application_id
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ipf.application_id = ?
+         AND i.department_id = ?`,
+    ).bind(departmentFeedbackFormMatch[1], actor.id).first<any>();
+    if (!row) return errorResponse(404, 'Feedback form not found');
+    return ok('Feedback form fetched', row);
+  }
+
   if (request.method === 'GET' && pathname === '/api/internships') {
     const externalOnly = toText(url.searchParams.get('external')).toLowerCase() === 'true';
     const query = externalOnly

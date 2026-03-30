@@ -47,8 +47,7 @@ export default function DepartmentDashboardPage() {
   const [ipos, setIPOs] = useState<IPO[]>([]);
   const [programs, setPrograms] = useState<DepartmentProgram[]>([]);
   const [programOutcomes, setProgramOutcomes] = useState<Record<string, ProgramOutcome[]>>({});
-  const [selectedIPO, setSelectedIPO] = useState<string>('');
-  const [ipoDetails, setIPODetails] = useState<IPODetails | null>(null);
+  const [selectedInternalIpoDetails, setSelectedInternalIpoDetails] = useState<IPODetails | null>(null);
   const [selectedProgramForIdea, setSelectedProgramForIdea] = useState<string>('');
   const [editingInternshipId, setEditingInternshipId] = useState<string | null>(null);
   const [editingIdeaId, setEditingIdeaId] = useState<string | null>(null);
@@ -143,14 +142,14 @@ export default function DepartmentDashboardPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!selectedIPO) {
-      setIPODetails(null);
+    if (!selectedInternalIPOId) {
+      setSelectedInternalIpoDetails(null);
       return;
     }
-    fetchWithSession<IPODetails>(`/api/department/ipos/${selectedIPO}`)
-      .then((res) => setIPODetails((res.data ?? null) as IPODetails | null))
-      .catch(() => setIPODetails(null));
-  }, [selectedIPO]);
+    fetchWithSession<IPODetails>(`/api/department/ipos/${selectedInternalIPOId}`)
+      .then((res) => setSelectedInternalIpoDetails((res.data ?? null) as IPODetails | null))
+      .catch(() => setSelectedInternalIpoDetails(null));
+  }, [selectedInternalIPOId]);
 
   const selectedProgramOutcomes = useMemo(() => programOutcomes[selectedProgramForIdea] ?? [], [programOutcomes, selectedProgramForIdea]);
   const ideaPageSize = 5;
@@ -287,7 +286,6 @@ export default function DepartmentDashboardPage() {
       });
       formElement.reset();
       setSelectedProgramForIdea('');
-      setSelectedIPO('');
       setIdeasPage(1);
       setSuccessMessage('Idea submitted successfully.');
       await load();
@@ -470,6 +468,29 @@ export default function DepartmentDashboardPage() {
                         <option value="">Select Registered IPO (IPO)</option>
                         {ipos.map((ipo) => <option key={ipo.id} value={ipo.id}>{ipo.name}</option>)}
                       </select>
+                      {selectedInternalIpoDetails ? (
+                        <Card className="rounded-xl border border-slate-200 p-3">
+                          <p className="font-semibold text-slate-900">{selectedInternalIpoDetails.name}</p>
+                          <p className="mt-1 text-sm text-slate-700"><span className="font-medium">Business activity:</span> {selectedInternalIpoDetails.business_activity || '-'}</p>
+                          <p className="text-sm text-slate-700"><span className="font-medium">Category:</span> {selectedInternalIpoDetails.category || '-'}</p>
+                          <div className="mt-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Active internship activities</p>
+                            {selectedInternalIpoDetails.listings?.length ? (
+                              <div className="mt-1 space-y-1">
+                                {selectedInternalIpoDetails.listings.map((listing) => (
+                                  <div key={listing.id} className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700">
+                                    <p className="font-medium text-slate-900">{listing.title}</p>
+                                    <p>Criteria: {listing.criteria || '-'}</p>
+                                    <p>Vacancy: {listing.vacancy ?? 0}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-1 text-xs text-slate-600">No active IPO activities found.</p>
+                            )}
+                          </div>
+                        </Card>
+                      ) : null}
                       <select name="programId" value={selectedInternalProgramId} onChange={(e) => setSelectedInternalProgramId(e.target.value)} required>
                         <option value="">Select Programme</option>
                         {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}

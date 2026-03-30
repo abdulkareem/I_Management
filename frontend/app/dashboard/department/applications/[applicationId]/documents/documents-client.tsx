@@ -22,7 +22,7 @@ export default function DocumentsClient({ applicationId }: DocumentsClientProps)
   useEffect(() => {
     if (!applicationId) return;
     let objectUrl: string | null = null;
-    fetchWithSession(`/api/industry/applications/${applicationId}/feedback-form`)
+    fetchWithSession(`/api/department/applications/${applicationId}/feedback-form`)
       .then((res) => setHasFeedback(Boolean(res.data)))
       .catch(() => setHasFeedback(false));
     fetchWithSession(`/api/department/applications/${applicationId}/marksheet`)
