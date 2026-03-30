@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "deploy": "wrangler pages deploy out --project-name internsuite-web",
+    "deploy": "npx @cloudflare/next-on-pages",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
@@ -24,6 +24,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "latest",
     "@tailwindcss/postcss": "^4.1.11",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
