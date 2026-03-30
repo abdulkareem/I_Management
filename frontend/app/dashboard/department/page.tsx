@@ -389,6 +389,19 @@ export default function DepartmentDashboardPage() {
     return Boolean((app as any).performance_feedback_id) || String(app.status ?? '').toLowerCase() === 'feedbackreceived';
   }
 
+  function getApplicationRouteParams(app: any): { studentId: string; internshipId: string } | null {
+    const studentId = String((app as any).student_id ?? (app as any).external_student_id ?? '').trim();
+    const internshipId = String((app as any).internship_id ?? '').trim();
+    if (!studentId || !internshipId || internshipId === 'undefined' || internshipId === 'null') return null;
+    return { studentId, internshipId };
+  }
+
+  function buildDepartmentRoute(section: 'feedback' | 'evaluation' | 'outcome' | 'documents', app: any): string | null {
+    const params = getApplicationRouteParams(app);
+    if (!params) return null;
+    return `/dashboard/department/${section}/${encodeURIComponent(params.studentId)}/${encodeURIComponent(params.internshipId)}`;
+  }
+
   const metrics = useMemo(() => ({
     internships: summary?.internships_count ?? dashboard?.internships.length ?? 0,
     pendingApplications: summary?.pending_count ?? dashboard?.applications.filter((item) => item.status === 'pending').length ?? 0,
@@ -769,10 +782,10 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/feedback/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!((app as any).student_id ?? (app as any).external_student_id)}>Feedback</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/evaluation/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!canAccessPostFeedbackActions(app) || !((app as any).student_id ?? (app as any).external_student_id)}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/outcome/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!canAccessPostFeedbackActions(app) || !((app as any).student_id ?? (app as any).external_student_id)}>Outcome Assessment Engine</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/documents/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!((app as any).student_id ?? (app as any).external_student_id)}>Documents</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('feedback', app); if (route) router.push(route); }} disabled={!buildDepartmentRoute('feedback', app)}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('evaluation', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('evaluation', app)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('outcome', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('outcome', app)}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('documents', app); if (route) router.push(route); }} disabled={!buildDepartmentRoute('documents', app)}>Documents</Button>
                         </div>
                       </td>
                     </tr>
@@ -809,10 +822,10 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/feedback/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!((app as any).student_id ?? (app as any).external_student_id)}>Feedback</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/evaluation/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!canAccessPostFeedbackActions(app) || !((app as any).student_id ?? (app as any).external_student_id)}>Enter Evaluation</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/outcome/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!canAccessPostFeedbackActions(app) || !((app as any).student_id ?? (app as any).external_student_id)}>Outcome Assessment Engine</Button>
-                          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/documents/${(app as any).student_id ?? (app as any).external_student_id}/${(app as any).internship_id}`)} disabled={!((app as any).student_id ?? (app as any).external_student_id)}>Documents</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('feedback', app); if (route) router.push(route); }} disabled={!buildDepartmentRoute('feedback', app)}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('evaluation', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('evaluation', app)}>Enter Evaluation</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('outcome', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('outcome', app)}>Outcome Assessment Engine</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('documents', app); if (route) router.push(route); }} disabled={!buildDepartmentRoute('documents', app)}>Documents</Button>
                         </div>
                       </td>
                     </tr>
