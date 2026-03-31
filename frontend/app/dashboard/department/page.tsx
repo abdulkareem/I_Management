@@ -21,6 +21,7 @@ type DepartmentProfile = { id: string; name: string; coordinator_name: string };
 type InternshipType = 'FREE' | 'PAID' | 'STIPEND';
 type StipendFrequency = 'DAY' | 'WEEK' | 'MONTH';
 type ApplicableTo = 'INTERNAL' | 'EXTERNAL';
+type InternshipAudience = 'INTERNAL' | 'EXTERNAL';
 type DepartmentSummary = {
   name: string;
   coordinator_name: string;
@@ -443,6 +444,11 @@ export default function DepartmentDashboardPage() {
       return { ...prev, [field]: next };
     });
   };
+  const getInternshipAudience = (item: any): InternshipAudience => {
+    const explicitAudience = String(item?.applicable_to ?? '').toUpperCase();
+    if (explicitAudience === 'EXTERNAL' || explicitAudience === 'INTERNAL') return explicitAudience as InternshipAudience;
+    return Number(item?.is_external ?? 0) === 1 ? 'EXTERNAL' : 'INTERNAL';
+  };
 
   return (
     <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title={dashboardTitle} subtitle="Manage programs, PO/PSO mapping, internships, ideas and student applications.">
@@ -667,15 +673,37 @@ export default function DepartmentDashboardPage() {
                 <div key={item.id} className="mb-2 rounded-lg border border-slate-200 p-2">
                   {editingInternshipId === item.id ? (
                     <div className="grid gap-2">
-                      <input value={drafts[item.id]?.title ?? item.title} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), title: e.target.value } }))} />
-                      <textarea value={drafts[item.id]?.description ?? item.description} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), description: e.target.value } }))} />
-                      <select value={drafts[item.id]?.internship_category ?? item.internship_category ?? 'FREE'} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), internship_category: e.target.value } }))}>
-                        <option value="FREE">Free Internship</option>
-                        <option value="STIPEND">Internship with Stipend</option>
-                        <option value="PAID">Paid Internship</option>
-                      </select>
-                      <input type="number" min={0} value={drafts[item.id]?.fee ?? item.fee ?? 0} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), fee: e.target.value } }))} />
-                      <input type="number" min={0} value={drafts[item.id]?.vacancy ?? item.vacancy ?? 0} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), vacancy: e.target.value } }))} />
+                      <label className="grid gap-1 text-xs text-slate-700">
+                        Internship title
+                        <input value={drafts[item.id]?.title ?? item.title} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), title: e.target.value } }))} />
+                        <span className="text-[11px] text-slate-500">Previous: {item.title || '-'}</span>
+                      </label>
+                      <label className="grid gap-1 text-xs text-slate-700">
+                        Description
+                        <textarea value={drafts[item.id]?.description ?? item.description} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), description: e.target.value } }))} />
+                        <span className="text-[11px] text-slate-500">Previous: {item.description || '-'}</span>
+                      </label>
+                      <label className="grid gap-1 text-xs text-slate-700">
+                        Internship category
+                        <select value={drafts[item.id]?.internship_category ?? item.internship_category ?? 'FREE'} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), internship_category: e.target.value } }))}>
+                          <option value="FREE">Free Internship</option>
+                          <option value="STIPEND">Internship with Stipend</option>
+                          <option value="PAID">Paid Internship</option>
+                        </select>
+                        <span className="text-[11px] text-slate-500">Previous: {item.internship_category || 'FREE'}</span>
+                      </label>
+                      <label className="grid gap-1 text-xs text-slate-700">
+                        Fee amount
+                        <input type="number" min={0} value={drafts[item.id]?.fee ?? item.fee ?? 0} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), fee: e.target.value } }))} />
+                        <span className="text-[11px] text-slate-500">Previous: {item.fee ?? 0}</span>
+                      </label>
+                      <label className="grid gap-1 text-xs text-slate-700">
+                        Vacancy
+                        <input type="number" min={0} value={drafts[item.id]?.vacancy ?? item.vacancy ?? 0} onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? item), vacancy: e.target.value } }))} />
+                        <span className="text-[11px] text-slate-500">Previous: {item.available_vacancy ?? item.vacancy ?? 0}</span>
+                      </label>
+                      <p className="text-[11px] text-slate-500">Audience: {getInternshipAudience(item) === 'EXTERNAL' ? 'For external students' : 'For internal students'}</p>
+                      <p className="text-[11px] text-slate-500">Current status: {item.status}</p>
                     </div>
                   ) : (
                     <>
@@ -683,7 +711,7 @@ export default function DepartmentDashboardPage() {
                       <p className="text-xs text-slate-700">{item.description}</p>
                       <p className="text-xs text-slate-400">
                         Category: {item.internship_category || 'FREE'} • Vacancy: {item.available_vacancy ?? item.vacancy ?? 0} • {item.status}{' '}
-                        ({Number(item.is_external ?? 0) === 1 ? 'external' : 'internal'})
+                        ({getInternshipAudience(item) === 'EXTERNAL' ? 'for external students' : 'for internal students'})
                       </p>
                     </>
                   )}
