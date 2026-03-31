@@ -5,5 +5,18 @@ compatibility_date = "2026-03-21"
 [assets]
 directory = ".open-next/assets"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "internmanagementdata"
+database_id = "c97be9fd-09a6-4dc4-b2ab-593fad26516f"
+
+[[kv_namespaces]]
+binding = "CACHE_KV"
+id = "replace-with-cache-kv-id"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "replace-with-rate-limit-kv-id"
+
 [vars]
-NEXT_PUBLIC_API_BASE_URL = "https://internmanagement.abdulkareem-t.workers.dev"
+JWT_SECRET = "secure-value"

@@ -3,7 +3,6 @@
   "private": true,
   "version": "2.0.0",
   "workspaces": [
-    "backend",
     "frontend",
     "packages/*"
   ],
@@ -11,12 +10,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "npm run dev --workspace @internsuite/api & npm run dev --workspace @internsuite/web",
-    "build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/api && npm run build --workspace @internsuite/web",
-    "typecheck": "npm run typecheck --workspace @internsuite/api && npm run typecheck --workspace @internsuite/web",
-    "lint": "npm run lint --workspace @internsuite/api && npm run lint --workspace @internsuite/web",
+    "dev": "npm run dev --workspace @internsuite/web",
+    "build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/web",
+    "typecheck": "npm run typecheck --workspace @internsuite/web",
+    "lint": "npm run lint --workspace @internsuite/web",
     "db:migrate": "wrangler d1 execute internsuite-db --file ./packages/db/migrations/0001_init.sql --remote",
-    "deploy:api": "npm run deploy --workspace @internsuite/api",
     "deploy:web": "npm run deploy --workspace @internsuite/web",
     "pages:build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/web"
   }
