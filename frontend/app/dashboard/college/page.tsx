@@ -63,7 +63,7 @@ export default function CollegeDashboardPage() {
   const downloadReport = async () => {
     const session = localStorage.getItem('internsuite.session');
     const token = session ? JSON.parse(session).token : '';
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://i-management-production.up.railway.app'}/api/college/report/pdf`, { headers: { Authorization: token ? `Bearer ${token}` : '' }, cache: 'no-store' });
+    const res = await fetch(`/api/college/report/pdf`, { headers: { Authorization: token ? `Bearer ${token}` : '' }, cache: 'no-store' });
     const blob = await res.blob();
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
