@@ -1,10 +1,3 @@
-name = "intern-management"
-main = ".open-next/worker.js"
-compatibility_date = "2024-01-01"
-pages_build_output_dir = ".next/static"
-
-[assets]
-directory = ".open-next/assets"
-
-[vars]
-NEXT_PUBLIC_API_BASE_URL = "https://internmanagement.abdulkareem-t.workers.dev"
+name = "i-management"
+pages_build_output_dir = "out"
+compatibility_date = "2026-03-21"
