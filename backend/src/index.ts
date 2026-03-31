@@ -3535,7 +3535,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               i.status,
               COALESCE(i.published, 0) AS published,
               i.created_at, i.updated_at, i.department_id, d.college_id,
-              COALESCE(i.is_paid, 0) AS is_paid, i.fee, i.internship_category, i.is_external, COALESCE(i.vacancy, 0) AS vacancy,
+              COALESCE(i.is_paid, 0) AS is_paid, i.fee, i.internship_category, i.is_external,
+              CASE WHEN COALESCE(i.is_external, 0) = 1 THEN 'EXTERNAL' ELSE 'INTERNAL' END AS applicable_to,
+              COALESCE(i.vacancy, 0) AS vacancy,
               i.programme, i.mapped_po, i.mapped_pso, i.mapped_co, COALESCE(i.student_visibility, 0) AS student_visibility,
               (SELECT COUNT(*) FROM internship_applications ia WHERE ia.internship_id = i.id) AS registered_students_count
        FROM internships i
@@ -4265,7 +4267,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
               COALESCE(filled_vacancy, 0) AS filled_vacancy,
               MAX(COALESCE(total_vacancy, vacancy, 0) - COALESCE(filled_vacancy, 0), 0) AS available_vacancy,
               COALESCE(vacancy, COALESCE(total_vacancy, 0)) AS vacancy,
-              is_external, status, created_at, industry_id, gender_preference, stipend_amount, stipend_duration, minimum_days
+              is_external,
+              CASE WHEN COALESCE(is_external, 0) = 1 THEN 'EXTERNAL' ELSE 'INTERNAL' END AS applicable_to,
+              status, created_at, industry_id, gender_preference, stipend_amount, stipend_duration, minimum_days
        FROM internships
        WHERE department_id = ?
        ORDER BY created_at DESC`,
