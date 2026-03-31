@@ -1991,12 +1991,53 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return ok('IPO profile updated');
   }
 
+  if (request.method === 'PUT' && pathname === '/api/ipo/profile') {
+    const actor = requireRole(request, ['INDUSTRY']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+
+    await env.DB.prepare(
+      `UPDATE industries
+       SET company_address = COALESCE(?, company_address),
+           contact_number = COALESCE(?, contact_number),
+           email = COALESCE(?, email),
+           registration_number = COALESCE(?, registration_number),
+           registration_year = COALESCE(?, registration_year),
+           supervisor_name = COALESCE(?, supervisor_name),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(
+        optional(body, ['company_address', 'companyAddress', 'address']),
+        optional(body, ['contact_number', 'contactNumber']),
+        optional(body, ['email']) ? normalizeEmail(toText(optional(body, ['email']))) : null,
+        optional(body, ['registration_number', 'registrationNumber']),
+        optional(body, ['registration_year', 'registrationYear']) ? Number(optional(body, ['registration_year', 'registrationYear'])) : null,
+        optional(body, ['supervisor_name', 'supervisorName']),
+        actor.id,
+      )
+      .run();
+
+    return ok('IPO profile updated');
+  }
+
   if (request.method === 'GET' && pathname === '/api/ipo/profile') {
     const actor = requireRole(request, ['INDUSTRY']);
     if (actor instanceof Response) return actor;
 
     const [profile, linkedColleges, publishedInternships, pendingApplications, acceptedApplications] = await Promise.all([
-      env.DB.prepare('SELECT name, company_address AS address, email, supervisor_name FROM industries WHERE id = ?').bind(actor.id).first<{ name: string; address: string | null; email: string; supervisor_name: string | null }>(),
+      env.DB.prepare(
+        `SELECT name, company_address, email, contact_number, registration_number, registration_year, supervisor_name
+         FROM industries WHERE id = ?`,
+      ).bind(actor.id).first<{
+        name: string;
+        company_address: string | null;
+        email: string;
+        contact_number: string | null;
+        registration_number: string | null;
+        registration_year: number | null;
+        supervisor_name: string | null;
+      }>(),
       env.DB.prepare("SELECT COUNT(DISTINCT college_id) AS count FROM college_industry_links WHERE industry_id = ? AND status IN ('approved', 'active')").bind(actor.id).first<{ count: number }>(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM internships WHERE industry_id = ? AND status = 'PUBLISHED'").bind(actor.id).first<{ count: number }>(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM internship_applications ia INNER JOIN internships i ON i.id = ia.internship_id WHERE i.industry_id = ? AND lower(ia.status) = 'pending'").bind(actor.id).first<{ count: number }>(),
@@ -2005,8 +2046,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     return ok('IPO profile fetched', {
       name: profile?.name ?? '',
-      address: profile?.address ?? null,
+      address: profile?.company_address ?? null,
+      company_address: profile?.company_address ?? null,
       email: profile?.email ?? '',
+      contact_number: profile?.contact_number ?? null,
+      registration_number: profile?.registration_number ?? null,
+      registration_year: profile?.registration_year ?? null,
       supervisor_name: profile?.supervisor_name ?? null,
       linked_colleges_count: Number(linkedColleges?.count ?? 0),
       published_internships: Number(publishedInternships?.count ?? 0),
