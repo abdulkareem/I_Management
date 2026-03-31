@@ -681,7 +681,10 @@ export default function DepartmentDashboardPage() {
                     <>
                       <p>{item.title}</p>
                       <p className="text-xs text-slate-700">{item.description}</p>
-                      <p className="text-xs text-slate-400">Category: {item.internship_category || 'FREE'} • Vacancy: {item.vacancy ?? 0} • {item.status} {item.ipo_id ? '(ipo)' : '(internal)'}</p>
+                      <p className="text-xs text-slate-400">
+                        Category: {item.internship_category || 'FREE'} • Vacancy: {item.available_vacancy ?? item.vacancy ?? 0} • {item.status}{' '}
+                        ({Number(item.is_external ?? 0) === 1 ? 'external' : 'internal'})
+                      </p>
                     </>
                   )}
                   <div className="mt-2 flex gap-2">
