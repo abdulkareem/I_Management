@@ -79,7 +79,7 @@ export interface IPODashboard {
 }
 
 export interface DepartmentDashboard {
-  internships: Array<{ id: string; title: string; description: string; is_paid: number; fee?: number | null; internship_category?: 'FREE' | 'PAID' | 'STIPEND' | null; vacancy?: number | null; is_external: number; status: string; created_at: string; ipo_id?: string | null; gender_preference?: 'GIRLS' | 'BOYS' | 'BOTH' | null; stipend_amount?: number | null; stipend_duration?: 'DAY' | 'WEEK' | 'MONTH' | null; minimum_days?: number | null }>;
+  internships: Array<{ id: string; title: string; description: string; is_paid: number; fee?: number | null; internship_category?: 'FREE' | 'PAID' | 'STIPEND' | null; vacancy?: number | null; total_vacancy?: number | null; filled_vacancy?: number | null; available_vacancy?: number | null; is_external: number; status: string; created_at: string; ipo_id?: string | null; gender_preference?: 'GIRLS' | 'BOYS' | 'BOTH' | null; stipend_amount?: number | null; stipend_duration?: 'DAY' | 'WEEK' | 'MONTH' | null; minimum_days?: number | null }>;
   applications: Array<{ id: string; status: string; internship_title: string; student_name: string; student_email: string; is_external: number; created_at: string; completed_at?: string | null }>;
   ipoRequests: Array<{ id: string; internship_title: string; description: string; mapped_co?: string | null; mapped_po?: string | null; mapped_pso?: string | null; status: string; ipo_name: string }>;
 }

@@ -4074,8 +4074,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const internshipId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO internships (id, title, description, department_id, college_id, ipo_id, industry_id, is_paid, fee, internship_category, total_vacancy, filled_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, source_type, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po, internship_co)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?, ?)`,
+      `INSERT INTO internships (id, title, description, department_id, college_id, ipo_id, industry_id, is_paid, fee, internship_category, vacancy, total_vacancy, filled_vacancy, remaining_vacancy, available_vacancy, is_external, created_by, source_type, visibility_type, status, stipend_amount, stipend_duration, minimum_days, gender_preference, programme, mapped_po, mapped_pso, mapped_co, internship_po, internship_co)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT name FROM programs WHERE id = ?), ?, ?, ?, ?, ?)`,
     )
       .bind(
         internshipId,
@@ -4088,6 +4088,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         isPaid ? 1 : 0,
         isPaid ? Math.round(fee ?? 0) : null,
         internshipCategory,
+        Math.floor(vacancy ?? 0),
         Math.floor(vacancy ?? 0),
         0,
         Math.floor(vacancy ?? 0),
@@ -4175,6 +4176,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const result = await env.DB.prepare(
       `UPDATE internships
        SET title = ?, description = ?, is_paid = ?, fee = ?, internship_category = ?,
+           vacancy = COALESCE(?, vacancy),
            total_vacancy = COALESCE(?, total_vacancy),
            remaining_vacancy = MAX(COALESCE(?, total_vacancy) - COALESCE(filled_vacancy, 0), 0),
            available_vacancy = MAX(COALESCE(?, total_vacancy) - COALESCE(filled_vacancy, 0), 0),
@@ -4187,6 +4189,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       isPaid ? 1 : 0,
       isPaid ? Math.round(fee ?? 0) : null,
       internshipCategory,
+      vacancy === null ? null : Math.floor(vacancy),
       vacancy === null ? null : Math.floor(vacancy),
       vacancy === null ? null : Math.floor(vacancy),
       vacancy === null ? null : Math.floor(vacancy),
@@ -4257,7 +4260,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     const rows = await env.DB.prepare(
-      `SELECT id, title, description, is_paid, fee, internship_category, vacancy, is_external, status, created_at, industry_id, gender_preference, stipend_amount, stipend_duration, minimum_days
+      `SELECT id, title, description, is_paid, fee, internship_category,
+              COALESCE(total_vacancy, vacancy, 0) AS total_vacancy,
+              COALESCE(filled_vacancy, 0) AS filled_vacancy,
+              MAX(COALESCE(total_vacancy, vacancy, 0) - COALESCE(filled_vacancy, 0), 0) AS available_vacancy,
+              COALESCE(vacancy, COALESCE(total_vacancy, 0)) AS vacancy,
+              is_external, status, created_at, industry_id, gender_preference, stipend_amount, stipend_duration, minimum_days
        FROM internships
        WHERE department_id = ?
        ORDER BY created_at DESC`,
