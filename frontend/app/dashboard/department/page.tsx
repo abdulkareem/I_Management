@@ -399,6 +399,9 @@ export default function DepartmentDashboardPage() {
   function buildDepartmentRoute(section: 'feedback' | 'evaluation' | 'outcome' | 'documents', app: any): string | null {
     const params = getApplicationRouteParams(app);
     if (!params) return null;
+    if (section === 'feedback') {
+      return `/department/feedback/${encodeURIComponent(params.studentId)}/${encodeURIComponent(params.internshipId)}`;
+    }
     return `/dashboard/department/${section}/${encodeURIComponent(params.studentId)}/${encodeURIComponent(params.internshipId)}`;
   }
 
@@ -782,7 +785,7 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('feedback', app); if (route) router.push(route); }} disabled={!buildDepartmentRoute('feedback', app)}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('feedback', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('feedback', app)}>View Feedback</Button>
                           <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('evaluation', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('evaluation', app)}>Enter Evaluation</Button>
                           <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('outcome', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('outcome', app)}>Outcome Assessment Engine</Button>
                           <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('documents', app); if (route) router.push(route); }} disabled={!buildDepartmentRoute('documents', app)}>Documents</Button>
@@ -822,7 +825,7 @@ export default function DepartmentDashboardPage() {
                       <td className="py-2 pr-3">
                         <div className="flex gap-2">
                           {String(app.status ?? '').toLowerCase() !== 'accepted' ? <Button variant="secondary" onClick={() => rejectApplication(app.id)}>Reject</Button> : null}
-                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('feedback', app); if (route) router.push(route); }} disabled={!buildDepartmentRoute('feedback', app)}>Feedback</Button>
+                          <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('feedback', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('feedback', app)}>View Feedback</Button>
                           <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('evaluation', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('evaluation', app)}>Enter Evaluation</Button>
                           <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('outcome', app); if (route) router.push(route); }} disabled={!canAccessPostFeedbackActions(app) || !buildDepartmentRoute('outcome', app)}>Outcome Assessment Engine</Button>
                           <Button variant="secondary" onClick={() => { const route = buildDepartmentRoute('documents', app); if (route) router.push(route); }} disabled={!buildDepartmentRoute('documents', app)}>Documents</Button>

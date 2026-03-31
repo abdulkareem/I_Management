@@ -2560,6 +2560,11 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       actor.id,
     ).run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(500, 'Unable to publish internship');
+
+    // Generate core letters when internship enters published state.
+    await generateApprovalLetter(env, internshipId, actor);
+    await generateAcceptanceLetter(env, internshipId, actor);
+
     return ok('Internship published for students');
   }
 
@@ -3269,24 +3274,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       )
         .bind(crypto.randomUUID(), application.student_id, application.external_student_id, internship?.industry_id ?? actor.id, application.internship_id, 'Allocated from accepted application')
         .run();
-      if (application.student_id) {
-        await generateDocument(env, {
-          type: 'approval',
-          internshipId: application.internship_id,
-          studentId: application.student_id,
-          actor,
-          supervisorName: application.supervisor_name ?? undefined,
-          supervisorDesignation: 'Industry Supervisor',
-        });
-      }
-      await generateDocument(env, {
-        type: 'reply',
-        internshipId: application.internship_id,
-        studentId: application.student_id ?? undefined,
-        actor,
-        supervisorName: application.supervisor_name ?? 'Industry Supervisor',
-        supervisorDesignation: 'Industry Supervisor',
-      });
+      await generateApprovalLetter(env, application.internship_id, actor, application.student_id);
+      await generateAcceptanceLetter(env, application.internship_id, actor, application.student_id);
     }
 
     return ok('Application accepted and letters generated');
@@ -4306,8 +4295,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       if (externalOnlyForOtherColleges) {
         return forbidden('This internship is open only to external college students');
       }
-      if (internship.department_id && student.department_id !== internship.department_id) {
-        return forbidden('This internship is only available to students in the mapped department');
+      const isDepartmentCreatedExternal = Number(internship.is_external) === 1
+        && String(internship.created_by).toUpperCase() !== 'INDUSTRY';
+      if (isDepartmentCreatedExternal && internship.department_id && student.department_id === internship.department_id) {
+        return forbidden('External internships are not available to the same department that created them.');
       }
       if (internship.available_vacancy !== null && Number(internship.available_vacancy) <= 0) return forbidden('No vacancy available for this internship');
     }
@@ -4327,6 +4318,18 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const applicationId = crypto.randomUUID();
     try {
       await runAtomic(env, null, async () => {
+        const vacancyUpdated = await env.DB.prepare(
+          `UPDATE internships
+           SET filled_vacancy = filled_vacancy + 1,
+               available_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
+               remaining_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
+               status = CASE WHEN total_vacancy - (filled_vacancy + 1) <= 0 THEN 'FULL' ELSE status END,
+               updated_at = datetime('now')
+           WHERE id = ?
+             AND filled_vacancy < total_vacancy`,
+        ).bind(internshipId).run();
+        if ((vacancyUpdated.meta.changes ?? 0) === 0) throw new Error('No vacancy available for this internship');
+
         await env.DB.prepare(
           `INSERT INTO internship_applications (id, student_id, external_student_id, internship_id, status, is_external)
            VALUES (?, ?, ?, ?, 'pending', ?)`,
@@ -4487,24 +4490,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     if (!app) return errorResponse(404, 'Application not found for this department');
 
-    if (Number(app.filled_vacancy ?? 0) >= Number(app.total_vacancy ?? 0)) {
-      return conflict('No vacancies available');
-    }
-
     try {
       await runAtomic(env, null, async () => {
-        const vacancyUpdate = await env.DB.prepare(
-          `UPDATE internships
-           SET filled_vacancy = filled_vacancy + 1,
-               available_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
-               remaining_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
-               status = CASE WHEN total_vacancy - (filled_vacancy + 1) <= 0 THEN 'FULL' ELSE status END,
-               updated_at = datetime('now')
-           WHERE id = ?
-             AND filled_vacancy < total_vacancy`,
-        ).bind(app.internship_id).run();
-        if ((vacancyUpdate.meta.changes ?? 0) === 0) throw new Error('No vacancies available');
-
         const appUpdate = await env.DB.prepare(
           `UPDATE internship_applications
            SET status = 'accepted',
@@ -4519,6 +4506,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     } catch (error) {
       return conflict(error instanceof Error ? error.message : 'Unable to accept application');
     }
+
+    await syncInternshipVacancy(env, app.internship_id);
 
     await sendAcceptanceEmail(env, {
       to: app.student_email,
@@ -4595,29 +4584,6 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Accepted application not found for this department');
     return ok('Internship marked as completed');
-  }
-
-  const departmentFeedbackByStudentMatch = pathname.match(/^\/api\/department\/feedback\/([^/]+)\/([^/]+)$/);
-  if (departmentFeedbackByStudentMatch && request.method === 'GET') {
-    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
-    if (actor instanceof Response) return actor;
-    const internshipId = departmentFeedbackByStudentMatch[1];
-    const studentId = departmentFeedbackByStudentMatch[2];
-
-    const feedback = await env.DB.prepare(
-      `SELECT f.*, i.title AS internship_title, ind.name AS ipo_name
-       FROM feedbacks f
-       INNER JOIN internships i ON i.id = f.internship_id
-       LEFT JOIN industries ind ON ind.id = f.ipo_id
-       WHERE f.internship_id = ?
-         AND f.student_id = ?
-         AND i.department_id = ?
-       ORDER BY f.submitted_at DESC
-       LIMIT 1`,
-    ).bind(internshipId, studentId, actor.id).first<any>();
-
-    if (!feedback) return errorResponse(404, 'No feedback available for this internship and student');
-    return ok('Department feedback fetched', feedback);
   }
 
   if (request.method === 'POST' && pathname === '/api/department/evaluation') {
@@ -4752,9 +4718,26 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const internshipId = feedbackByStudentMatch[2];
 
     const feedback = await env.DB.prepare(
-      `SELECT f.rating, f.comments, f.skills_assessed, f.submitted_at
+      `SELECT f.rating,
+              f.comments,
+              f.skills_assessed,
+              f.submitted_at,
+              ipf.attendance_punctuality,
+              ipf.technical_skills,
+              ipf.problem_solving_ability,
+              ipf.communication_skills,
+              ipf.teamwork,
+              ipf.professional_ethics,
+              ipf.overall_performance,
+              ipf.remarks,
+              ipf.recommendation,
+              ipf.supervisor_name,
+              ipf.feedback_date
        FROM feedbacks f
        INNER JOIN internships i ON i.id = f.internship_id
+       LEFT JOIN internship_performance_feedback ipf
+         ON ipf.internship_id = f.internship_id
+        AND (ipf.student_id = f.student_id OR ipf.external_student_id = f.student_id)
        WHERE f.student_id = ? AND f.internship_id = ? AND i.department_id = ?`,
     ).bind(studentId, internshipId, actor.id).first<any>();
 
@@ -5796,6 +5779,34 @@ async function runAtomic(
   await operation();
 }
 
+async function generateApprovalLetter(
+  env: EnvBindings,
+  internshipId: string,
+  actor: AuthSession['user'],
+  studentId?: string | null,
+): Promise<void> {
+  await generateDocument(env, {
+    type: 'approval',
+    internshipId,
+    studentId: studentId ?? undefined,
+    actor,
+  });
+}
+
+async function generateAcceptanceLetter(
+  env: EnvBindings,
+  internshipId: string,
+  actor: AuthSession['user'],
+  studentId?: string | null,
+): Promise<void> {
+  await generateDocument(env, {
+    type: 'reply',
+    internshipId,
+    studentId: studentId ?? undefined,
+    actor,
+  });
+}
+
 async function syncInternshipVacancy(env: EnvBindings, internshipId: string): Promise<void> {
   await env.DB.prepare(
     `UPDATE internships
@@ -5803,19 +5814,19 @@ async function syncInternshipVacancy(env: EnvBindings, internshipId: string): Pr
            SELECT COUNT(*)
            FROM internship_applications ia
            WHERE ia.internship_id = internships.id
-             AND lower(ia.status) = 'accepted'
+             AND lower(ia.status) IN ('pending', 'accepted')
          ),
          available_vacancy = MAX(total_vacancy - (
            SELECT COUNT(*)
            FROM internship_applications ia
            WHERE ia.internship_id = internships.id
-             AND lower(ia.status) = 'accepted'
+             AND lower(ia.status) IN ('pending', 'accepted')
          ), 0),
          remaining_vacancy = MAX(total_vacancy - (
            SELECT COUNT(*)
            FROM internship_applications ia
            WHERE ia.internship_id = internships.id
-             AND lower(ia.status) = 'accepted'
+             AND lower(ia.status) IN ('pending', 'accepted')
          ), 0),
          status = CASE
            WHEN total_vacancy > 0 AND (
@@ -5823,7 +5834,7 @@ async function syncInternshipVacancy(env: EnvBindings, internshipId: string): Pr
                SELECT COUNT(*)
                FROM internship_applications ia
                WHERE ia.internship_id = internships.id
-                 AND lower(ia.status) = 'accepted'
+                 AND lower(ia.status) IN ('pending', 'accepted')
              )
            ) <= 0 THEN 'FULL'
            WHEN status = 'FULL' THEN 'PUBLISHED'

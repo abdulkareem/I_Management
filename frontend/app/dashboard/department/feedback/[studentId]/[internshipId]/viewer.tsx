@@ -14,7 +14,7 @@ export default function FeedbackViewer({ studentId, internshipId }: { studentId:
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchWithSession(`/api/department/feedback/${internshipId}/${studentId}`).then((res) => {
+    fetchWithSession(`/api/department/feedback/${studentId}/${internshipId}`).then((res) => {
       setFeedback(res.data ?? null);
     }).catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load feedback')).finally(() => setLoading(false));
   }, [studentId, internshipId]);
@@ -23,7 +23,7 @@ export default function FeedbackViewer({ studentId, internshipId }: { studentId:
     <Card className="rounded-[20px] p-5 text-slate-900">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-semibold">Feedback</h2>
-        <Button variant="secondary" onClick={() => router.push('/dashboard/department')}>Close</Button>
+        <Button variant="secondary" onClick={() => router.push('/dashboard/department')}>Back</Button>
       </div>
       {loading ? <p className="text-sm">Loading feedback...</p> : null}
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
