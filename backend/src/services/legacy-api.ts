@@ -910,7 +910,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     );
   }
 
-  if (request.method === 'GET' && pathname === '/api/public/stats') {
+  if (request.method === 'GET' && (pathname === '/api/public/stats' || pathname === '/api/public/stats/')) {
     try {
       const [students, industries, vacancies, applications] = await Promise.all([
         env.DB.prepare('SELECT COUNT(*) AS count FROM students').first<{ count: number }>(),
@@ -6276,6 +6276,18 @@ async function editAdminEntity(request: Request, env: EnvBindings, entity: strin
   return badRequest('Unsupported entity');
 }
 
+function isPasswordMatch(inputPassword: string, storedPassword: string): boolean {
+  const normalizedInput = String(inputPassword ?? '');
+  const normalizedStored = String(storedPassword ?? '');
+  const looksHashed = /^\$2[aby]\$\d{2}\$/.test(normalizedStored);
+
+  if (looksHashed) {
+    console.warn('[AUTH] bcrypt hash detected but bcrypt is not configured in this runtime; using plain-text fallback compare only.');
+  }
+
+  return normalizedInput === normalizedStored;
+}
+
 async function passwordLogin(request: Request, env: EnvBindings, entity: 'college' | 'industry' | 'student') {
   const body = await readBody(request);
   console.log('BODY:', body);
@@ -6288,33 +6300,33 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
   if (entity === 'college') {
     const row = await env.DB.prepare(
       `SELECT id, coordinator_email AS email, password, status, is_active
-       FROM colleges WHERE coordinator_email = ?`,
+       FROM colleges WHERE lower(coordinator_email) = lower(?)`,
     )
       .bind(email)
       .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
 
-    if (!row || row.password !== password) return unauthorized('Invalid credentials');
+    if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
     if (row.status !== 'approved' || Number(row.is_active) !== 1) return forbidden('Waiting for approval');
 
     return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'COLLEGE' }));
   }
 
   if (entity === 'industry') {
-    const row = await env.DB.prepare('SELECT id, email, password, status, is_active FROM industries WHERE email = ?')
+    const row = await env.DB.prepare('SELECT id, email, password, status, is_active FROM industries WHERE lower(email) = lower(?)')
       .bind(email)
       .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
 
-    if (!row || row.password !== password) return unauthorized('Invalid credentials');
+    if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
     if (row.status !== 'approved' || Number(row.is_active) !== 1) return forbidden('Waiting for approval');
 
     return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'INDUSTRY' }));
   }
 
-  const row = await env.DB.prepare('SELECT id, email, password, is_active FROM students WHERE email = ?')
+  const row = await env.DB.prepare('SELECT id, email, password, is_active FROM students WHERE lower(email) = lower(?)')
     .bind(email)
     .first<{ id: string; email: string; password: string; is_active: number }>();
 
-  if (!row || row.password !== password) return unauthorized('Invalid credentials');
+  if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
   if (Number(row.is_active) !== 1) return forbidden('Account inactive');
 
   return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'STUDENT' }));
@@ -6329,13 +6341,13 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
 
   if (!email || !password) return badRequest('email and password are required');
 
-  const college = await env.DB.prepare('SELECT id, coordinator_email AS email, password, status, is_active FROM colleges WHERE coordinator_email = ?')
+  const college = await env.DB.prepare('SELECT id, coordinator_email AS email, password, status, is_active FROM colleges WHERE lower(coordinator_email) = lower(?)')
     .bind(email)
     .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
   console.log('[AUTH] College user exists:', Boolean(college));
   if (college) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
-    const isMatch = college.password === password;
+    const isMatch = isPasswordMatch(password, college.password);
     console.log('[AUTH] College password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
     const status = { status: college.status, is_active: college.is_active };
@@ -6343,26 +6355,26 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     return ok('Login successful', createSession({ id: college.id, email: college.email, role: 'COLLEGE' }));
   }
 
-  const industry = await env.DB.prepare('SELECT id, email, password, status, is_active FROM industries WHERE email = ?')
+  const industry = await env.DB.prepare('SELECT id, email, password, status, is_active FROM industries WHERE lower(email) = lower(?)')
     .bind(email)
     .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
   console.log('[AUTH] Industry user exists:', Boolean(industry));
   if (industry) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
-    const isMatch = industry.password === password;
+    const isMatch = isPasswordMatch(password, industry.password);
     console.log('[AUTH] Industry password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
     if (industry.status !== 'approved' || Number(industry.is_active) !== 1) return forbidden('Waiting for approval');
     return ok('Login successful', createSession({ id: industry.id, email: industry.email, role: 'INDUSTRY' }));
   }
 
-  const department = await env.DB.prepare('SELECT id, coordinator_email, password, is_active, is_first_login FROM departments WHERE coordinator_email = ?')
+  const department = await env.DB.prepare('SELECT id, coordinator_email, password, is_active, is_first_login FROM departments WHERE lower(coordinator_email) = lower(?)')
     .bind(email)
     .first<{ id: string; coordinator_email: string; password: string; is_active: number; is_first_login: number }>();
   console.log('[AUTH] Department user exists:', Boolean(department));
   if (department) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
-    const isMatch = department.password === password;
+    const isMatch = isPasswordMatch(password, department.password);
     console.log('[AUTH] Department password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
     if (Number(department.is_active) !== 1) return forbidden('Department account inactive');
@@ -6372,26 +6384,26 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     });
   }
 
-  const student = await env.DB.prepare('SELECT id, email, password, is_active FROM students WHERE email = ?')
+  const student = await env.DB.prepare('SELECT id, email, password, is_active FROM students WHERE lower(email) = lower(?)')
     .bind(email)
     .first<{ id: string; email: string; password: string; is_active: number }>();
   console.log('[AUTH] Student user exists:', Boolean(student));
   if (student) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
-    const isMatch = student.password === password;
+    const isMatch = isPasswordMatch(password, student.password);
     console.log('[AUTH] Student password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
     if (Number(student.is_active) !== 1) return forbidden('Account inactive');
     return ok('Login successful', createSession({ id: student.id, email: student.email, role: 'STUDENT' }));
   }
 
-  const externalStudent = await env.DB.prepare('SELECT id, email, password, is_active FROM external_students WHERE email = ?')
+  const externalStudent = await env.DB.prepare('SELECT id, email, password, is_active FROM external_students WHERE lower(email) = lower(?)')
     .bind(email)
     .first<{ id: string; email: string; password: string; is_active: number }>();
   console.log('[AUTH] External student exists:', Boolean(externalStudent));
   if (externalStudent) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
-    const isMatch = externalStudent.password === password;
+    const isMatch = isPasswordMatch(password, externalStudent.password);
     console.log('[AUTH] External password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
     if (Number(externalStudent.is_active) !== 1) return forbidden('Account inactive');
