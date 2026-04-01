@@ -1,6 +1,11 @@
-name = "i-management"
+name = "internmanagement"
 main = ".open-next/worker.js"
-compatibility_date = "2026-03-21"
+compatibility_date = "2026-03-25"
+workers_dev = true
+
+routes = [
+  { pattern = "internmanagement.abdulkareem-t.workers.dev", custom_domain = true }
+]
 
 [assets]
 directory = ".open-next/assets"
@@ -19,4 +24,6 @@ binding = "RATE_LIMIT_KV"
 id = "replace-with-rate-limit-kv-id"
 
 [vars]
-JWT_SECRET = "secure-value"
+JWT_SECRET = "change-me"
+OTP_SECRET = "change-me"
+RESEND_FROM_EMAIL = "noreply@aureliv.in"
