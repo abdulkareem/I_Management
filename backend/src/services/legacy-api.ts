@@ -277,7 +277,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     return jsonResponse(200, { success: true, message: 'API healthy', data: { status: 'ok' } });
   }
 
-  if (request.method === 'GET' && pathname === '/api/colleges') {
+  if (request.method === 'GET' && (pathname === '/api/colleges' || pathname === '/api/colleges/')) {
     const actor = parseSessionToken((request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim());
     if (actor && (actor.role === 'SUPER_ADMIN' || actor.role === 'ADMIN')) {
       const rows = await env.DB.prepare(
@@ -6418,6 +6418,7 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
   const user = await env.DB.prepare('SELECT id, email, password_hash, role, is_active FROM users WHERE lower(email) = lower(?)')
     .bind(email)
     .first<{ id: string; email: string; password_hash: string; role: string; is_active: number }>();
+  console.log('[AUTH] Prisma-compatible users row exists:', Boolean(user));
 
   if (!user) {
     return unauthorized('User not found');
