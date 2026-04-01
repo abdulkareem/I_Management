@@ -56,6 +56,7 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Credentials': 'true',
 };
 
 const NO_CACHE_HEADERS: Record<string, string> = {
@@ -276,7 +277,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/health') {
-    return ok('API healthy', { now: new Date().toISOString() });
+    return jsonResponse(200, { success: true, message: 'API healthy', data: { status: 'ok' } });
   }
 
   if (request.method === 'GET' && pathname === '/api/colleges') {
@@ -910,23 +911,33 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/public/stats') {
-    const [students, colleges, industries, vacancies, applied, completed] = await Promise.all([
-      env.DB.prepare('SELECT COUNT(*) AS count FROM students').first<{ count: number }>(),
-      env.DB.prepare('SELECT COUNT(*) AS count FROM colleges WHERE is_active = 1').first<{ count: number }>(),
-      env.DB.prepare('SELECT COUNT(*) AS count FROM industries WHERE is_active = 1').first<{ count: number }>(),
-      env.DB.prepare('SELECT COALESCE(SUM(vacancy), 0) AS count FROM internships WHERE status = \'OPEN\'').first<{ count: number }>(),
-      env.DB.prepare('SELECT COUNT(*) AS count FROM internship_applications').first<{ count: number }>(),
-      env.DB.prepare('SELECT COUNT(*) AS count FROM internship_applications WHERE completed_at IS NOT NULL').first<{ count: number }>(),
-    ]);
+    try {
+      const [students, industries, vacancies, applications] = await Promise.all([
+        env.DB.prepare('SELECT COUNT(*) AS count FROM students').first<{ count: number }>(),
+        env.DB.prepare('SELECT COUNT(*) AS count FROM industries WHERE is_active = 1').first<{ count: number }>(),
+        env.DB.prepare(
+          `SELECT COALESCE(SUM(COALESCE(total_vacancy, vacancy)), 0) AS count
+           FROM internships
+           WHERE status IN ('OPEN', 'ACCEPTED', 'PUBLISHED')`,
+        ).first<{ count: number }>(),
+        env.DB.prepare('SELECT COUNT(*) AS count FROM internship_applications').first<{ count: number }>(),
+      ]);
 
-    return ok('Public stats fetched', {
-      students: Number(students?.count ?? 0),
-      colleges: Number(colleges?.count ?? 0),
-      industries: Number(industries?.count ?? 0),
-      vacancies: Number(vacancies?.count ?? 0),
-      applied: Number(applied?.count ?? 0),
-      completed: Number(completed?.count ?? 0),
-    });
+      return ok('Public stats fetched', {
+        vacancies: Number(vacancies?.count ?? 0),
+        applications: Number(applications?.count ?? 0),
+        students: Number(students?.count ?? 0),
+        ipos: Number(industries?.count ?? 0),
+      });
+    } catch (error) {
+      console.error('[STATS] Falling back to mock data due to query error:', error);
+      return ok('Public stats fallback', {
+        vacancies: 0,
+        applications: 0,
+        students: 0,
+        ipos: 0,
+      });
+    }
   }
 
   if (request.method === 'GET' && (pathname === '/api/dashboard/superadmin' || pathname === '/super-admin/dashboard')) {
@@ -6311,58 +6322,84 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
 
 async function unifiedLogin(request: Request, env: EnvBindings) {
   const body = await readBody(request);
-  console.log('BODY:', body);
 
   const email = normalizeEmail(required(body, ['email']));
   const password = required(body, ['password']);
+  console.log('[AUTH] Login attempt email:', email || '<missing>');
 
   if (!email || !password) return badRequest('email and password are required');
 
-  const college = await env.DB.prepare('SELECT id FROM colleges WHERE coordinator_email = ? AND password = ?')
-    .bind(email, password)
-    .first<{ id: string }>();
+  const college = await env.DB.prepare('SELECT id, coordinator_email AS email, password, status, is_active FROM colleges WHERE coordinator_email = ?')
+    .bind(email)
+    .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
+  console.log('[AUTH] College user exists:', Boolean(college));
   if (college) {
-    const status = await env.DB.prepare('SELECT status, is_active FROM colleges WHERE id = ?').bind(college.id).first<{ status: string; is_active: number }>();
+    // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
+    const isMatch = college.password === password;
+    console.log('[AUTH] College password match:', isMatch);
+    if (!isMatch) return unauthorized('Invalid email or password');
+    const status = { status: college.status, is_active: college.is_active };
     if (status?.status !== 'approved' || Number(status?.is_active) !== 1) return forbidden('Waiting for approval');
-    return ok('Login successful', createSession({ id: college.id, email, role: 'COLLEGE' }));
+    return ok('Login successful', createSession({ id: college.id, email: college.email, role: 'COLLEGE' }));
   }
 
-  const industry = await env.DB.prepare('SELECT id, status, is_active FROM industries WHERE email = ? AND password = ?')
-    .bind(email, password)
-    .first<{ id: string; status: string; is_active: number }>();
+  const industry = await env.DB.prepare('SELECT id, email, password, status, is_active FROM industries WHERE email = ?')
+    .bind(email)
+    .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
+  console.log('[AUTH] Industry user exists:', Boolean(industry));
   if (industry) {
+    // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
+    const isMatch = industry.password === password;
+    console.log('[AUTH] Industry password match:', isMatch);
+    if (!isMatch) return unauthorized('Invalid email or password');
     if (industry.status !== 'approved' || Number(industry.is_active) !== 1) return forbidden('Waiting for approval');
-    return ok('Login successful', createSession({ id: industry.id, email, role: 'INDUSTRY' }));
+    return ok('Login successful', createSession({ id: industry.id, email: industry.email, role: 'INDUSTRY' }));
   }
 
-  const department = await env.DB.prepare('SELECT id, is_active, is_first_login FROM departments WHERE coordinator_email = ? AND password = ?')
-    .bind(email, password)
-    .first<{ id: string; is_active: number; is_first_login: number }>();
+  const department = await env.DB.prepare('SELECT id, coordinator_email, password, is_active, is_first_login FROM departments WHERE coordinator_email = ?')
+    .bind(email)
+    .first<{ id: string; coordinator_email: string; password: string; is_active: number; is_first_login: number }>();
+  console.log('[AUTH] Department user exists:', Boolean(department));
   if (department) {
+    // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
+    const isMatch = department.password === password;
+    console.log('[AUTH] Department password match:', isMatch);
+    if (!isMatch) return unauthorized('Invalid email or password');
     if (Number(department.is_active) !== 1) return forbidden('Department account inactive');
     return ok('Login successful', {
-      ...createSession({ id: department.id, email, role: 'DEPARTMENT_COORDINATOR' }),
+      ...createSession({ id: department.id, email: department.coordinator_email, role: 'DEPARTMENT_COORDINATOR' }),
       mustChangePassword: Number(department.is_first_login) === 1,
     });
   }
 
-  const student = await env.DB.prepare('SELECT id, is_active FROM students WHERE email = ? AND password = ?')
-    .bind(email, password)
-    .first<{ id: string; is_active: number }>();
+  const student = await env.DB.prepare('SELECT id, email, password, is_active FROM students WHERE email = ?')
+    .bind(email)
+    .first<{ id: string; email: string; password: string; is_active: number }>();
+  console.log('[AUTH] Student user exists:', Boolean(student));
   if (student) {
+    // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
+    const isMatch = student.password === password;
+    console.log('[AUTH] Student password match:', isMatch);
+    if (!isMatch) return unauthorized('Invalid email or password');
     if (Number(student.is_active) !== 1) return forbidden('Account inactive');
-    return ok('Login successful', createSession({ id: student.id, email, role: 'STUDENT' }));
+    return ok('Login successful', createSession({ id: student.id, email: student.email, role: 'STUDENT' }));
   }
 
-  const externalStudent = await env.DB.prepare('SELECT id, is_active FROM external_students WHERE email = ? AND password = ?')
-    .bind(email, password)
-    .first<{ id: string; is_active: number }>();
+  const externalStudent = await env.DB.prepare('SELECT id, email, password, is_active FROM external_students WHERE email = ?')
+    .bind(email)
+    .first<{ id: string; email: string; password: string; is_active: number }>();
+  console.log('[AUTH] External student exists:', Boolean(externalStudent));
   if (externalStudent) {
+    // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
+    const isMatch = externalStudent.password === password;
+    console.log('[AUTH] External password match:', isMatch);
+    if (!isMatch) return unauthorized('Invalid email or password');
     if (Number(externalStudent.is_active) !== 1) return forbidden('Account inactive');
-    return ok('Login successful', createSession({ id: externalStudent.id, email, role: 'EXTERNAL_STUDENT' }));
+    return ok('Login successful', createSession({ id: externalStudent.id, email: externalStudent.email, role: 'EXTERNAL_STUDENT' }));
   }
 
-  return unauthorized('Invalid credentials');
+  console.log('[AUTH] User exists: false');
+  return unauthorized('Invalid email or password');
 }
 
 async function upsertIdentity(
