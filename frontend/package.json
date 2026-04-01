@@ -7,9 +7,9 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build && opennextjs-cloudflare build --skipBuild",
+    "build": "next build && opennextjs-cloudflare build",
     "start": "next start",
-    "deploy": "opennextjs-cloudflare build",
+    "deploy": "wrangler deploy",
     "preview": "opennextjs-cloudflare preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
