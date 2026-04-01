@@ -42,11 +42,11 @@ enum InternshipVisibilityType {
 }
 
 model User {
-  id             String      @id @default(cuid())
-  name           String
+  id             String      @id @default(uuid())
+  name           String      @default("")
   email          String      @unique
-  passwordHash   String      @map("password_hash")
-  role           UserRole
+  password       String      @map("password_hash")
+  role           String      @default("student")
   collegeId      String?     @map("college_id")
   departmentId   String?     @map("department_id")
   ipoId          String?     @map("industry_id")
@@ -377,14 +377,22 @@ model Notification {
 }
 
 model Student {
-  id            String                  @id @default(cuid())
-  name          String
-  email         String                  @unique
-  password      String
-  isActive      Boolean                 @default(true) @map("is_active")
-  createdAt     DateTime                @default(now()) @map("created_at")
-  updatedAt     DateTime                @updatedAt @map("updated_at")
-  applications  InternshipApplication[] @relation("StudentApplications")
+  id                   String                  @id @default(uuid())
+  studentName          String                  @map("name")
+  email                String                  @unique
+  password             String
+  universityRegNumber  String?                 @map("university_reg_number")
+  sex                  String?
+  collegeId            String?                 @map("college_id")
+  departmentId         String?                 @map("department_id")
+  programId            String?                 @map("program_id")
+  customCollegeName    String?                 @map("custom_college_name")
+  customDepartmentName String?                 @map("custom_department_name")
+  customProgramName    String?                 @map("custom_program_name")
+  isActive             Boolean                 @default(true) @map("is_active")
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+  applications         InternshipApplication[] @relation("StudentApplications")
 
   @@map("students")
 }
@@ -401,6 +409,16 @@ model ExternalStudent {
 
   @@map("external_students")
 }
+
+model Vacancy {
+  id        String   @id @default(uuid())
+  title     String
+  capacity  Int
+  createdAt DateTime @default(now())
+
+  @@map("vacancies")
+}
+
 
 model InternshipApplication {
   id                String           @id @default(cuid())

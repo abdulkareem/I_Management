@@ -3,51 +3,24 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function main() {
-  const admin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: 'adelstrategics@gmail.com' },
-    update: { passwordHash: '12345678', role: 'ADMIN', isActive: true, name: 'Railway Admin' },
+    update: { password: '12345678', role: 'admin', isActive: true, name: 'Platform Admin' },
     create: {
       email: 'adelstrategics@gmail.com',
-      passwordHash: '12345678',
-      role: 'ADMIN',
-      isActive: true,
-      name: 'Railway Admin',
-    },
-  });
-
-  const internship = await prisma.internship.create({
-    data: {
-      title: 'Sample Vacancy',
-      description: 'Seeded internship/vacancy for dashboard metrics.',
-      status: 'PUBLISHED',
-      vacancy: 10,
-      totalVacancy: 10,
-      availableVacancy: 10,
-      remainingVacancy: 10,
-      filledVacancy: 0,
-    },
-  });
-
-  const student = await prisma.student.upsert({
-    where: { email: 'student.seed@example.com' },
-    update: { name: 'Seed Student', password: '12345678', isActive: true },
-    create: {
-      name: 'Seed Student',
-      email: 'student.seed@example.com',
       password: '12345678',
+      role: 'admin',
       isActive: true,
+      name: 'Platform Admin',
     },
   });
 
-  await prisma.internshipApplication.create({
-    data: {
-      internshipId: internship.id,
-      studentId: student.id,
-      status: 'pending',
-    },
-  });
+  const existingCollege = await prisma.college.findFirst({ where: { name: 'EMEA College' } });
+  if (!existingCollege) {
+    await prisma.college.create({ data: { name: 'EMEA College' } });
+  }
 
-  console.log('Seed complete:', { admin: admin.email, internship: internship.id, student: student.email });
+  console.log('Seed complete: admin + EMEA College');
 }
 
 main()

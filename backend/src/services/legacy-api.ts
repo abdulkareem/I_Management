@@ -54,7 +54,7 @@ type ApiEnvelope<T> = {
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Credentials': 'true',
 };
@@ -654,22 +654,30 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       programId = path.programId;
     }
 
-    if (!name || !email || !password || !collegeId || !departmentId || !programId || !sex) {
-      return badRequest('name, email, password, and either selected IDs or custom college/department/program are required');
+    if (!name || !email || !password) {
+      return badRequest('Missing required fields');
     }
 
-    const [existing, college, department, program] = await Promise.all([
-      env.DB.prepare('SELECT id FROM students WHERE email = ?').bind(email).first(),
-      env.DB.prepare("SELECT id, status, is_active FROM colleges WHERE id = ?").bind(collegeId).first<{ id: string; status: string; is_active: number }>(),
-      env.DB.prepare('SELECT id, college_id FROM departments WHERE id = ?').bind(departmentId).first<{ id: string; college_id: string }>(),
-      env.DB.prepare('SELECT id, department_id FROM programs WHERE id = ?').bind(programId).first<{ id: string; department_id: string }>(),
-    ]);
-
+    const existing = await env.DB.prepare('SELECT id FROM students WHERE email = ?').bind(email).first();
     if (existing) return conflict('Student email already exists');
-    if (!college) return badRequest('Invalid college_id');
-    if (college.status !== 'approved' || Number(college.is_active) !== 1) return forbidden('Waiting for approval');
-    if (!department || department.college_id !== collegeId) return badRequest('department_id does not belong to selected college');
-    if (!program || program.department_id !== departmentId) return badRequest('program_id does not belong to selected department');
+
+    if (collegeId) {
+      const college = await env.DB.prepare("SELECT id, status, is_active FROM colleges WHERE id = ?").bind(collegeId).first<{ id: string; status: string; is_active: number }>();
+      if (!college) return badRequest('Invalid college_id');
+      if (college.status !== 'approved' || Number(college.is_active) !== 1) return forbidden('Waiting for approval');
+    }
+
+    if (departmentId) {
+      const department = await env.DB.prepare('SELECT id, college_id FROM departments WHERE id = ?').bind(departmentId).first<{ id: string; college_id: string }>();
+      if (!department) return badRequest('Invalid department_id');
+      if (collegeId && department.college_id !== collegeId) return badRequest('department_id does not belong to selected college');
+    }
+
+    if (programId) {
+      const program = await env.DB.prepare('SELECT id, department_id FROM programs WHERE id = ?').bind(programId).first<{ id: string; department_id: string }>();
+      if (!program) return badRequest('Invalid program_id');
+      if (departmentId && program.department_id !== departmentId) return badRequest('program_id does not belong to selected department');
+    }
 
     const studentId = crypto.randomUUID();
     await env.DB.prepare(
@@ -6405,13 +6413,26 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
     const isMatch = isPasswordMatch(password, externalStudent.password);
     console.log('[AUTH] External password match:', isMatch);
-    if (!isMatch) return unauthorized('Invalid email or password');
+    if (!isMatch) return unauthorized('Invalid credentials');
     if (Number(externalStudent.is_active) !== 1) return forbidden('Account inactive');
     return ok('Login successful', createSession({ id: externalStudent.id, email: externalStudent.email, role: 'EXTERNAL_STUDENT' }));
   }
 
-  console.log('[AUTH] User exists: false');
-  return unauthorized('Invalid email or password');
+  const user = await env.DB.prepare('SELECT id, email, password_hash, role, is_active FROM users WHERE lower(email) = lower(?)')
+    .bind(email)
+    .first<{ id: string; email: string; password_hash: string; role: string; is_active: number }>();
+
+  if (!user) {
+    return unauthorized('User not found');
+  }
+
+  if (!isPasswordMatch(password, user.password_hash)) {
+    return unauthorized('Invalid credentials');
+  }
+
+  if (Number(user.is_active) !== 1) return forbidden('Account inactive');
+
+  return ok('Login successful', createSession({ id: user.id, email: user.email, role: String(user.role || 'STUDENT').toUpperCase() as AuthSession['user']['role'] }));
 }
 
 async function upsertIdentity(
