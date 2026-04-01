@@ -26,7 +26,7 @@ export default function EvaluationEntry({ studentId, internshipId }: { studentId
     } finally { setSaving(false); }
   }
 
-  return <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title="Department Evaluation" subtitle="Attendance, technical, report, viva, discipline.">{() => (
+  return <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR']} title="Department Evaluation" subtitle="Attendance, technical, report, viva, discipline.">{() => (
     <Card className="rounded-[20px] p-5 text-slate-900">
       <div className="mb-4 flex items-center justify-between"><h2 className="text-xl font-semibold">Evaluation Entry</h2><Button variant="secondary" onClick={() => router.push('/dashboard/department')}>Close</Button></div>
       <form className="grid gap-3 md:grid-cols-2" onSubmit={onSubmit}>

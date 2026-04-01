@@ -36,13 +36,10 @@ type AuthSession = {
     role:
       | 'SUPER_ADMIN'
       | 'ADMIN'
-      | 'COLLEGE'
+      | 'COLLEGE_COORDINATOR'
       | 'DEPARTMENT_COORDINATOR'
-      | 'COORDINATOR'
-      | 'DEPARTMENT'
-      | 'INDUSTRY'
-      | 'STUDENT'
-      | 'EXTERNAL_STUDENT';
+      | 'IPO'
+      | 'STUDENT';
   };
 };
 
@@ -7814,24 +7811,25 @@ async function getTableColumns(env: EnvBindings, tableName: string): Promise<Arr
 
 function normalizeSessionRole(role: string): AuthSession['user']['role'] | null {
   const normalized = String(role || '').toUpperCase();
-  if (normalized === 'DEPARTMENT') return 'DEPARTMENT_COORDINATOR';
-  if (normalized === 'IPO') return 'INDUSTRY';
-  if (
-    normalized === 'SUPER_ADMIN'
-    || normalized === 'ADMIN'
-    || normalized === 'COLLEGE'
-    || normalized === 'DEPARTMENT_COORDINATOR'
-    || normalized === 'COORDINATOR'
-    || normalized === 'INDUSTRY'
-    || normalized === 'STUDENT'
-    || normalized === 'EXTERNAL_STUDENT'
-  ) {
-    return normalized;
-  }
-  return null;
+  const roleMap: Record<string, AuthSession['user']['role']> = {
+    SUPER_ADMIN: 'SUPER_ADMIN',
+    ADMIN: 'ADMIN',
+    COLLEGE: 'COLLEGE_COORDINATOR',
+    COORDINATOR: 'COLLEGE_COORDINATOR',
+    COLLEGE_ADMIN: 'COLLEGE_COORDINATOR',
+    COLLEGE_COORDINATOR: 'COLLEGE_COORDINATOR',
+    DEPARTMENT: 'DEPARTMENT_COORDINATOR',
+    DEPARTMENT_COORDINATOR: 'DEPARTMENT_COORDINATOR',
+    INDUSTRY: 'IPO',
+    IPO: 'IPO',
+    STUDENT: 'STUDENT',
+    EXTERNAL_STUDENT: 'STUDENT',
+  };
+
+  return roleMap[normalized] ?? null;
 }
 
-function requireRole(request: Request, allowedRoles: AuthSession['user']['role'][]) {
+function requireRole(request: Request, allowedRoles: string[]) {
   const authHeader = request.headers.get('Authorization') || '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   if (!token) return unauthorized('Missing authorization token');
@@ -7839,7 +7837,8 @@ function requireRole(request: Request, allowedRoles: AuthSession['user']['role']
   const parsed = parseSessionToken(token);
   if (!parsed) return unauthorized('Invalid token');
 
-  if (!allowedRoles.includes(parsed.role)) return forbidden('Insufficient role permissions');
+  const normalizedAllowedRoles = allowedRoles.map((role) => normalizeSessionRole(role)).filter(Boolean);
+  if (!normalizedAllowedRoles.includes(parsed.role)) return forbidden('Insufficient role permissions');
 
   return parsed;
 }

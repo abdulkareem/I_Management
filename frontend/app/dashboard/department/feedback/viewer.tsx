@@ -19,7 +19,7 @@ export default function FeedbackViewer({ studentId, internshipId }: { studentId:
     }).catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load feedback')).finally(() => setLoading(false));
   }, [studentId, internshipId]);
 
-  return <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title="IPO Feedback" subtitle="Structured internship feedback.">{() => (
+  return <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR']} title="IPO Feedback" subtitle="Structured internship feedback.">{() => (
     <Card className="rounded-[20px] p-5 text-slate-900">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-semibold">Feedback</h2>

@@ -30,7 +30,7 @@ export default function OutcomeViewer({ studentId, internshipId }: { studentId: 
   }
   useEffect(() => { load(); }, [studentId, internshipId]);
 
-  return <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title="Outcome Assessment" subtitle="PO mapping and attainment.">{() => (
+  return <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR']} title="Outcome Assessment" subtitle="PO mapping and attainment.">{() => (
     <Card className="rounded-[20px] p-5 text-slate-900">
       <div className="mb-4 flex items-center justify-between"><h2 className="text-xl font-semibold">Outcome Assessment Engine</h2><Button variant="secondary" onClick={() => router.push('/dashboard/department')}>Close</Button></div>
       {loading ? <p className="text-sm">Loading outcome data...</p> : null}
