@@ -30,7 +30,7 @@ export default function DocumentsViewer({ studentId, internshipId }: { studentId
     } finally { setLoading(false); }
   }
 
-  return <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title="Combined Documents" subtitle="Single consolidated PDF package.">{() => (
+  return <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR']} title="Combined Documents" subtitle="Single consolidated PDF package.">{() => (
     <Card className="rounded-[20px] p-5 text-slate-900">
       <div className="mb-4 flex items-center justify-between"><h2 className="text-xl font-semibold">Documents</h2><Button variant="secondary" onClick={() => router.push('/dashboard/department')}>Close</Button></div>
       <ul className="mb-4 list-disc pl-5 text-sm text-slate-800">

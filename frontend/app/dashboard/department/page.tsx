@@ -451,7 +451,7 @@ export default function DepartmentDashboardPage() {
   };
 
   return (
-    <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']} title={dashboardTitle} subtitle="Manage programs, PO/PSO mapping, internships, ideas and student applications.">
+    <RoleDashboardShell allowedRoles={['DEPARTMENT_COORDINATOR']} title={dashboardTitle} subtitle="Manage programs, PO/PSO mapping, internships, ideas and student applications.">
       {() => (
         <>
           {error ? <Card className="rounded-[20px] p-4 text-rose-800">{error}</Card> : null}

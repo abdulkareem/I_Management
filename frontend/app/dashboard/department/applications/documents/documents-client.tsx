@@ -65,7 +65,7 @@ export default function DocumentsClient({ applicationId }: DocumentsClientProps)
 
   return (
     <RoleDashboardShell
-      allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']}
+      allowedRoles={['DEPARTMENT_COORDINATOR']}
       title="Application Documents"
       subtitle="All related application documents in one place."
     >

@@ -6,14 +6,20 @@ export type SessionState = SessionProfile;
 
 const SESSION_KEY = 'internsuite.session';
 
-
 function normalizeRole(role: string): Role {
-  const normalized = role.toUpperCase();
-  if (normalized === 'DEPARTMENT') return 'DEPARTMENT_COORDINATOR';
-  if (normalized === 'IPO') return 'INDUSTRY';
-  return normalized as Role;
+  const normalized = String(role || '').toUpperCase();
+  if (
+    normalized === 'SUPER_ADMIN'
+    || normalized === 'ADMIN'
+    || normalized === 'COLLEGE_COORDINATOR'
+    || normalized === 'DEPARTMENT_COORDINATOR'
+    || normalized === 'IPO'
+    || normalized === 'STUDENT'
+  ) {
+    return normalized;
+  }
+  return 'STUDENT';
 }
-
 
 export function saveSession(session: SessionState) {
   if (typeof window === 'undefined') return;
@@ -115,9 +121,9 @@ export function fetchWithSession<T>(path: string, init?: RequestInit) {
 
 export function dashboardPathFor(role: Role) {
   if (role === 'SUPER_ADMIN' || role === 'ADMIN') return '/superadmin/dashboard';
-  if (role === 'STUDENT' || role === 'EXTERNAL_STUDENT') return '/dashboard/student';
-  if (role === 'INDUSTRY') return '/dashboard/ipo';
-  if (role === 'DEPARTMENT_COORDINATOR' || role === 'COORDINATOR' || role === 'DEPARTMENT') return '/dashboard/department';
-  if (role === 'COLLEGE' || role === 'COLLEGE_ADMIN' || role === 'COLLEGE_COORDINATOR') return '/dashboard/college';
+  if (role === 'STUDENT') return '/dashboard/student';
+  if (role === 'IPO') return '/dashboard/ipo';
+  if (role === 'DEPARTMENT_COORDINATOR') return '/dashboard/department';
+  if (role === 'COLLEGE_COORDINATOR') return '/dashboard/college';
   return '/dashboard';
 }

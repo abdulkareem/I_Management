@@ -41,7 +41,7 @@ export default function OutcomeAssessmentClient({ applicationId }: OutcomeAssess
 
   return (
     <RoleDashboardShell
-      allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']}
+      allowedRoles={['DEPARTMENT_COORDINATOR']}
       title="Outcome Assessment Engine"
       subtitle="Submit outcome evaluation options."
     >

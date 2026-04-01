@@ -42,7 +42,7 @@ export default function EvaluationClient({ applicationId }: EvaluationClientProp
 
   return (
     <RoleDashboardShell
-      allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']}
+      allowedRoles={['DEPARTMENT_COORDINATOR']}
       title="Internship Evaluation Entry"
       subtitle="Enter CCA and ESE marks."
     >

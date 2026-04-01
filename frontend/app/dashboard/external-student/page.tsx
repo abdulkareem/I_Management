@@ -27,7 +27,7 @@ export default function ExternalStudentDashboardPage() {
   }
 
   return (
-    <RoleDashboardShell allowedRoles={['EXTERNAL_STUDENT']} title="External Student Dashboard" subtitle="Apply to internships and track live status.">
+    <RoleDashboardShell allowedRoles={['STUDENT']} title="External Student Dashboard" subtitle="Apply to internships and track live status.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-800">{error}</Card> : null}

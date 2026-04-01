@@ -7,12 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
+enum Role {
   SUPER_ADMIN
   ADMIN
-  COLLEGE
-  DEPARTMENT
-  INDUSTRY
+  COLLEGE_COORDINATOR
+  DEPARTMENT_COORDINATOR
+  IPO
   STUDENT
 }
 
@@ -46,7 +46,7 @@ model User {
   name           String      @default("")
   email          String      @unique
   password       String      @map("password_hash")
-  role           String      @default("student")
+  role           Role        @default(STUDENT)
   collegeId      String?     @map("college_id")
   departmentId   String?     @map("department_id")
   ipoId          String?     @map("industry_id")

@@ -1,15 +1,10 @@
 export type Role =
   | 'SUPER_ADMIN'
-  | 'COLLEGE_ADMIN'
-  | 'DEPARTMENT_COORDINATOR'
-  | 'COLLEGE_COORDINATOR'
-  | 'INDUSTRY'
-  | 'STUDENT'
-  | 'EXTERNAL_STUDENT'
   | 'ADMIN'
-  | 'COLLEGE'
-  | 'COORDINATOR'
-  | 'DEPARTMENT';
+  | 'COLLEGE_COORDINATOR'
+  | 'DEPARTMENT_COORDINATOR'
+  | 'IPO'
+  | 'STUDENT';
 
 export interface SessionUser {
   id: string;

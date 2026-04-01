@@ -14,13 +14,8 @@ const roleLabel: Record<Role, string> = {
   ADMIN: 'Admin space',
   SUPER_ADMIN: 'Super Admin',
   STUDENT: 'Student space',
-  EXTERNAL_STUDENT: 'Student space',
-  INDUSTRY: 'IPO space',
-  COLLEGE: 'College space',
-  COLLEGE_ADMIN: 'College space',
-  COORDINATOR: 'Department space',
+  IPO: 'IPO space',
   DEPARTMENT_COORDINATOR: 'Department space',
-  DEPARTMENT: 'Department space',
   COLLEGE_COORDINATOR: 'College space',
 };
 
@@ -28,13 +23,8 @@ const roleIcon: Record<Role, typeof GraduationCap> = {
   ADMIN: ShieldCheck,
   SUPER_ADMIN: ShieldCheck,
   STUDENT: GraduationCap,
-  EXTERNAL_STUDENT: GraduationCap,
-  INDUSTRY: BriefcaseBusiness,
-  COLLEGE: Building2,
-  COLLEGE_ADMIN: Building2,
-  COORDINATOR: Building2,
+  IPO: BriefcaseBusiness,
   DEPARTMENT_COORDINATOR: Building2,
-  DEPARTMENT: Building2,
   COLLEGE_COORDINATOR: Building2,
 };
 

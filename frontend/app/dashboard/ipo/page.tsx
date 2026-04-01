@@ -493,7 +493,7 @@ export default function IPODashboardPage() {
   }, [ideas, ideasPage]);
 
   return (
-    <RoleDashboardShell allowedRoles={['INDUSTRY']} title="IPO Dashboard" subtitle="Review department ideas, connect with colleges, publish student vacancies, and track applications.">
+    <RoleDashboardShell allowedRoles={['IPO']} title="IPO Dashboard" subtitle="Review department ideas, connect with colleges, publish student vacancies, and track applications.">
       {() => (
         <>
           {error ? <Card className="rounded-[28px] p-4 text-rose-800">{error}</Card> : null}

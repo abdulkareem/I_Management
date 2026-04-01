@@ -18,7 +18,7 @@ async function hmacSha256(data: string, secret: string) {
 
 export type AuthClaims = {
   sub: string;
-  role: 'IPO' | 'Department' | 'Student' | 'Industry' | string;
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'COLLEGE_COORDINATOR' | 'DEPARTMENT_COORDINATOR' | 'IPO' | 'STUDENT' | string;
   exp: number;
 };
 

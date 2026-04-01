@@ -25,7 +25,7 @@ export default function FeedbackClient({ applicationId }: FeedbackClientProps) {
 
   return (
     <RoleDashboardShell
-      allowedRoles={['DEPARTMENT_COORDINATOR', 'COORDINATOR']}
+      allowedRoles={['DEPARTMENT_COORDINATOR']}
       title="IPO Feedback Form"
       subtitle="Submitted internship performance feedback."
     >
