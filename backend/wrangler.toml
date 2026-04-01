@@ -1,0 +1,13 @@
+name = "internsuite-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "internmanagementdata"
+database_id = "c97be9fd-09a6-4dc4-b2ab-593fad26516f"
+
+[vars]
+JWT_SECRET = "change-me"
+RESEND_FROM_EMAIL = "noreply@aureliv.in"
