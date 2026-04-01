@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/data-table';
@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { StatusBadge } from '@/components/status-badge';
 import { fetchWithSession } from '@/lib/auth';
+import { API_BASE_URL, DASHBOARD_POLL_INTERVAL_MS } from '@/lib/config';
+import { usePolling } from '@/lib/hooks/usePolling';
 
 type Summary = { totalInternships: number; activeInternships: number; totalStudentsApplied: number; studentsPlaced: number; pendingAllocations: number; externalApplicationsCount: number };
 type DepartmentPerformance = { id: string; department_name: string; total_students: number; applications_submitted: number; students_selected: number; completion_rate: number; evaluation_status: string };
@@ -38,15 +40,23 @@ export default function CollegeDashboardPage() {
   const [selectedInternal, setSelectedInternal] = useState<string[]>([]);
   const [selectedExternal, setSelectedExternal] = useState<string[]>([]);
   const [form, setForm] = useState({ id: '', name: '', coordinator_name: '', coordinator_email: '' });
+  const [toast, setToast] = useState<string | null>(null);
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     const response = await fetchWithSession<DashboardData>('/api/dashboard/college/control-center');
     setData(response.data ?? null);
     const deptRes = await fetchWithSession<Department[]>('/api/departments');
     setDepartments(deptRes.data ?? []);
-  };
+  }, []);
 
-  useEffect(() => { loadDashboard(); }, []);
+  const { isLoading, lastUpdatedAt, error } = usePolling(loadDashboard, DASHBOARD_POLL_INTERVAL_MS);
+
+  useEffect(() => {
+    if (!lastUpdatedAt) return;
+    setToast('Dashboard updated');
+    const timeout = setTimeout(() => setToast(null), 1800);
+    return () => clearTimeout(timeout);
+  }, [lastUpdatedAt]);
 
   const updateInternship = async (id: string, action: 'approve' | 'reject' | 'force-close') => { await fetchWithSession(`/api/college/internships/${id}/${action}`, { method: 'PUT' }); await loadDashboard(); };
   const bulkAction = async (ids: string[], action: 'accept' | 'reject') => { if (!ids.length) return; await fetchWithSession('/api/college/applications/bulk-status', { method: 'PUT', body: JSON.stringify({ application_ids: ids, action }) }); await loadDashboard(); };
@@ -63,7 +73,7 @@ export default function CollegeDashboardPage() {
   const downloadReport = async () => {
     const session = localStorage.getItem('internsuite.session');
     const token = session ? JSON.parse(session).token : '';
-    const res = await fetch(`/api/college/report/pdf`, { headers: { Authorization: token ? `Bearer ${token}` : '' }, cache: 'no-store' });
+    const res = await fetch(`${API_BASE_URL}/api/college/report/pdf`, { headers: { Authorization: token ? `Bearer ${token}` : '' }, cache: 'no-store' });
     const blob = await res.blob();
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -91,6 +101,12 @@ export default function CollegeDashboardPage() {
   ];
 
   return <RoleDashboardShell allowedRoles={['COLLEGE', 'COLLEGE_ADMIN', 'COLLEGE_COORDINATOR']} title="College Internship Control System" subtitle="Approval, routing, applications, compliance, monitoring and reports.">{() => <>
+    {toast ? <div className="fixed top-4 right-4 z-50 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white shadow">{toast}</div> : null}
+    {error ? <Card className="rounded-[24px] border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</Card> : null}
+    <div className="flex items-center justify-between text-xs text-slate-500">
+      <span>{isLoading ? 'Loading dashboard…' : 'Live polling every 5 seconds'}</span>
+      <span>{lastUpdatedAt ? `Last updated ${Math.floor((Date.now() - lastUpdatedAt.getTime()) / 1000)} sec ago` : 'Waiting for first update...'}</span>
+    </div>
     <div className="flex justify-end"><Button onClick={downloadReport}>Download Report</Button></div>
     <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">{cards.map((card) => <Card key={card.label} className="rounded-[24px] p-4"><p className="text-xs text-slate-500">{card.label}</p><p className="text-2xl font-bold">{card.value}</p></Card>)}</div>
 

@@ -8,3 +8,7 @@ export default async function Page({ params }: PageProps) {
   const { studentId, internshipId } = await params;
   return <OutcomeViewer studentId={studentId} internshipId={internshipId} />;
 }
+
+export function generateStaticParams() {
+  return [];
+}
