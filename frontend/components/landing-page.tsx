@@ -36,11 +36,19 @@ const roleCards = [
 ];
 
 export function LandingPage() {
-  const [stats, setStats] = useState<{ students: number; colleges: number; ipos: number; vacancies: number; applied: number; completed: number } | null>(null);
+  const [stats, setStats] = useState<{ students: number; ipos: number; vacancies: number; applications: number } | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
   useEffect(() => {
-    apiRequest<{ students: number; colleges: number; ipos: number; vacancies: number; applied: number; completed: number }>('/api/public/stats')
-      .then((res) => setStats(res.data))
-      .catch(() => setStats(null));
+    apiRequest<{ students: number; ipos: number; vacancies: number; applications: number }>('/api/public/stats')
+      .then((res) => {
+        setStats(res.data);
+        setStatsError(null);
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : 'Unable to load public statistics right now.';
+        setStats(null);
+        setStatsError(message);
+      });
   }, []);
 
   return (
@@ -122,11 +130,9 @@ export function LandingPage() {
           <>
             {[
               ['Registered Students', stats.students],
-              ['Registered Colleges', stats.colleges],
               ['Registered IPOs', stats.ipos],
               ['Internship Vacancies', stats.vacancies],
-              ['Applications Submitted', stats.applied],
-              ['Internships Completed', stats.completed],
+              ['Applications Submitted', stats.applications],
             ].map(([label, value]) => (
               <Card key={String(label)} className="rounded-[28px] bg-white/85 p-5 sm:p-6">
                 <p className="text-sm text-slate-500">{label}</p>
@@ -134,6 +140,12 @@ export function LandingPage() {
               </Card>
             ))}
           </>
+        ) : null}
+        {statsError ? (
+          <Card className="rounded-[28px] border border-amber-300 bg-amber-50 p-5 sm:p-6">
+            <p className="text-sm font-medium text-amber-900">We could not load live platform statistics.</p>
+            <p className="mt-2 text-sm text-amber-800">{statsError}</p>
+          </Card>
         ) : null}
         {[
           { icon: HeartHandshake, title: 'Only approved internships', body: 'Students only see opportunities from ipos with accepted MoUs for their college.' },

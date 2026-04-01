@@ -31,20 +31,22 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
     throw new Error('Network error: backend is unreachable.');
   }
 
-  const rawResponse = await res.text();
-
-  let body: ApiEnvelope<T> | null = null;
+  let data: ApiEnvelope<T> | null = null;
   try {
-    body = rawResponse ? (JSON.parse(rawResponse) as ApiEnvelope<T>) : null;
+    data = (await res.json()) as ApiEnvelope<T>;
   } catch {
     throw new Error(DEFAULT_ERROR);
   }
 
-  if (!res.ok || !body || body.success === false) {
-    throw new Error(body?.message ?? `API request failed (${res.status})`);
+  if (!res.ok) {
+    throw new Error(data?.message || 'Request failed');
   }
 
-  return body;
+  if (!data || data.success === false) {
+    throw new Error(data?.message || DEFAULT_ERROR);
+  }
+
+  return data;
 }
 
 
