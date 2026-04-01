@@ -401,9 +401,9 @@ export default function DepartmentDashboardPage() {
     const params = getApplicationRouteParams(app);
     if (!params) return null;
     if (section === 'feedback') {
-      return `/department/feedback/${encodeURIComponent(params.studentId)}/${encodeURIComponent(params.internshipId)}`;
+      return `/department/feedback?studentId=${encodeURIComponent(params.studentId)}&internshipId=${encodeURIComponent(params.internshipId)}`;
     }
-    return `/dashboard/department/${section}/${encodeURIComponent(params.studentId)}/${encodeURIComponent(params.internshipId)}`;
+    return `/dashboard/department/${section}?studentId=${encodeURIComponent(params.studentId)}&internshipId=${encodeURIComponent(params.internshipId)}`;
   }
 
   const metrics = useMemo(() => ({

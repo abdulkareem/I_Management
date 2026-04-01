@@ -33,7 +33,7 @@ export default function FeedbackViewer({ studentId, internshipId }: { studentId:
         <p><strong>Skill-wise Evaluation:</strong></p>
         <pre className="rounded border bg-slate-50 p-2 text-xs">{feedback.skills_assessed || '-'}</pre>
         <p><strong>Comments:</strong> {feedback.comments || '-'}</p>
-        <Button onClick={() => router.push(`/dashboard/department/documents/${studentId}/${internshipId}`)}>Download as PDF</Button>
+        <Button onClick={() => router.push(`/dashboard/department/documents?studentId=${encodeURIComponent(studentId)}&internshipId=${encodeURIComponent(internshipId)}`)}>Download as PDF</Button>
       </div> : null}
     </Card>
   )}</RoleDashboardShell>;

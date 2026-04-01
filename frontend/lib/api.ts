@@ -46,3 +46,10 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
 
   return body;
 }
+
+
+export async function fetchData<T>(endpoint: string): Promise<T> {
+  const normalizedPath = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const response = await apiRequest<T>(normalizedPath, { method: 'GET' });
+  return response.data;
+}
