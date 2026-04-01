@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_PUBLIC_URL")
+  url      = env("DATABASE_URL")
 }
 
 enum UserRole {
@@ -70,7 +70,9 @@ model College {
   code         String?      @unique
   coordinator  String?      @map("coordinator_name")
   email        String?      @map("coordinator_email")
+  password     String?
   status       String?      @default("pending")
+  isActive     Boolean      @default(false) @map("is_active")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
   departments  Department[]
@@ -80,6 +82,7 @@ model College {
   results      Result[]
 
   @@map("colleges")
+  @@index([status, isActive], map: "idx_colleges_status_active")
 }
 
 model Department {
@@ -89,6 +92,9 @@ model Department {
   code         String?
   coordinator  String?      @map("coordinator_name")
   email        String?      @map("coordinator_email")
+  password     String?
+  isFirstLogin Boolean?     @default(false) @map("is_first_login")
+  isActive     Boolean      @default(false) @map("is_active")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
   college      College      @relation(fields: [collegeId], references: [id], onDelete: Cascade)
@@ -99,6 +105,7 @@ model Department {
 
   @@unique([collegeId, name])
   @@map("departments")
+  @@index([isActive], map: "idx_departments_active")
 }
 
 model Ipo {
@@ -107,7 +114,9 @@ model Ipo {
   email        String?      @unique
   ipoTypeId      String?    @map("industry_type_id")
   ipoSubtypeId   String?    @map("industry_subtype_id")
+  password     String?
   status       String?      @default("pending")
+  isActive     Boolean      @default(false) @map("is_active")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
   users        User[]
@@ -115,6 +124,7 @@ model Ipo {
   results      Result[]
 
   @@map("industries")
+  @@index([status, isActive], map: "idx_industries_status_active")
 }
 
 model IpoType {
@@ -364,4 +374,46 @@ model Notification {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+model Student {
+  id            String                  @id @default(cuid())
+  name          String
+  email         String                  @unique
+  password      String
+  isActive      Boolean                 @default(true) @map("is_active")
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+  applications  InternshipApplication[] @relation("StudentApplications")
+
+  @@map("students")
+}
+
+model ExternalStudent {
+  id            String                  @id @default(cuid())
+  name          String
+  email         String                  @unique
+  password      String
+  isActive      Boolean                 @default(true) @map("is_active")
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+  applications  InternshipApplication[] @relation("ExternalStudentApplications")
+
+  @@map("external_students")
+}
+
+model InternshipApplication {
+  id                String           @id @default(cuid())
+  internshipId      String           @map("internship_id")
+  studentId         String?          @map("student_id")
+  externalStudentId String?          @map("external_student_id")
+  status            String           @default("pending")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  internship        Internship       @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  student           Student?         @relation("StudentApplications", fields: [studentId], references: [id], onDelete: Cascade)
+  externalStudent   ExternalStudent? @relation("ExternalStudentApplications", fields: [externalStudentId], references: [id], onDelete: Cascade)
+
+  @@map("internship_applications")
+  @@index([internshipId, status], map: "idx_internship_applications_internship_status")
 }

@@ -19,5 +19,8 @@
     "deploy:web": "npm run build --workspace @internsuite/web",
     "pages:build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/web",
     "deploy:backend": "npm run deploy --workspace @internsuite/backend"
+  },
+  "prisma": {
+    "seed": "node packages/db/prisma/seed.js"
   }
 }
