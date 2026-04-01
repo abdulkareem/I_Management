@@ -4,6 +4,7 @@
   "version": "2.0.0",
   "workspaces": [
     "frontend",
+    "backend",
     "packages/*"
   ],
   "engines": {
@@ -15,7 +16,8 @@
     "typecheck": "npm run typecheck --workspace @internsuite/web",
     "lint": "npm run lint --workspace @internsuite/web",
     "db:migrate": "wrangler d1 execute internsuite-db --file ./packages/db/migrations/0001_init.sql --remote",
-    "deploy:web": "npm run deploy --workspace @internsuite/web",
-    "pages:build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/web"
+    "deploy:web": "npm run build --workspace @internsuite/web",
+    "pages:build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/web",
+    "deploy:backend": "npm run deploy --workspace @internsuite/backend"
   }
 }

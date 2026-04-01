@@ -3,8 +3,9 @@
 ## Structure
 
 ```text
-backend/   # Cloudflare Worker API + D1 bindings
-frontend/  # Next.js frontend deployed on Cloudflare Pages
+backend/   # Cloudflare Worker API
+frontend/  # Next.js frontend for Cloudflare Pages
+shared/    # shared contracts (optional), packages/types remains source of truth
 packages/
   db/      # D1 SQL migrations
   types/   # shared types
@@ -14,48 +15,27 @@ packages/
 ## Required env vars
 
 ### Frontend (`frontend`)
-- `NEXT_PUBLIC_API_BASE_URL` (must point to your Worker URL)
+- `NEXT_PUBLIC_API_URL` (must point to your Worker URL)
 
 ### API Worker (`backend`)
 - `DB` (D1 binding)
-- `RESEND_API_KEY` (required for admin OTP emails)
+- `JWT_SECRET`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
 
-## D1 binding (`frontend/wrangler.toml`)
+## API ownership
 
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "internsuite-db"
-database_id = "<your-database-id>"
-```
+All `/api/*` business logic is served by `backend` (Cloudflare Worker).  
+Frontend is UI-only and calls `${NEXT_PUBLIC_API_URL}/api/...`.
 
-## API Routes
+## Build & deploy
 
-- `GET /api/health`
-- `GET /api/colleges`
-- `GET /api/departments?collegeId=...`
-- `GET /api/courses?departmentId=...`
-- `GET /api/ipo-types`
-- `POST /api/college/register`
-- `POST /api/student/register`
-- `POST /api/ipo/register`
-- `POST /api/admin/send-otp`
-- `POST /api/admin/verify-otp`
-
-All responses use:
-
-```json
-{
-  "success": true,
-  "message": "string",
-  "data": {}
-}
-```
-
-## Deploy
-
-1. Run D1 migrations in `packages/db/migrations`.
-2. Configure `frontend/wrangler.toml` with your Cloudflare Worker name/domain, D1, and runtime vars.
-3. Add secrets in Cloudflare (for example `RESEND_API_KEY`) using `wrangler secret put` or the dashboard.
-4. Set `NEXT_PUBLIC_API_BASE_URL` in Pages project to your Worker URL.
-5. Deploy web: `npm run deploy:web`.
+1. Install deps: `npm install`
+2. Run migrations from `packages/db/migrations`.
+3. Deploy backend Worker:
+   - configure `backend/wrangler.toml` D1 binding
+   - `npm run deploy:backend`
+4. Deploy frontend to Cloudflare Pages:
+   - build command: `npm run build --workspace @internsuite/web`
+   - output directory: `.next`
+   - set `NEXT_PUBLIC_API_URL` in Pages environment
