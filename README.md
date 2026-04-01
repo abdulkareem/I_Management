@@ -20,7 +20,7 @@ packages/
 - `DB` (D1 binding)
 - `RESEND_API_KEY` (required for admin OTP emails)
 
-## D1 binding (`backend/wrangler.toml`)
+## D1 binding (`frontend/wrangler.toml`)
 
 ```toml
 [[d1_databases]]
@@ -55,7 +55,7 @@ All responses use:
 ## Deploy
 
 1. Run D1 migrations in `packages/db/migrations`.
-2. Configure `backend/wrangler.toml` with database id.
-3. Deploy API worker: `npm run deploy:api`.
-4. Set `NEXT_PUBLIC_API_BASE_URL` in Pages project to Worker URL.
+2. Configure `frontend/wrangler.toml` with your Cloudflare Worker name/domain, D1, and runtime vars.
+3. Add secrets in Cloudflare (for example `RESEND_API_KEY`) using `wrangler secret put` or the dashboard.
+4. Set `NEXT_PUBLIC_API_BASE_URL` in Pages project to your Worker URL.
 5. Deploy web: `npm run deploy:web`.
