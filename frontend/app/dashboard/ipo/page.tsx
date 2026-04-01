@@ -135,7 +135,7 @@ export default function IPODashboardPage() {
   }
 
   async function openDocumentPreviewPage(documentId: string) {
-    window.open(`/dashboard/ipo/approval-letter/${documentId}`, '_blank', 'noopener,noreferrer');
+    window.open(`/dashboard/ipo/approval-letter?id=${encodeURIComponent(documentId)}`, '_blank', 'noopener,noreferrer');
   }
 
   async function ensureApprovalLetter(application: NonNullable<IPODashboard['applications']>[number]) {
@@ -836,7 +836,7 @@ export default function IPODashboardPage() {
                     <Button variant="secondary" disabled={ideaActionSubmitting === application.id} onClick={() => void generateAndSendLetters(application.id)}>
                       {ideaActionSubmitting === application.id ? 'Generating...' : 'Generate & Send Acceptance/Invitation'}
                     </Button>
-                    <Button variant="secondary" onClick={() => router.push(`/dashboard/ipo/feedback/${application.id}`)}>
+                    <Button variant="secondary" onClick={() => router.push(`/dashboard/ipo/feedback?id=${encodeURIComponent(application.id)}`)}>
                       Open Feedback Form
                     </Button>
                   </div>

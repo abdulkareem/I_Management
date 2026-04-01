@@ -84,9 +84,9 @@ export default function DocumentsClient({ applicationId }: DocumentsClientProps)
         </ul>
         <div className="flex flex-wrap gap-2">
           <Button onClick={downloadBundle}>Download Document Pack</Button>
-          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${applicationId}/feedback`)} disabled={!hasFeedback}>Open Feedback</Button>
-          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${applicationId}/evaluation`)}>Open Evaluation</Button>
-          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/${applicationId}/outcome-assessment`)}>Open Outcome</Button>
+          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/feedback?id=${encodeURIComponent(applicationId)}`)} disabled={!hasFeedback}>Open Feedback</Button>
+          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/evaluation?id=${encodeURIComponent(applicationId)}`)}>Open Evaluation</Button>
+          <Button variant="secondary" onClick={() => router.push(`/dashboard/department/applications/outcome-assessment?id=${encodeURIComponent(applicationId)}`)}>Open Outcome</Button>
         </div>
         {pdfUrl ? <iframe title="Application Documents PDF" className="mt-4 h-[640px] w-full rounded-lg border border-slate-200" src={pdfUrl} /> : null}
         </Card>

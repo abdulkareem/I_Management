@@ -10,7 +10,7 @@ import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { StatusBadge } from '@/components/status-badge';
 import { fetchWithSession } from '@/lib/auth';
 import { API_BASE_URL, DASHBOARD_POLL_INTERVAL_MS } from '@/lib/config';
-import { usePolling } from '@/lib/hooks/usePolling';
+import { usePollingAction } from '@/lib/hooks/usePolling';
 
 type Summary = { totalInternships: number; activeInternships: number; totalStudentsApplied: number; studentsPlaced: number; pendingAllocations: number; externalApplicationsCount: number };
 type DepartmentPerformance = { id: string; department_name: string; total_students: number; applications_submitted: number; students_selected: number; completion_rate: number; evaluation_status: string };
@@ -49,7 +49,7 @@ export default function CollegeDashboardPage() {
     setDepartments(deptRes.data ?? []);
   }, []);
 
-  const { isLoading, lastUpdatedAt, error } = usePolling(loadDashboard, DASHBOARD_POLL_INTERVAL_MS);
+  const { isLoading, lastUpdatedAt, error } = usePollingAction(loadDashboard, DASHBOARD_POLL_INTERVAL_MS);
 
   useEffect(() => {
     if (!lastUpdatedAt) return;
