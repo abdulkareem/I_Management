@@ -1,5 +1,9 @@
 node_modules
 .next
+.next/cache
+frontend/.next
+frontend/.next/cache
+frontend/out
 .cache
 dist
 coverage

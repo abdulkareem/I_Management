@@ -1,14 +1,20 @@
 import type { NextConfig } from 'next';
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  output: "standalone",
-  generateBuildId: async () =>
-    process.env.CF_PAGES_COMMIT_SHA ||
-    process.env.VERCEL_GIT_COMMIT_SHA ||
-    process.env.RAILWAY_GIT_COMMIT_SHA ||
-    `local-${Date.now()}`,
+  output: 'export',
+  images: {
+    unoptimized: true,
+  },
+  webpack: (config, { dev }) => {
+    if (isProduction && !dev) {
+      config.cache = false;
+    }
+    return config;
+  },
 };
 
 export default nextConfig;
