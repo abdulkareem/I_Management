@@ -1,7 +1,6 @@
 import { handleLegacyApi } from '@/lib/server/legacy-worker';
 import { getWorkerEnv } from '@/lib/server/db';
 
-export const runtime = 'edge';
 
 async function delegate(request: Request) {
   const env = getWorkerEnv();
