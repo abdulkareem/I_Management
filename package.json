@@ -18,7 +18,11 @@
     "db:migrate": "wrangler d1 execute internsuite-db --file ./packages/db/migrations/0001_init.sql --remote",
     "deploy:web": "npm run build --workspace @internsuite/web",
     "pages:build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/web",
-    "deploy:backend": "npm run deploy --workspace @internsuite/backend"
+    "deploy:backend": "npm run deploy --workspace @internsuite/backend",
+    "db:prisma:generate": "npx prisma generate --schema packages/db/prisma/schema.prisma",
+    "db:prisma:push": "npx prisma db push --schema packages/db/prisma/schema.prisma",
+    "db:prisma:studio": "npx prisma studio --schema packages/db/prisma/schema.prisma",
+    "db:seed": "node packages/db/prisma/seed.js"
   },
   "prisma": {
     "seed": "node packages/db/prisma/seed.js"
