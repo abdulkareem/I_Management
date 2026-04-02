@@ -17,18 +17,17 @@ enum Role {
 }
 
 model User {
-  id          String   @id @default(uuid())
-  name        String?
-  email       String   @unique
-  phone       String?  @unique
-  role        Role     @default(STUDENT)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(uuid())
+  name      String?
+  email     String   @unique
+  phone     String?  @unique
+  role      Role     @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  // 🔁 Relations
-  internshipsCreated Internship[]        @relation("CreatedInternships")
-  selectionsMade     Selection[]         @relation("SelectionByUser")
-  results            Result[]            @relation("StudentResults")
+  internshipsCreated Internship[]          @relation("CreatedInternships")
+  selectionsMade     Selection[]           @relation("SelectionByUser")
+  results            Result[]              @relation("StudentResults")
   applications       InternshipApplication[]
 }
 
@@ -38,23 +37,24 @@ model College {
   address   String?
   createdAt DateTime @default(now())
 
-  departments Department[]
-  students    Student[]
+  departments       Department[]
+  students          Student[]
+  internshipTargets InternshipTarget[]
+  results           Result[]
 }
 
 model Department {
-  id        String   @id @default(uuid())
+  id        String @id @default(uuid())
   name      String
   collegeId String
 
-  college College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-
+  college  College   @relation(fields: [collegeId], references: [id], onDelete: Cascade)
   students Student[]
 }
 
 model Student {
-  id           String   @id @default(uuid())
-  userId       String   @unique
+  id           String @id @default(uuid())
+  userId       String @unique
   collegeId    String
   departmentId String
 
@@ -75,59 +75,53 @@ model Ipo {
 }
 
 model Internship {
-  id            String   @id @default(uuid())
-  title         String
-  description   String?
-  ipoId         String?
-  createdById   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  ipoId       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  // ✅ Relations
-  ipo        Ipo?  @relation(fields: [ipoId], references: [id], onDelete: SetNull)
-
-  createdBy  User? @relation("CreatedInternships", fields: [createdById], references: [id], onDelete: SetNull)
+  ipo       Ipo?  @relation(fields: [ipoId], references: [id], onDelete: SetNull)
+  createdBy User? @relation("CreatedInternships", fields: [createdById], references: [id], onDelete: SetNull)
 
   applications InternshipApplication[]
   targets      InternshipTarget[]
 }
 
 model InternshipTarget {
-  id            String @id @default(uuid())
-  internshipId  String
-  collegeId     String?
+  id           String @id @default(uuid())
+  internshipId String
+  collegeId    String?
 
   internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
   college    College?   @relation(fields: [collegeId], references: [id], onDelete: SetNull)
 }
 
 model InternshipApplication {
-  id            String   @id @default(uuid())
-  internshipId  String
-  studentId     String?
-  status        String   @default("PENDING")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(uuid())
+  internshipId String
+  studentId    String?
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  // ✅ Relations
   internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
-
-  student Student? @relation("StudentApplications", fields: [studentId], references: [id], onDelete: Cascade)
+  student    Student?   @relation("StudentApplications", fields: [studentId], references: [id], onDelete: Cascade)
 
   selections Selection[]
   results    Result[]
 }
 
 model Selection {
-  id             String   @id @default(uuid())
-  applicationId  String
-  selectedById   String?
-  createdAt      DateTime @default(now())
+  id            String   @id @default(uuid())
+  applicationId String
+  selectedById  String?
+  createdAt     DateTime @default(now())
 
-  // ✅ Relations
-  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-
-  selectedBy User? @relation("SelectionByUser", fields: [selectedById], references: [id], onDelete: SetNull)
+  application InternshipApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  selectedBy  User?                 @relation("SelectionByUser", fields: [selectedById], references: [id], onDelete: SetNull)
 }
 
 model Result {
@@ -138,17 +132,7 @@ model Result {
   resultStatus  String
   createdAt     DateTime @default(now())
 
-  // ✅ Relations
-  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-
-  student User @relation("StudentResults", fields: [studentId], references: [id], onDelete: Cascade)
-
-  college College? @relation(fields: [collegeId], references: [id], onDelete: SetNull)
-}
-
-model Application {
-  id String @id @default(uuid())
-
-  selections Selection[]
-  results    Result[]
+  application InternshipApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  student     User                  @relation("StudentResults", fields: [studentId], references: [id], onDelete: Cascade)
+  college     College?              @relation(fields: [collegeId], references: [id], onDelete: SetNull)
 }
