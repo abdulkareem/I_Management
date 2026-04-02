@@ -10,7 +10,7 @@ const prisma = new PrismaClient();
 const app = express();
 const ADMIN_OTP_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_SUPER_ADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
-const adminOtpStore = new Map<string, { otp: string; expiresAt: number }>();
+const RESEND_API_URL = 'https://api.resend.com/emails';
 
 const allowedOrigins = (process.env.CORS_ORIGIN ?? process.env.FRONTEND_URL ?? '*')
   .split(',')
@@ -119,10 +119,54 @@ function attachHttpLogging(appInstance: express.Express): void {
 async function ensureConfiguredSuperAdmin(email: string): Promise<void> {
   if (email !== DEFAULT_SUPER_ADMIN_EMAIL) return;
 
-  await prisma.user.updateMany({
-    where: { email, role: { not: Role.SUPER_ADMIN } },
-    data: { role: Role.SUPER_ADMIN },
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (!existing) {
+    const generatedPassword = await bcrypt.hash(`superadmin-${randomUUID()}`, 12);
+    await prisma.user.create({
+      data: {
+        email,
+        name: 'Super Admin',
+        password: generatedPassword,
+        role: Role.SUPER_ADMIN,
+      },
+    });
+    return;
+  }
+
+  if (existing.role !== Role.SUPER_ADMIN) {
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: { role: Role.SUPER_ADMIN },
+    });
+  }
+}
+
+async function sendAdminOtpEmail(email: string, otp: string): Promise<void> {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (!resendApiKey) {
+    throw new Error('RESEND_API_KEY is not configured');
+  }
+
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'no-reply@aureliv.in';
+  const response = await fetch(RESEND_API_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: [email],
+      subject: 'Your Super Admin OTP',
+      html: `<p>Your OTP is <strong>${otp}</strong>. It expires in 10 minutes.</p>`,
+      text: `Your OTP is ${otp}. It expires in 10 minutes.`,
+    }),
   });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Failed to send OTP email: ${response.status} ${details}`);
+  }
 }
 
 function buildSessionData(user: { id: string; email: string; role: Role; name: string | null }) {
@@ -185,6 +229,10 @@ app.post('/api/admin/send-otp', async (req, res) => {
     apiError(res, 400, 'Email is required');
     return;
   }
+  if (email !== DEFAULT_SUPER_ADMIN_EMAIL) {
+    apiError(res, 403, 'Only the configured super admin email can login here');
+    return;
+  }
 
   await ensureConfiguredSuperAdmin(email);
   console.log('[admin-send-otp] Checking admin account', { email });
@@ -203,11 +251,29 @@ app.post('/api/admin/send-otp', async (req, res) => {
   console.log('[admin-send-otp] Admin account verified', { email, role: user.role, userId: user.id });
 
   const otp = String(randomInt(100000, 1000000));
-  const expiresAt = Date.now() + ADMIN_OTP_TTL_MS;
-  adminOtpStore.set(email, { otp, expiresAt });
-  console.log(`[admin-otp] ${email} -> ${otp} (expires ${new Date(expiresAt).toISOString()})`);
+  const expiresAt = new Date(Date.now() + ADMIN_OTP_TTL_MS);
+  await prisma.adminOtp.updateMany({
+    where: { email, verified: false },
+    data: { verified: true, verifiedAt: new Date() },
+  });
+  await prisma.adminOtp.create({
+    data: {
+      userId: user.id,
+      email,
+      otp,
+      expiresAt,
+    },
+  });
 
-  apiOk(res, 'OTP sent successfully', { otpSent: true, expiresAt: new Date(expiresAt).toISOString() });
+  try {
+    await sendAdminOtpEmail(email, otp);
+  } catch (error) {
+    console.error('[admin-send-otp] Failed to send OTP email', { email, error: toMessage(error) });
+    apiError(res, 500, 'Failed to send OTP email');
+    return;
+  }
+
+  apiOk(res, 'OTP sent successfully', { otpSent: true, expiresAt: expiresAt.toISOString() });
 });
 
 app.post('/api/admin/verify-otp', async (req, res) => {
@@ -218,12 +284,27 @@ app.post('/api/admin/verify-otp', async (req, res) => {
     return;
   }
 
-  const record = adminOtpStore.get(email);
-  if (!record || record.expiresAt < Date.now() || record.otp !== otp) {
+  if (email !== DEFAULT_SUPER_ADMIN_EMAIL) {
+    apiError(res, 403, 'Only the configured super admin email can login here');
+    return;
+  }
+
+  const record = await prisma.adminOtp.findFirst({
+    where: { email, verified: false },
+    orderBy: { createdAt: 'desc' },
+  });
+  const isExpired = record ? record.expiresAt.getTime() < Date.now() : false;
+  if (!record || isExpired || record.otp !== otp) {
+    if (record) {
+      await prisma.adminOtp.update({
+        where: { id: record.id },
+        data: { attempts: { increment: 1 } },
+      });
+    }
     console.warn('[admin-verify-otp] OTP verification failed', {
       email,
       hasOtpRecord: Boolean(record),
-      otpExpired: record ? record.expiresAt < Date.now() : null,
+      otpExpired: record ? isExpired : null,
     });
     apiError(res, 401, 'Invalid or expired OTP');
     return;
@@ -245,7 +326,13 @@ app.post('/api/admin/verify-otp', async (req, res) => {
 
   console.log('[admin-verify-otp] Admin login successful after OTP verification', { email, role: user.role, userId: user.id });
 
-  adminOtpStore.delete(email);
+  await prisma.adminOtp.update({
+    where: { id: record.id },
+    data: {
+      verified: true,
+      verifiedAt: new Date(),
+    },
+  });
   apiOk(res, 'OTP verified', buildSessionData(user));
 });
 

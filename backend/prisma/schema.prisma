@@ -41,6 +41,24 @@ model User {
   selectionsMade     Selection[]           @relation("SelectionByUser")
   results            Result[]              @relation("StudentResults")
   applications       InternshipApplication[] @relation("UserApplications")
+  adminOtps          AdminOtp[]
+}
+
+model AdminOtp {
+  id        String   @id @default(uuid())
+  userId    String
+  email     String
+  otp       String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+  verifiedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([email, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 model College {
