@@ -27,7 +27,9 @@
     "db:railway:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f ./packages/db/schema.sql",
     "db:railway:reset": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;\" && npm run db:railway:migrate",
     "db:railway:fresh": "npm run db:railway:reset && npm run db:prisma:push",
-    "db:railway:update": "npm run db:railway:migrate"
+    "db:railway:update": "npm run db:railway:migrate",
+    "db:prisma:sync": "node ./backend/scripts/prisma-auto-sync.mjs",
+    "db:prisma:sync:force": "node ./backend/scripts/prisma-auto-sync.mjs --accept-data-loss"
   },
   "prisma": {
     "seed": "node packages/db/prisma/seed.js"

@@ -7,7 +7,8 @@
     "deploy": "wrangler deploy",
     "build": "echo 'Backend build completed'",
     "prisma:bootstrap": "node ./scripts/prisma-bootstrap.mjs",
-    "start": "npm run prisma:bootstrap && wrangler dev --remote"
+    "start": "npm run prisma:sync && npm run prisma:bootstrap && wrangler dev --remote",
+    "prisma:sync": "node ./scripts/prisma-auto-sync.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
