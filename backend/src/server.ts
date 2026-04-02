@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import { Prisma, PrismaClient, Role } from '@prisma/client';
 import { z } from 'zod';
 
