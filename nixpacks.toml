@@ -8,13 +8,14 @@ nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = [
-  "npm install --prefix backend"
+  "npm ci"
 ]
 
 [phases.build]
 cmds = [
-  "npm run build --prefix backend"
+  "npm run backend:prisma:generate",
+  "npm run backend:build"
 ]
 
 [start]
-cmd = "npm run start --prefix backend"
+cmd = "npm run backend:start"
