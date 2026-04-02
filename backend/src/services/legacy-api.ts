@@ -371,13 +371,17 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(coordinatorEmail).first<{ id: string }>();
     if (duplicateEmail) return conflict('Coordinator email already in use');
 
+    const generatedPassword = generatePassword(10);
     const departmentId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO departments (id, name, coordinator_name, coordinator_email, college_id, is_active)
-       VALUES (?, ?, ?, ?, ?, 1)`,
-    ).bind(departmentId, name, coordinatorName, coordinatorEmail, collegeId).run();
+      `INSERT INTO departments (id, name, coordinator_name, coordinator_email, college_id, password, is_first_login, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, 1, 1)`,
+    ).bind(departmentId, name, coordinatorName, coordinatorEmail, collegeId, generatedPassword).run();
 
-    return created('Department created', { id: departmentId });
+    await upsertIdentity(env, { role: 'department', entityId: departmentId, email: coordinatorEmail, isActive: 1 });
+    await sendCredentialEmail(env, coordinatorEmail, name, generatedPassword);
+
+    return created('Department created and credentials sent', { id: departmentId, passwordSent: true });
   }
 
   const departmentPatchMatch = pathname.match(/^\/api\/departments\/([^/]+)$/);
