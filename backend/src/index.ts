@@ -4,6 +4,7 @@ import { handleAuthRoute } from './routes/auth';
 import { handleInternshipsRoute } from './routes/internships';
 import { handleApplicationsRoute } from './routes/applications';
 import { handleFeedbackRoute } from './routes/feedback';
+import { authorizeRequest } from './middleware/authorize';
 
 let hasLoggedDbStatus = false;
 
@@ -21,6 +22,9 @@ async function verifyDatabaseConnection(env: WorkerEnv): Promise<void> {
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     await verifyDatabaseConnection(env);
+    const denied = authorizeRequest(request);
+    if (denied) return denied;
+
     const routed =
       (await handleAuthRoute(request, env))
       ?? (await handleInternshipsRoute(request, env))

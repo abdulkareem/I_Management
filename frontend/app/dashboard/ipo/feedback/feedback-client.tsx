@@ -72,7 +72,7 @@ export default function IpoFeedbackFormPage({ applicationId }: { applicationId: 
     setSubmitting(true);
     setError(null);
     try {
-      await fetchWithSession(`/api/industry/applications/${applicationId}/feedback`, {
+      await fetchWithSession(`/api/ipo/applications/${applicationId}/feedback`, {
         method: 'POST',
         body: JSON.stringify(form),
       });
