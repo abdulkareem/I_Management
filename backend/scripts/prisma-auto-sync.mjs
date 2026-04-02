@@ -1,10 +1,18 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, '..', '..');
-const schemaPath = path.join(repoRoot, 'packages', 'db', 'prisma', 'schema.prisma');
+const backendRoot = path.resolve(currentDir, '..');
+
+const schemaCandidates = [
+  path.join(backendRoot, 'prisma', 'schema.prisma'),
+  path.join(repoRoot, 'packages', 'db', 'prisma', 'schema.prisma'),
+];
+
+const schemaPath = schemaCandidates.find((candidate) => fs.existsSync(candidate));
 
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -29,6 +37,11 @@ const extraArgs = process.argv.slice(2);
 
 async function run() {
   const hasDatabaseUrl = Boolean(process.env.DATABASE_URL || process.env.DATABASE_URL_INTERNAL);
+
+  if (!schemaPath) {
+    console.warn('[PRISMA_SYNC] No Prisma schema found in backend/prisma or packages/db/prisma. Skipping Prisma schema sync.');
+    return;
+  }
 
   if (!hasDatabaseUrl) {
     console.warn('[PRISMA_SYNC] DATABASE_URL/DATABASE_URL_INTERNAL missing. Skipping Prisma schema sync.');

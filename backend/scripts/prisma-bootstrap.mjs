@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -14,7 +15,17 @@ async function run() {
 
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(currentDir, '..', '..');
-  const schemaPath = path.join(repoRoot, 'packages', 'db', 'schema.sql');
+  const backendRoot = path.resolve(currentDir, '..');
+  const schemaCandidates = [
+    path.join(backendRoot, 'db', 'schema.sql'),
+    path.join(repoRoot, 'packages', 'db', 'schema.sql'),
+  ];
+  const schemaPath = schemaCandidates.find((candidate) => fsSync.existsSync(candidate));
+
+  if (!schemaPath) {
+    console.warn('[DB_BOOTSTRAP] No SQL schema found in backend/db or packages/db. Skipping PostgreSQL bootstrap.');
+    return;
+  }
 
   const client = new Client({ connectionString: databaseUrl });
 
@@ -25,7 +36,7 @@ async function run() {
 
     const schemaSql = await fs.readFile(schemaPath, 'utf8');
     await client.query(schemaSql);
-    console.log('[DB_BOOTSTRAP] Base SQL schema applied from packages/db/schema.sql.');
+    console.log(`[DB_BOOTSTRAP] Base SQL schema applied from ${schemaPath}.`);
   } catch (error) {
     console.error('[DB_BOOTSTRAP] Failed to bootstrap PostgreSQL schema:', error);
     throw error;
