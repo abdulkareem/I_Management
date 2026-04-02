@@ -65,6 +65,15 @@ npm run db:railway:reset
 npm run db:railway:fresh
 ```
 
+Need a one-command force deployment that recreates tables/fields for the configured target?
+
+```bash
+npm run db:force-deploy            # auto-select Railway if DATABASE_URL exists, otherwise D1 remote
+npm run db:force-deploy -- --local # force local D1
+npm run db:force-deploy -- --d1    # force remote D1
+npm run db:force-deploy -- --railway
+```
+
 Required backend variables for superadmin OTP via Resend:
 - `DATABASE_URL`
 - `RESEND_API_KEY`

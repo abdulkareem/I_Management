@@ -30,7 +30,8 @@
     "db:railway:fresh": "npm run db:railway:reset && npm run db:prisma:push",
     "db:railway:update": "npm run db:railway:migrate",
     "db:prisma:sync": "node ./backend/scripts/prisma-auto-sync.mjs",
-    "db:prisma:sync:force": "node ./backend/scripts/prisma-auto-sync.mjs --accept-data-loss"
+    "db:prisma:sync:force": "node ./backend/scripts/prisma-auto-sync.mjs --accept-data-loss",
+    "db:force-deploy": "node ./backend/scripts/db-force-deploy.mjs"
   },
   "prisma": {
     "seed": "node packages/db/prisma/seed.js"
