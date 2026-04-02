@@ -1,5 +1,7 @@
 -- Single source-of-truth schema for Railway PostgreSQL.
 -- Apply with: psql "$DATABASE_URL" -f packages/db/schema.sql
+-- For existing Railway environments, run incremental sync first:
+-- psql "$DATABASE_URL" -f packages/db/migrations/0002_railway_sync.sql
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -11,7 +13,7 @@ BEGIN
       'ADMIN',
       'COLLEGE_COORDINATOR',
       'DEPARTMENT_COORDINATOR',
-      'IPO_COORDINATOR',
+      'IPO',
       'STUDENT'
     );
   END IF;
