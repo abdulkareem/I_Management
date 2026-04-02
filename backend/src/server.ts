@@ -4,9 +4,12 @@ import cors from 'cors';
 import bcrypt from 'bcrypt';
 import { Prisma, PrismaClient, Role } from '@prisma/client';
 import { z } from 'zod';
+import { randomInt } from 'crypto';
 
 const prisma = new PrismaClient();
 const app = express();
+const ADMIN_OTP_TTL_MS = 10 * 60 * 1000;
+const adminOtpStore = new Map<string, { otp: string; expiresAt: number }>();
 
 const allowedOrigins = (process.env.CORS_ORIGIN ?? process.env.FRONTEND_URL ?? '*')
   .split(',')
@@ -67,6 +70,18 @@ function apiError(res: Response, status: number, message: string): void {
   res.status(status).json({ success: false, message, data: null });
 }
 
+function buildSessionData(user: { id: string; email: string; role: Role; name: string | null }) {
+  return {
+    token: `dev.${Buffer.from(`${user.id}:${Date.now()}`).toString('base64url')}`,
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      name: user.name ?? undefined,
+    },
+  };
+}
+
 app.get('/api/health', async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -82,6 +97,74 @@ app.get('/api/ipo-types', (_req, res) => {
     { id: 'manufacturing', name: 'Manufacturing' },
     { id: 'technology', name: 'Technology' },
   ]);
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const password = String(req.body?.password ?? '');
+  if (!email || !password) {
+    apiError(res, 400, 'Email and password are required');
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    apiError(res, 401, 'Invalid email or password');
+    return;
+  }
+
+  const isValid = await bcrypt.compare(password, user.password);
+  if (!isValid) {
+    apiError(res, 401, 'Invalid email or password');
+    return;
+  }
+
+  apiOk(res, 'Login successful', buildSessionData(user));
+});
+
+app.post('/api/admin/send-otp', async (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  if (!email) {
+    apiError(res, 400, 'Email is required');
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || (user.role !== Role.SUPER_ADMIN && user.role !== Role.ADMIN)) {
+    apiError(res, 404, 'Admin account not found for this email');
+    return;
+  }
+
+  const otp = String(randomInt(100000, 1000000));
+  const expiresAt = Date.now() + ADMIN_OTP_TTL_MS;
+  adminOtpStore.set(email, { otp, expiresAt });
+  console.log(`[admin-otp] ${email} -> ${otp} (expires ${new Date(expiresAt).toISOString()})`);
+
+  apiOk(res, 'OTP sent successfully', { otpSent: true, expiresAt: new Date(expiresAt).toISOString() });
+});
+
+app.post('/api/admin/verify-otp', async (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const otp = String(req.body?.otp ?? '').trim();
+  if (!email || !otp) {
+    apiError(res, 400, 'Email and OTP are required');
+    return;
+  }
+
+  const record = adminOtpStore.get(email);
+  if (!record || record.expiresAt < Date.now() || record.otp !== otp) {
+    apiError(res, 401, 'Invalid or expired OTP');
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || (user.role !== Role.SUPER_ADMIN && user.role !== Role.ADMIN)) {
+    apiError(res, 404, 'Admin account not found for this email');
+    return;
+  }
+
+  adminOtpStore.delete(email);
+  apiOk(res, 'OTP verified', buildSessionData(user));
 });
 
 app.post(['/api/student/register', '/join/student'], async (req, res) => {
