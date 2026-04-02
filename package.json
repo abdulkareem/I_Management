@@ -23,7 +23,9 @@
     "db:prisma:generate": "npx prisma generate --schema packages/db/prisma/schema.prisma",
     "db:prisma:push": "npx prisma db push --schema packages/db/prisma/schema.prisma",
     "db:prisma:studio": "npx prisma studio --schema packages/db/prisma/schema.prisma",
-    "db:seed": "node packages/db/prisma/seed.js"
+    "db:seed": "node packages/db/prisma/seed.js",
+    "db:railway:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f ./packages/db/schema.sql",
+    "db:railway:update": "npm run db:railway:migrate"
   },
   "prisma": {
     "seed": "node packages/db/prisma/seed.js"
