@@ -33,7 +33,9 @@
     "db:prisma:sync:force": "node ./backend/scripts/prisma-auto-sync.mjs --accept-data-loss",
     "db:force-deploy": "node ./backend/scripts/db-force-deploy.mjs"
   },
+  {
   "prisma": {
-    "seed": "node packages/db/prisma/seed.js"
+    "schema": "backend/prisma/schema.prisma"
   }
+}
 }
