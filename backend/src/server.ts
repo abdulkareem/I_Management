@@ -9,6 +9,7 @@ import { randomInt } from 'crypto';
 const prisma = new PrismaClient();
 const app = express();
 const ADMIN_OTP_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_SUPER_ADMIN_EMAIL = 'abdulkareem@psmocollege.ac.in';
 const adminOtpStore = new Map<string, { otp: string; expiresAt: number }>();
 
 const allowedOrigins = (process.env.CORS_ORIGIN ?? process.env.FRONTEND_URL ?? '*')
@@ -70,6 +71,16 @@ function apiError(res: Response, status: number, message: string): void {
   res.status(status).json({ success: false, message, data: null });
 }
 
+
+async function ensureConfiguredSuperAdmin(email: string): Promise<void> {
+  if (email !== DEFAULT_SUPER_ADMIN_EMAIL) return;
+
+  await prisma.user.updateMany({
+    where: { email, role: { not: Role.SUPER_ADMIN } },
+    data: { role: Role.SUPER_ADMIN },
+  });
+}
+
 function buildSessionData(user: { id: string; email: string; role: Role; name: string | null }) {
   return {
     token: `dev.${Buffer.from(`${user.id}:${Date.now()}`).toString('base64url')}`,
@@ -107,6 +118,8 @@ app.post('/api/auth/login', async (req, res) => {
     return;
   }
 
+  await ensureConfiguredSuperAdmin(email);
+
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     apiError(res, 401, 'Invalid email or password');
@@ -128,6 +141,8 @@ app.post('/api/admin/send-otp', async (req, res) => {
     apiError(res, 400, 'Email is required');
     return;
   }
+
+  await ensureConfiguredSuperAdmin(email);
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || (user.role !== Role.SUPER_ADMIN && user.role !== Role.ADMIN)) {
@@ -156,6 +171,8 @@ app.post('/api/admin/verify-otp', async (req, res) => {
     apiError(res, 401, 'Invalid or expired OTP');
     return;
   }
+
+  await ensureConfiguredSuperAdmin(email);
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || (user.role !== Role.SUPER_ADMIN && user.role !== Role.ADMIN)) {
