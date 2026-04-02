@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "build": "echo 'Backend build completed'",
+    "prisma:bootstrap": "node ./scripts/prisma-bootstrap.mjs",
+    "start": "npm run prisma:bootstrap && wrangler dev --remote"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

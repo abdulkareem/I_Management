@@ -20,6 +20,15 @@ type Role =
 
 type JsonMap = Record<string, unknown>;
 type DocumentType = 'approval' | 'reply' | 'allotment' | 'feedback';
+type CollegeRegistrationPayload = {
+  collegeName: string;
+  address: string | null;
+  university: string | null;
+  mobile: string | null;
+  coordinatorName: string;
+  email: string;
+  password: string;
+};
 
 function generateReferenceNumber(date = new Date()): string {
   const year = date.getUTCFullYear();
@@ -256,6 +265,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
   if (pathname === '/api/student/register') {
     await ensureStudentRegistrationSchema(env);
+  }
+  if (pathname === '/api/college/register' || pathname === '/api/auth/register') {
+    await ensureCollegeRegistrationSchema(env);
   }
   if (
     pathname === '/api/dashboard/metrics'
@@ -553,32 +565,28 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
   if (request.method === 'POST' && pathname === '/api/college/register') {
     const body = await readBody(request);
-    console.log('BODY:', body);
+    console.log('[COLLEGE_REGISTER] req.body:', body);
+    const payload = parseCollegeRegistrationPayload(body);
+    if (payload instanceof Response) return payload;
+    await ensureCollegeRegistrationSchema(env);
 
-    const name = required(body, ['name', 'collegeName']);
-    const coordinatorName = required(body, ['coordinator_name', 'coordinatorName']);
-    const coordinatorEmail = normalizeEmail(required(body, ['coordinator_email', 'email']));
-    const password = required(body, ['password']);
-    const address = optional(body, ['address']);
-    const university = optional(body, ['university']);
-    const mobile = optional(body, ['mobile']);
-
-    if (!name || !coordinatorName || !coordinatorEmail || !password) {
-      return badRequest('name, coordinator_name, coordinator_email and password are required');
-    }
-
-    const existing = await env.DB.prepare('SELECT id FROM colleges WHERE coordinator_email = ?').bind(coordinatorEmail).first();
+    const existing = await env.DB.prepare('SELECT id FROM colleges WHERE coordinator_email = ?').bind(payload.email).first();
     if (existing) return conflict('College coordinator email already exists');
 
     const collegeId = crypto.randomUUID();
-    await env.DB.prepare(
-      `INSERT INTO colleges (id, name, address, university, mobile, coordinator_name, coordinator_email, password, status, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)`,
-    )
-      .bind(collegeId, name, address, university, mobile, coordinatorName, coordinatorEmail, password)
-      .run();
+    try {
+      await env.DB.prepare(
+        `INSERT INTO colleges (id, name, address, university, mobile, coordinator_name, coordinator_email, password, status, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)`,
+      )
+        .bind(collegeId, payload.collegeName, payload.address, payload.university, payload.mobile, payload.coordinatorName, payload.email, payload.password)
+        .run();
+    } catch (error) {
+      console.error('[COLLEGE_REGISTER] Prisma/DB error:', error);
+      throw error;
+    }
 
-    await upsertIdentity(env, { role: 'college', entityId: collegeId, email: coordinatorEmail, isActive: 1 });
+    await upsertIdentity(env, { role: 'college', entityId: collegeId, email: payload.email, isActive: 1 });
 
     return created('College registration submitted', { id: collegeId, status: 'pending' });
   }
@@ -6405,30 +6413,28 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
 }
 
 async function handleCollegeRegistration(body: JsonMap, env: EnvBindings): Promise<Response> {
-  const name = required(body, ['name', 'collegeName']);
-  const coordinatorName = required(body, ['coordinator_name', 'coordinatorName']);
-  const coordinatorEmail = normalizeEmail(required(body, ['coordinator_email', 'email']));
-  const password = required(body, ['password']);
-  const address = optional(body, ['address']);
-  const university = optional(body, ['university']);
-  const mobile = optional(body, ['mobile']);
+  console.log('[COLLEGE_REGISTER] req.body:', body);
+  const payload = parseCollegeRegistrationPayload(body);
+  if (payload instanceof Response) return payload;
+  await ensureCollegeRegistrationSchema(env);
 
-  if (!name || !coordinatorName || !coordinatorEmail || !password) {
-    return badRequest('name, coordinator_name, coordinator_email and password are required');
-  }
-
-  const existing = await env.DB.prepare('SELECT id FROM colleges WHERE coordinator_email = ?').bind(coordinatorEmail).first();
+  const existing = await env.DB.prepare('SELECT id FROM colleges WHERE coordinator_email = ?').bind(payload.email).first();
   if (existing) return conflict('College coordinator email already exists');
 
   const collegeId = crypto.randomUUID();
-  await env.DB.prepare(
-    `INSERT INTO colleges (id, name, address, university, mobile, coordinator_name, coordinator_email, password, status, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)`,
-  )
-    .bind(collegeId, name, address, university, mobile, coordinatorName, coordinatorEmail, password)
-    .run();
+  try {
+    await env.DB.prepare(
+      `INSERT INTO colleges (id, name, address, university, mobile, coordinator_name, coordinator_email, password, status, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)`,
+    )
+      .bind(collegeId, payload.collegeName, payload.address, payload.university, payload.mobile, payload.coordinatorName, payload.email, payload.password)
+      .run();
+  } catch (error) {
+    console.error('[COLLEGE_REGISTER] Prisma/DB error:', error);
+    throw error;
+  }
 
-  await upsertIdentity(env, { role: 'college', entityId: collegeId, email: coordinatorEmail, isActive: 1 });
+  await upsertIdentity(env, { role: 'college', entityId: collegeId, email: payload.email, isActive: 1 });
   return created('College registration submitted', { id: collegeId, status: 'pending' });
 }
 
@@ -8131,6 +8137,69 @@ function optional(body: JsonMap, keys: string[]): string | null {
     if (value !== '') return value;
   }
   return null;
+}
+
+function parseCollegeRegistrationPayload(body: JsonMap): CollegeRegistrationPayload | Response {
+  const collegeName = required(body, ['collegeName']);
+  const address = optional(body, ['address']);
+  const university = optional(body, ['university']);
+  const mobile = optional(body, ['mobile']);
+  const coordinatorName = required(body, ['coordinatorName']);
+  const email = normalizeEmail(required(body, ['email']));
+  const password = required(body, ['password']);
+
+  const requiredFields = {
+    collegeName,
+    address,
+    university,
+    mobile,
+    coordinatorName,
+    email,
+    password,
+  };
+
+  for (const [field, value] of Object.entries(requiredFields)) {
+    if (!value || String(value).trim() === '') {
+      console.error(`[COLLEGE_REGISTER] Missing field: ${field}`, { body });
+      return new Response(JSON.stringify({ success: false, message: `Missing field: ${field}`, error: `Missing field: ${field}` }), {
+        status: 400,
+        headers: {
+          ...CORS_HEADERS,
+          ...NO_CACHE_HEADERS,
+          'Content-Type': 'application/json',
+        },
+      });
+    }
+  }
+
+  return {
+    collegeName,
+    address,
+    university,
+    mobile,
+    coordinatorName,
+    email,
+    password,
+  };
+}
+
+async function ensureCollegeRegistrationSchema(env: EnvBindings): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS colleges (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      address TEXT,
+      university TEXT,
+      mobile TEXT,
+      coordinator_name TEXT NOT NULL,
+      coordinator_email TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ).run();
 }
 
 function toText(value: unknown): string {

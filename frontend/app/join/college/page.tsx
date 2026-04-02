@@ -26,15 +26,19 @@ export default function CollegeJoinPage() {
     }
 
     try {
-      const formData = {
-        collegeName: form.get('collegeName'),
-        address: form.get('address'),
-        university: form.get('university'),
-        mobile: form.get('mobile'),
-        coordinatorName: form.get('coordinatorName'),
-        email: form.get('email'),
-        password: form.get('password'),
+      const toSafeText = (value: FormDataEntryValue | null) => (typeof value === 'string' ? value.trim() : '');
+      const rawPayload = {
+        collegeName: toSafeText(form.get('collegeName')),
+        address: toSafeText(form.get('address')),
+        university: toSafeText(form.get('university')),
+        mobile: toSafeText(form.get('mobile')),
+        coordinatorName: toSafeText(form.get('coordinatorName')),
+        email: toSafeText(form.get('email')),
+        password: toSafeText(form.get('password')),
       };
+      const formData = Object.fromEntries(
+        Object.entries(rawPayload).filter(([, value]) => value !== ''),
+      );
 
       const res = await fetch(`${API_BASE_URL}/api/college/register`, {
         method: 'POST',
@@ -46,11 +50,11 @@ export default function CollegeJoinPage() {
 
       const text = await res.text();
 
-      const data = text ? (JSON.parse(text) as { message?: string }) : {};
+      const data = text ? (JSON.parse(text) as { message?: string; error?: string }) : {};
 
       if (!res.ok) {
         console.error('Backend error:', data);
-        throw new Error(data.message || 'Unknown error');
+        throw new Error(data.error || data.message || 'Unknown error');
       }
 
       router.push('/login');
