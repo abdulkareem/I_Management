@@ -141,7 +141,7 @@ export default function IPODashboardPage() {
   async function ensureApprovalLetter(application: NonNullable<IPODashboard['applications']>[number]) {
     const existing = documents.find((doc) => doc.type === 'approval' && doc.internship_id === application.internshipId && (application.studentId ? doc.student_id === application.studentId : true));
     if (existing) return existing.id;
-    await fetchWithSession(`/api/industry/applications/${application.id}/generate-letters`, { method: 'POST' });
+    await fetchWithSession(`/api/ipo/applications/${application.id}/generate-letters`, { method: 'POST' });
     const refreshed = await fetchWithSession<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>('/api/documents/my');
     setDocuments(refreshed.data ?? []);
     const latest = (refreshed.data ?? []).find((doc) => doc.type === 'approval' && doc.internship_id === application.internshipId && (application.studentId ? doc.student_id === application.studentId : true));
@@ -320,7 +320,7 @@ export default function IPODashboardPage() {
   }
 
   async function completeApplication(applicationId: string) {
-    await fetchWithSession(`/api/industry/applications/${applicationId}/complete`, { method: 'POST' });
+    await fetchWithSession(`/api/ipo/applications/${applicationId}/complete`, { method: 'POST' });
     await load();
   }
 
@@ -348,7 +348,7 @@ export default function IPODashboardPage() {
     setIdeaActionSubmitting(internshipId);
     try {
       const payload = internshipForms[internshipId];
-      const response = await fetchWithSession('/api/industry/publish', {
+      const response = await fetchWithSession('/api/ipo/publish', {
         method: 'POST',
         body: JSON.stringify({
           id: internshipId,
@@ -377,7 +377,7 @@ export default function IPODashboardPage() {
     setSuccessMessage(null);
     setIdeaActionSubmitting(internshipId);
     try {
-      await fetchWithSession(`/api/industry/internships/${internshipId}`, {
+      await fetchWithSession(`/api/ipo/internships/${internshipId}`, {
         method: 'PUT',
         body: JSON.stringify({
           title: payload.title,
@@ -412,7 +412,7 @@ export default function IPODashboardPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      await fetchWithSession(`/api/industry/internships/${internshipId}/close`, { method: 'POST' });
+      await fetchWithSession(`/api/ipo/internships/${internshipId}/close`, { method: 'POST' });
       setSuccessMessage('Internship closed.');
       await load();
     } finally {
@@ -425,7 +425,7 @@ export default function IPODashboardPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      await fetchWithSession(`/api/industry/internships/${internshipId}/republish`, { method: 'POST' });
+      await fetchWithSession(`/api/ipo/internships/${internshipId}/republish`, { method: 'POST' });
       setSuccessMessage('Internship published again.');
       await load();
     } finally {
@@ -438,7 +438,7 @@ export default function IPODashboardPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      await fetchWithSession(`/api/industry/internships/${internshipId}`, { method: 'DELETE' });
+      await fetchWithSession(`/api/ipo/internships/${internshipId}`, { method: 'DELETE' });
       setSuccessMessage('Internship removed.');
       await load();
     } finally {
@@ -451,7 +451,7 @@ export default function IPODashboardPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      await fetchWithSession(`/api/industry/applications/${applicationId}/generate-letters`, { method: 'POST' });
+      await fetchWithSession(`/api/ipo/applications/${applicationId}/generate-letters`, { method: 'POST' });
       setSuccessMessage('Acceptance and invitation letters generated and shared.');
       await load();
     } finally {
