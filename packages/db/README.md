@@ -1,13 +1,14 @@
-# D1 Schema
+# Database Schema
 
-This repo now uses a **single merged migration**:
+This repository keeps Railway PostgreSQL DDL in one canonical file:
 
 ```bash
-wrangler d1 execute internsuite-db --file ./packages/db/migrations/0001_init.sql --remote
+psql "$DATABASE_URL" -f ./packages/db/schema.sql
 ```
 
-For local development:
+For Prisma projects, apply the SQL first and then sync Prisma metadata if required:
 
 ```bash
-wrangler d1 execute internsuite-db --file ./packages/db/migrations/0001_init.sql --local
+npm run db:railway:migrate
+npm run db:prisma:push
 ```

@@ -23,6 +23,14 @@ async function run() {
   }
 
   try {
+    execSync('command -v psql >/dev/null 2>&1', { stdio: 'ignore' });
+    execSync('psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/db/schema.sql', { stdio: 'inherit' });
+    console.log('[PRISMA_BOOTSTRAP] Base SQL schema applied from packages/db/schema.sql.');
+  } catch (error) {
+    console.warn('[PRISMA_BOOTSTRAP] psql unavailable or schema apply failed, continuing with Prisma sync:', error.message);
+  }
+
+  try {
     execSync('npx prisma db push --schema packages/db/prisma/schema.prisma', { stdio: 'inherit' });
     execSync('npx prisma migrate deploy --schema packages/db/prisma/schema.prisma', { stdio: 'inherit' });
     console.log('[PRISMA_BOOTSTRAP] Prisma schema sync complete.');

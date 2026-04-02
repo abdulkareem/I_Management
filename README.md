@@ -48,7 +48,7 @@ Frontend is UI-only and calls `${NEXT_PUBLIC_API_BASE_URL}/api/...`.
 If your backend and database are hosted on Railway, bootstrap the schema with:
 
 ```bash
-psql "$DATABASE_URL" -f packages/db/prisma/railway-bootstrap.sql
+psql "$DATABASE_URL" -f packages/db/schema.sql
 ```
 
 Then run Prisma sync (optional, recommended for Prisma users):
