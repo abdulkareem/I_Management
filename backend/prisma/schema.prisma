@@ -25,10 +25,16 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // 🔁 Relations
   internshipsCreated Internship[]          @relation("CreatedInternships")
   selectionsMade     Selection[]           @relation("SelectionByUser")
   results            Result[]              @relation("StudentResults")
-  applications       InternshipApplication[]
+
+  // User ↔ Student (1:1)
+  studentProfile     Student?
+
+  // Optional: if user directly applies
+  applications       InternshipApplication[] @relation("UserApplications")
 }
 
 model College {
@@ -103,12 +109,18 @@ model InternshipApplication {
   id           String   @id @default(uuid())
   internshipId String
   studentId    String?
+  userId       String?
   status       String   @default("PENDING")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
-  student    Student?   @relation("StudentApplications", fields: [studentId], references: [id], onDelete: Cascade)
+
+  // Student relation
+  student Student? @relation("StudentApplications", fields: [studentId], references: [id], onDelete: Cascade)
+
+  // User relation (optional direct)
+  user User? @relation("UserApplications", fields: [userId], references: [id], onDelete: SetNull)
 
   selections Selection[]
   results    Result[]
