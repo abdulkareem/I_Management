@@ -41,3 +41,24 @@ Frontend is UI-only and calls `${NEXT_PUBLIC_API_BASE_URL}/api/...`.
    - build command: `npm run build --workspace @internsuite/web`
    - output directory: `.next`
    - set `NEXT_PUBLIC_API_BASE_URL` in Pages environment
+
+
+## Railway PostgreSQL quick setup
+
+If your backend and database are hosted on Railway, bootstrap the schema with:
+
+```bash
+psql "$DATABASE_URL" -f packages/db/prisma/railway-bootstrap.sql
+```
+
+Then run Prisma sync (optional, recommended for Prisma users):
+
+```bash
+npm run db:prisma:push
+```
+
+Required backend variables for superadmin OTP via Resend:
+- `DATABASE_URL`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL` (example: `no-reply@aureliv.in`)
+- `JWT_SECRET`
