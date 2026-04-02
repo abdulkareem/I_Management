@@ -11,7 +11,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "npx prisma generate && npx prisma db push && node server.js",
+    "start": "npx prisma migrate deploy --schema=packages/db/prisma/schema.prisma && node server.js",
     "dev": "npm run dev --workspace @internsuite/web",
     "build": "npm run build --workspace @internsuite/types && npm run build --workspace @internsuite/utils && npm run build --workspace @internsuite/web",
     "typecheck": "npm run typecheck --workspace @internsuite/web",
