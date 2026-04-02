@@ -80,9 +80,17 @@ model College {
 }
 
 model Department {
-  id        String @id @default(uuid())
-  name      String
-  collegeId String
+  id               String   @id @default(uuid())
+  name             String
+  collegeId        String
+  coordinatorName  String?
+  coordinatorEmail String?
+  coordinatorMobile String?
+  password         String?
+  isFirstLogin     Boolean  @default(true)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   college  College   @relation(fields: [collegeId], references: [id], onDelete: Cascade)
   students Student[]

@@ -91,14 +91,17 @@ export default function CollegeDashboardPage() {
     { label: 'External Applications', value: data.summary.externalApplicationsCount },
   ] : [], [data]);
 
-  const managementMenus = [
-    { title: 'Internship Governance', description: 'Approve, reject, and close internships across all departments.', href: '/dashboard/college/internships' },
-    { title: 'Application Control', description: 'Process internal/external applications and bulk decisions.', href: '/dashboard/college/applications' },
-    { title: 'Department Analytics', description: 'Track participation, completion, and evaluation submissions.', href: '/dashboard/college/analytics' },
-    { title: 'IPO Partnership (IPO)', description: 'Monitor active ipo collaborations and engagement load.', href: '/dashboard/college/ipos' },
-    { title: 'Compliance & Alerts', description: 'Review notifications, pending evaluations, and risk signals.', href: '/dashboard/college/compliance' },
-    { title: 'Capacity Planning', description: 'Watch vacancy fill ratios and prioritize department demand.', href: '/dashboard/college/capacity' },
-  ];
+  const managementMenus = useMemo(() => {
+    if (!data) return [];
+    return [
+      { title: 'Internship Governance', description: 'Approve, reject, and close internships across all departments.', href: '/dashboard/college/internships', metric: `${data.approvalQueue.length} pending approvals` },
+      { title: 'Application Control', description: 'Process internal/external applications and bulk decisions.', href: '/dashboard/college/applications', metric: `${data.applications.internal.length + data.applications.external.length} total applications` },
+      { title: 'Department Analytics', description: 'Track participation, completion, and evaluation submissions.', href: '/dashboard/college/analytics', metric: `${data.departmentPerformance.length} departments tracked` },
+      { title: 'IPO Partnership (IPO)', description: 'Monitor active ipo collaborations and engagement load.', href: '/dashboard/college/ipos', metric: `${data.ipoSummary.reduce((sum, ipo) => sum + (ipo.active_engagements || 0), 0)} active engagements` },
+      { title: 'Compliance & Alerts', description: 'Review notifications, pending evaluations, and risk signals.', href: '/dashboard/college/compliance', metric: `${data.notifications.length} active alerts` },
+      { title: 'Capacity Planning', description: 'Watch vacancy fill ratios and prioritize department demand.', href: '/dashboard/college/capacity', metric: `${data.summary.pendingAllocations} pending allocations` },
+    ];
+  }, [data]);
 
   return <RoleDashboardShell allowedRoles={['COLLEGE_COORDINATOR']} title="College Internship Control System" subtitle="Approval, routing, applications, compliance, monitoring and reports.">{() => <>
     {toast ? <div className="fixed top-4 right-4 z-50 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white shadow">{toast}</div> : null}
@@ -110,7 +113,7 @@ export default function CollegeDashboardPage() {
     <div className="flex justify-end"><Button onClick={downloadReport}>Download Report</Button></div>
     <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">{cards.map((card) => <Card key={card.label} className="rounded-[24px] p-4"><p className="text-xs text-slate-500">{card.label}</p><p className="text-2xl font-bold">{card.value}</p></Card>)}</div>
 
-    <Card className="rounded-[24px] p-4"><h3 className="mb-3 text-lg font-semibold">College Top-Level Internship Management Menus</h3><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{managementMenus.map((menu) => <Link key={menu.title} href={menu.href} className="rounded-xl border border-slate-200 bg-white p-3 hover:bg-slate-50"><p className="text-sm font-semibold">{menu.title}</p><p className="mt-1 text-xs text-slate-600">{menu.description}</p></Link>)}</div></Card>
+    <Card className="rounded-[24px] p-4"><h3 className="mb-3 text-lg font-semibold">College Top-Level Internship Management Menus</h3><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{managementMenus.map((menu) => <Link key={menu.title} href={menu.href} className="rounded-xl border border-slate-200 bg-white p-3 hover:bg-slate-50"><p className="text-sm font-semibold">{menu.title}</p><p className="mt-1 text-xs text-slate-600">{menu.description}</p><p className="mt-2 text-xs font-medium text-indigo-700">{menu.metric}</p></Link>)}</div></Card>
 
     <Card className="rounded-[24px] p-4"><h3 className="mb-3 text-lg font-semibold">Department Management Panel</h3>
       <div className="grid gap-2 md:grid-cols-4"><Input placeholder="Department" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} /><Input placeholder="Coordinator" value={form.coordinator_name} onChange={(e) => setForm((p) => ({ ...p, coordinator_name: e.target.value }))} /><Input placeholder="Coordinator Email" value={form.coordinator_email} onChange={(e) => setForm((p) => ({ ...p, coordinator_email: e.target.value }))} /><Button onClick={saveDepartment}>{form.id ? 'Update Department' : 'Add Department'}</Button></div>
