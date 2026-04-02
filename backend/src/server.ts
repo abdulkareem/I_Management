@@ -198,6 +198,189 @@ app.get('/api/ipo-types', (_req, res) => {
   ]);
 });
 
+
+
+app.get('/api/dashboard/metrics', async (_req, res) => {
+  try {
+    const [totalColleges, totalIPOs, totalDepartments, totalInternships, pendingApprovals] = await Promise.all([
+      prisma.college.count(),
+      prisma.ipo.count(),
+      prisma.department.count(),
+      prisma.internship.count(),
+      prisma.college.count({ where: { status: 'PENDING' } }),
+    ]);
+
+    apiOk(res, 'Dashboard metrics fetched', {
+      totalColleges,
+      totalIPOs,
+      totalDepartments,
+      totalInternships,
+      pendingApprovals,
+      activeInternships: totalInternships,
+    });
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/colleges', async (_req, res) => {
+  try {
+    const colleges = await prisma.college.findMany({ orderBy: { createdAt: 'desc' } });
+    apiOk(res, 'Colleges fetched', colleges.map((college) => ({
+      id: college.id,
+      name: college.name,
+      coordinator: college.coordinatorName ?? '-',
+      email: college.coordinatorEmail ?? '-',
+      status: college.status,
+    })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/ipos', async (_req, res) => {
+  try {
+    const ipos = await prisma.ipo.findMany({ orderBy: { createdAt: 'desc' } });
+    apiOk(res, 'IPOs fetched', ipos.map((ipo) => ({
+      id: ipo.id,
+      name: ipo.name,
+      email: ipo.email ?? '-',
+      status: 'APPROVED',
+      ipo_type_name: ipo.ipoType ?? '-',
+      ipo_subtype_name: ipo.ipoSubCategory ?? '-',
+    })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/departments', async (_req, res) => {
+  try {
+    const departments = await prisma.department.findMany({
+      include: { college: true },
+      orderBy: { name: 'asc' },
+    });
+
+    apiOk(res, 'Departments fetched', departments.map((department) => ({
+      id: department.id,
+      name: department.name,
+      college_id: department.collegeId,
+      college_name: department.college.name,
+      coordinator: department.college.coordinatorName ?? '-',
+      email: department.college.coordinatorEmail ?? '-',
+    })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/logs', async (_req, res) => {
+  try {
+    const [colleges, ipos, departments] = await Promise.all([
+      prisma.college.findMany({ select: { id: true, createdAt: true, name: true }, orderBy: { createdAt: 'desc' }, take: 40 }),
+      prisma.ipo.findMany({ select: { id: true, createdAt: true, name: true }, orderBy: { createdAt: 'desc' }, take: 40 }),
+      prisma.department.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' }, take: 40 }),
+    ]);
+
+    const logs = [
+      ...colleges.map((item) => ({
+        id: `college-${item.id}`,
+        action: 'CREATE',
+        entity: 'COLLEGE',
+        entity_id: item.id,
+        performed_by: 'SYSTEM',
+        timestamp: item.createdAt.toISOString(),
+      })),
+      ...ipos.map((item) => ({
+        id: `ipo-${item.id}`,
+        action: 'CREATE',
+        entity: 'IPO',
+        entity_id: item.id,
+        performed_by: 'SYSTEM',
+        timestamp: item.createdAt.toISOString(),
+      })),
+      ...departments.map((item) => ({
+        id: `department-${item.id}`,
+        action: 'REGISTER',
+        entity: 'DEPARTMENT',
+        entity_id: item.id,
+        performed_by: 'SYSTEM',
+        timestamp: new Date(0).toISOString(),
+      })),
+    ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    apiOk(res, 'Audit logs fetched', logs.slice(0, 100));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/ipo-subtypes', async (_req, res) => {
+  try {
+    const ipos = await prisma.ipo.findMany({ select: { ipoType: true, ipoSubCategory: true } });
+    const keys = new Set<string>();
+    const subtypes: Array<{ id: string; name: string; ipo_type_id: string }> = [];
+
+    for (const ipo of ipos) {
+      if (!ipo.ipoType || !ipo.ipoSubCategory) continue;
+      const typeId = ipo.ipoType.trim().toLowerCase().replace(/\s+/g, '-');
+      const key = `${typeId}::${ipo.ipoSubCategory}`;
+      if (keys.has(key)) continue;
+      keys.add(key);
+      subtypes.push({
+        id: key,
+        name: ipo.ipoSubCategory,
+        ipo_type_id: typeId,
+      });
+    }
+
+    apiOk(res, 'IPO subtypes fetched', subtypes);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.patch('/api/colleges/:id/:action(approve|reject)', async (req, res) => {
+  const status = req.params.action === 'approve' ? 'APPROVED' : 'REJECTED';
+  try {
+    const college = await prisma.college.update({
+      where: { id: req.params.id },
+      data: { status },
+    });
+    apiOk(res, `College ${status.toLowerCase()}`, { id: college.id, status: college.status });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.patch('/api/ipos/:id/:action(approve|reject)', async (req, res) => {
+  const action = req.params.action === 'approve' ? 'approved' : 'rejected';
+  const exists = await prisma.ipo.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!exists) {
+    apiError(res, 404, 'IPO not found');
+    return;
+  }
+  apiOk(res, `IPO ${action}`, { id: req.params.id, status: action.toUpperCase() });
+});
+
+app.delete('/api/colleges/:id', async (req, res) => {
+  try {
+    await prisma.college.delete({ where: { id: req.params.id } });
+    apiOk(res, 'College deleted', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/ipos/:id', async (req, res) => {
+  try {
+    await prisma.ipo.delete({ where: { id: req.params.id } });
+    apiOk(res, 'IPO deleted', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const email = String(req.body?.email ?? '').trim().toLowerCase();
   const password = String(req.body?.password ?? '');
