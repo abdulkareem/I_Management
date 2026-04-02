@@ -100,6 +100,9 @@ model OtpCode {
 model College {
   id           String       @id @default(cuid())
   name         String
+  address      String?
+  university   String?
+  mobile       String?
   code         String?      @unique
   coordinator  String?      @map("coordinator_name")
   email        String?      @map("coordinator_email")
