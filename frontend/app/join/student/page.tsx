@@ -82,6 +82,7 @@ export default function StudentJoinPage() {
     setError(null);
     setLoading(true);
     const form = new FormData(event.currentTarget);
+    const getField = (key: string) => String(form.get(key) ?? '').trim();
     if (form.get('password') !== form.get('confirmPassword')) {
       setError('Password and confirm password must match.');
       setLoading(false);
@@ -89,23 +90,35 @@ export default function StudentJoinPage() {
     }
 
     try {
+      const studentName = getField('studentName');
+      const email = getField('email');
+      const password = getField('password');
+      const universityRegNumber = getField('universityRegNumber');
+      const selectedCollegeId = getField('collegeId');
+      const selectedDepartmentId = getField('departmentId');
+      const selectedProgramId = getField('programId');
+      const enteredCustomCollegeName = getField('customCollegeName');
+      const enteredCustomDepartmentName = getField('customDepartmentName');
+      const enteredCustomProgramName = getField('customProgramName');
+
       await apiRequest<{ success: boolean }>('/api/student/register', {
         method: 'POST',
         body: JSON.stringify({
-          studentName: form.get('studentName'),
-          email: form.get('email'),
-          password: form.get('password'),
-          universityRegNumber: form.get('universityRegNumber'),
-          collegeId: isCollegeNotInList ? null : form.get('collegeId'),
-          departmentId: isCollegeNotInList ? null : form.get('departmentId'),
-          programId: isCollegeNotInList ? null : form.get('programId'),
-          customCollegeName: isCollegeNotInList ? form.get('customCollegeName') : null,
-          customDepartmentName: isCollegeNotInList ? form.get('customDepartmentName') : null,
-          customProgramName: isCollegeNotInList ? form.get('customProgramName') : null,
+          name: studentName,
+          studentName,
+          email,
+          password,
+          universityRegNumber,
+          collegeId: isCollegeNotInList ? null : selectedCollegeId || null,
+          departmentId: isCollegeNotInList ? null : selectedDepartmentId || null,
+          programId: isCollegeNotInList ? null : selectedProgramId || null,
+          customCollegeName: isCollegeNotInList ? enteredCustomCollegeName || null : null,
+          customDepartmentName: isCollegeNotInList ? enteredCustomDepartmentName || null : null,
+          customProgramName: isCollegeNotInList ? enteredCustomProgramName || null : null,
           sex,
         }),
       });
-      await loginWithPassword(String(form.get('email')), String(form.get('password')));
+      await loginWithPassword(email, password);
       router.push('/dashboard/student');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to create student account.');
