@@ -2,23 +2,23 @@
   "name": "@internsuite/backend",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "build": "npx prisma generate --schema=backend/prisma/schema.prisma && echo 'Backend build completed'",
+    "build": "npx prisma generate --schema=backend/prisma/schema.prisma && echo \"Backend build completed\"",
     "prisma:generate": "npx prisma generate --schema=backend/prisma/schema.prisma",
     "prisma:push": "npx prisma db push --schema=backend/prisma/schema.prisma",
     "start": "node ./scripts/railway-start.mjs",
     "prisma:sync": "node ./scripts/prisma-auto-sync.mjs"
   },
-
-}
-  
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "pg": "^8.12.0"
+  },
   "devDependencies": {
+    "prisma": "^6.19.3",
     "typescript": "^5.7.2",
     "wrangler": "^4.8.0"
-  },
-  "dependencies": {
-    "pg": "^8.12.0"
   }
 }
