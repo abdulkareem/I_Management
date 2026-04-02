@@ -51,7 +51,7 @@ type ApiEnvelope<T> = {
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Credentials': 'true',
 };
@@ -801,6 +801,73 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
   if (request.method === 'POST' && pathname === '/api/auth/login') {
     return unifiedLogin(request, env);
+  }
+
+  if (request.method === 'POST' && pathname === '/api/auth/register') {
+    const body = await readBody(request);
+    const roleInput = String(body?.role ?? 'STUDENT').trim().toUpperCase();
+
+    if (roleInput === 'STUDENT') {
+      return handleStudentRegistration(body, env);
+    }
+
+    if (roleInput === 'IPO' || roleInput === 'INDUSTRY') {
+      return handleIndustryRegistration(body, env);
+    }
+
+    if (roleInput === 'COLLEGE' || roleInput === 'COLLEGE_COORDINATOR') {
+      return handleCollegeRegistration(body, env);
+    }
+
+    return badRequest('Unsupported role for unified register');
+  }
+
+  if (request.method === 'POST' && pathname === '/api/auth/forgot-password') {
+    const body = await readBody(request);
+    const email = normalizeEmail(required(body, ['email']));
+    if (!email) return badRequest('email is required');
+
+    const account = await findAccountByEmail(env, email);
+    if (!account) return notFound('No account found for this email');
+
+    return ok('Password reset OTP sent', {
+      otpSent: true,
+      email,
+      channel: 'email',
+      accountType: account.type,
+      note: 'OTP dispatch is mocked in this environment.',
+    });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/auth/reset-password') {
+    const body = await readBody(request);
+    const email = normalizeEmail(required(body, ['email']));
+    const newPassword = required(body, ['newPassword', 'new_password', 'password']);
+    if (!email || !newPassword) return badRequest('email and newPassword are required');
+
+    const account = await findAccountByEmail(env, email);
+    if (!account) return notFound('No account found for this email');
+
+    await env.DB.prepare(`UPDATE ${account.table} SET password = ?, updated_at = datetime('now') WHERE id = ?`)
+      .bind(newPassword, account.id)
+      .run();
+
+    return ok('Password updated successfully', { passwordUpdated: true });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/auth/forgot-userid') {
+    const body = await readBody(request);
+    const email = normalizeEmail(required(body, ['email']));
+    if (!email) return badRequest('email is required');
+
+    const account = await findAccountByEmail(env, email);
+    if (!account) return notFound('No account found for this email');
+
+    return ok('User ID located', {
+      email,
+      maskedEmail: maskEmail(email),
+      role: account.type,
+    });
   }
 
   if (request.method === 'POST' && pathname === '/api/admin/send-otp') {
@@ -6335,6 +6402,177 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
   if (Number(row.is_active) !== 1) return forbidden('Account inactive');
 
   return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'STUDENT' }));
+}
+
+async function handleCollegeRegistration(body: JsonMap, env: EnvBindings): Promise<Response> {
+  const name = required(body, ['name', 'collegeName']);
+  const coordinatorName = required(body, ['coordinator_name', 'coordinatorName']);
+  const coordinatorEmail = normalizeEmail(required(body, ['coordinator_email', 'email']));
+  const password = required(body, ['password']);
+  const address = optional(body, ['address']);
+  const university = optional(body, ['university']);
+  const mobile = optional(body, ['mobile']);
+
+  if (!name || !coordinatorName || !coordinatorEmail || !password) {
+    return badRequest('name, coordinator_name, coordinator_email and password are required');
+  }
+
+  const existing = await env.DB.prepare('SELECT id FROM colleges WHERE coordinator_email = ?').bind(coordinatorEmail).first();
+  if (existing) return conflict('College coordinator email already exists');
+
+  const collegeId = crypto.randomUUID();
+  await env.DB.prepare(
+    `INSERT INTO colleges (id, name, address, university, mobile, coordinator_name, coordinator_email, password, status, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)`,
+  )
+    .bind(collegeId, name, address, university, mobile, coordinatorName, coordinatorEmail, password)
+    .run();
+
+  await upsertIdentity(env, { role: 'college', entityId: collegeId, email: coordinatorEmail, isActive: 1 });
+  return created('College registration submitted', { id: collegeId, status: 'pending' });
+}
+
+async function handleIndustryRegistration(body: JsonMap, env: EnvBindings): Promise<Response> {
+  const name = required(body, ['name', 'companyName']);
+  const email = normalizeEmail(required(body, ['email']));
+  const password = required(body, ['password']);
+  const businessActivity = required(body, ['business_activity', 'businessActivity']);
+  const industryTypeId = required(body, ['ipo_type_id', 'industry_type_id', 'ipoTypeId', 'industryTypeId']);
+
+  if (!name || !email || !password || !businessActivity || !industryTypeId) {
+    return badRequest('name, email, password, business_activity, ipo_type_id are required');
+  }
+
+  const [existingIndustry, type] = await Promise.all([
+    env.DB.prepare('SELECT id FROM industries WHERE email = ?').bind(email).first(),
+    env.DB.prepare('SELECT id FROM industry_types WHERE id = ? AND is_active = 1').bind(industryTypeId).first(),
+  ]);
+
+  if (existingIndustry) return conflict('Industry email already exists');
+  if (!type) return badRequest('Invalid ipo_type_id');
+
+  const industryId = crypto.randomUUID();
+  await env.DB.prepare(
+    `INSERT INTO industries (id, name, email, business_activity, industry_type_id, password, status, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', 0)`,
+  )
+    .bind(industryId, name, email, businessActivity, industryTypeId, password)
+    .run();
+
+  await upsertIdentity(env, { role: 'industry', entityId: industryId, email, isActive: 1 });
+  return created('IPO registration submitted', { id: industryId, status: 'pending' });
+}
+
+async function handleStudentRegistration(body: JsonMap, env: EnvBindings): Promise<Response> {
+  const name = required(body, ['name', 'studentName']);
+  const email = normalizeEmail(required(body, ['email']));
+  const password = required(body, ['password']);
+  const providedCollegeId = optional(body, ['college_id', 'collegeId']);
+  const providedDepartmentId = optional(body, ['department_id', 'departmentId']);
+  const providedProgramId = optional(body, ['program_id', 'courseId', 'programId']);
+  const customCollegeName = optional(body, ['custom_college_name', 'customCollegeName']);
+  const customDepartmentName = optional(body, ['custom_department_name', 'customDepartmentName']);
+  const customProgramName = optional(body, ['custom_program_name', 'customProgramName']);
+  const universityRegNumber = optional(body, ['university_reg_number', 'universityRegNumber']);
+  const phone = optional(body, ['phone']);
+  const sexRaw = toText(optional(body, ['sex', 'gender'])).toUpperCase();
+  const sex = sexRaw === 'MALE' || sexRaw === 'FEMALE' ? sexRaw : null;
+
+  let collegeId = providedCollegeId;
+  let departmentId = providedDepartmentId;
+  let programId = providedProgramId;
+
+  if (!collegeId && customCollegeName && customDepartmentName && customProgramName) {
+    const path = await ensureAcademicPathForUnlistedStudent(env, {
+      collegeName: customCollegeName,
+      departmentName: customDepartmentName,
+      programName: customProgramName,
+    });
+    collegeId = path.collegeId;
+    departmentId = path.departmentId;
+    programId = path.programId;
+  }
+
+  if (!name || !email || !password) return badRequest('Missing required fields');
+
+  const existing = await env.DB.prepare('SELECT id FROM students WHERE email = ?').bind(email).first();
+  if (existing) return conflict('Student email already exists');
+
+  if (collegeId) {
+    const college = await env.DB.prepare("SELECT id, status, is_active FROM colleges WHERE id = ?").bind(collegeId).first<{ id: string; status: string; is_active: number }>();
+    if (!college) return badRequest('Invalid college_id');
+    if (college.status !== 'approved' || Number(college.is_active) !== 1) return forbidden('Waiting for approval');
+  }
+
+  if (departmentId) {
+    const department = await env.DB.prepare('SELECT id, college_id FROM departments WHERE id = ?').bind(departmentId).first<{ id: string; college_id: string }>();
+    if (!department) return badRequest('Invalid department_id');
+    if (collegeId && department.college_id !== collegeId) return badRequest('department_id does not belong to selected college');
+  }
+
+  if (programId) {
+    const program = await env.DB.prepare('SELECT id, department_id FROM programs WHERE id = ?').bind(programId).first<{ id: string; department_id: string }>();
+    if (!program) return badRequest('Invalid program_id');
+    if (departmentId && program.department_id !== departmentId) return badRequest('program_id does not belong to selected department');
+  }
+
+  const studentId = crypto.randomUUID();
+  await env.DB.prepare(
+    `INSERT INTO students (
+      id, name, email, phone, university_reg_number,
+      college_id, department_id, program_id,
+      custom_college_name, custom_department_name, custom_program_name,
+      sex, password, is_active
+    )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+  )
+    .bind(
+      studentId,
+      name,
+      email,
+      phone,
+      universityRegNumber,
+      collegeId,
+      departmentId,
+      programId,
+      customCollegeName,
+      customDepartmentName,
+      customProgramName,
+      sex,
+      password,
+    )
+    .run();
+
+  await upsertIdentity(env, { role: 'student', entityId: studentId, email, isActive: 1 });
+  return created('Student registered', { id: studentId });
+}
+
+type AccountLookup = { id: string; type: string; table: 'students' | 'external_students' | 'departments' | 'colleges' | 'industries' };
+
+async function findAccountByEmail(env: EnvBindings, email: string): Promise<AccountLookup | null> {
+  const student = await env.DB.prepare('SELECT id FROM students WHERE lower(email) = lower(?)').bind(email).first<{ id: string }>();
+  if (student) return { id: student.id, type: 'STUDENT', table: 'students' };
+
+  const externalStudent = await env.DB.prepare('SELECT id FROM external_students WHERE lower(email) = lower(?)').bind(email).first<{ id: string }>();
+  if (externalStudent) return { id: externalStudent.id, type: 'EXTERNAL_STUDENT', table: 'external_students' };
+
+  const department = await env.DB.prepare('SELECT id FROM departments WHERE lower(coordinator_email) = lower(?)').bind(email).first<{ id: string }>();
+  if (department) return { id: department.id, type: 'DEPARTMENT_COORDINATOR', table: 'departments' };
+
+  const college = await env.DB.prepare('SELECT id FROM colleges WHERE lower(coordinator_email) = lower(?)').bind(email).first<{ id: string }>();
+  if (college) return { id: college.id, type: 'COLLEGE_COORDINATOR', table: 'colleges' };
+
+  const industry = await env.DB.prepare('SELECT id FROM industries WHERE lower(email) = lower(?)').bind(email).first<{ id: string }>();
+  if (industry) return { id: industry.id, type: 'IPO', table: 'industries' };
+
+  return null;
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!local || !domain) return email;
+  if (local.length <= 2) return `${local[0] ?? '*'}***@${domain}`;
+  return `${local.slice(0, 2)}***@${domain}`;
 }
 
 async function unifiedLogin(request: Request, env: EnvBindings) {
