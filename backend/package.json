@@ -9,7 +9,7 @@
     "build": "echo \"Backend build completed\"",
     "prisma:generate": "npx prisma generate --schema=backend/prisma/schema.prisma",
     "prisma:push": "npx prisma db push --schema=backend/prisma/schema.prisma",
-    "start": "node ./scripts/railway-start.mjs",
+    "start": "node index.js",
     "prisma:sync": "node ./scripts/prisma-auto-sync.mjs"
   },
   "dependencies": {
