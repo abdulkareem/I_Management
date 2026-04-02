@@ -181,6 +181,42 @@ function buildSessionData(user: { id: string; email: string; role: Role; name: s
   };
 }
 
+type AuthUser = { id: string; email: string; role: Role };
+
+function decodeSessionUserId(authorizationHeader: string | undefined): string | null {
+  if (!authorizationHeader) return null;
+  const token = authorizationHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token.startsWith('dev.')) return null;
+
+  try {
+    const decoded = Buffer.from(token.slice(4), 'base64url').toString('utf8');
+    const [userId] = decoded.split(':');
+    return userId || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getAuthUser(req: Request): Promise<AuthUser | null> {
+  const userId = decodeSessionUserId(req.header('authorization'));
+  if (!userId) return null;
+
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, role: true },
+  });
+}
+
+async function getCollegeIdForCoordinator(user: AuthUser): Promise<string | null> {
+  if (user.role !== Role.COLLEGE_COORDINATOR) return null;
+  const college = await prisma.college.findFirst({
+    where: { coordinatorEmail: user.email },
+    select: { id: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  return college?.id ?? null;
+}
+
 app.get('/api/health', async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -254,9 +290,16 @@ app.get('/api/ipos', async (_req, res) => {
   }
 });
 
-app.get('/api/departments', async (_req, res) => {
+app.get('/api/departments', async (req, res) => {
   try {
+    const authUser = await getAuthUser(req);
+    const requestedCollegeId = String(req.query.collegeId ?? req.query.college_id ?? '').trim();
+    const scopedCollegeId = authUser?.role === Role.COLLEGE_COORDINATOR
+      ? await getCollegeIdForCoordinator(authUser)
+      : (requestedCollegeId || null);
+
     const departments = await prisma.department.findMany({
+      where: scopedCollegeId ? { collegeId: scopedCollegeId } : undefined,
       include: { college: true },
       orderBy: { name: 'asc' },
     });
@@ -266,11 +309,124 @@ app.get('/api/departments', async (_req, res) => {
       name: department.name,
       college_id: department.collegeId,
       college_name: department.college.name,
-      coordinator: department.college.coordinatorName ?? '-',
-      email: department.college.coordinatorEmail ?? '-',
+      coordinator_name: department.coordinatorName ?? '-',
+      coordinator_email: department.coordinatorEmail ?? '-',
+      coordinator: department.coordinatorName ?? '-',
+      email: department.coordinatorEmail ?? '-',
     })));
   } catch (error) {
     apiError(res, 500, toMessage(error));
+  }
+});
+
+app.post('/api/departments', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const requestedCollegeId = String(req.body?.college_id ?? req.body?.collegeId ?? '').trim();
+    const scopedCollegeId = authUser?.role === Role.COLLEGE_COORDINATOR
+      ? await getCollegeIdForCoordinator(authUser)
+      : (requestedCollegeId || null);
+
+    const name = String(req.body?.name ?? '').trim();
+    const coordinatorName = String(req.body?.coordinator_name ?? req.body?.coordinatorName ?? '').trim();
+    const coordinatorEmail = String(req.body?.coordinator_email ?? req.body?.coordinatorEmail ?? '').trim().toLowerCase();
+
+    if (!scopedCollegeId || !name || !coordinatorName || !coordinatorEmail) {
+      apiError(res, 400, 'college_id, name, coordinator_name, coordinator_email are required');
+      return;
+    }
+
+    const department = await prisma.department.create({
+      data: {
+        collegeId: scopedCollegeId,
+        name,
+        coordinatorName,
+        coordinatorEmail,
+      },
+      include: { college: true },
+    });
+
+    apiOk(res, 'Department created', {
+      id: department.id,
+      name: department.name,
+      college_id: department.collegeId,
+      college_name: department.college.name,
+      coordinator_name: department.coordinatorName ?? '-',
+      coordinator_email: department.coordinatorEmail ?? '-',
+    }, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.patch('/api/departments/:id', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const existing = await prisma.department.findUnique({
+      where: { id: req.params.id },
+      include: { college: { select: { coordinatorEmail: true } } },
+    });
+    if (!existing) {
+      apiError(res, 404, 'Department not found');
+      return;
+    }
+
+    if (authUser?.role === Role.COLLEGE_COORDINATOR) {
+      const coordinatorCollegeId = await getCollegeIdForCoordinator(authUser);
+      if (!coordinatorCollegeId || coordinatorCollegeId !== existing.collegeId) {
+        apiError(res, 403, 'Not allowed to modify this department');
+        return;
+      }
+    }
+
+    const name = String(req.body?.name ?? '').trim();
+    const coordinatorName = String(req.body?.coordinator_name ?? req.body?.coordinatorName ?? '').trim();
+    const coordinatorEmail = String(req.body?.coordinator_email ?? req.body?.coordinatorEmail ?? '').trim().toLowerCase();
+
+    const department = await prisma.department.update({
+      where: { id: req.params.id },
+      data: {
+        name: name || undefined,
+        coordinatorName: coordinatorName || undefined,
+        coordinatorEmail: coordinatorEmail || undefined,
+      },
+      include: { college: true },
+    });
+
+    apiOk(res, 'Department updated', {
+      id: department.id,
+      name: department.name,
+      college_id: department.collegeId,
+      college_name: department.college.name,
+      coordinator_name: department.coordinatorName ?? '-',
+      coordinator_email: department.coordinatorEmail ?? '-',
+    });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/departments/:id', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const existing = await prisma.department.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      apiError(res, 404, 'Department not found');
+      return;
+    }
+
+    if (authUser?.role === Role.COLLEGE_COORDINATOR) {
+      const coordinatorCollegeId = await getCollegeIdForCoordinator(authUser);
+      if (!coordinatorCollegeId || coordinatorCollegeId !== existing.collegeId) {
+        apiError(res, 403, 'Not allowed to delete this department');
+        return;
+      }
+    }
+
+    await prisma.department.delete({ where: { id: req.params.id } });
+    apiOk(res, 'Department deleted', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
   }
 });
 
