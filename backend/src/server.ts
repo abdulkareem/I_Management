@@ -4,7 +4,7 @@ import cors from 'cors';
 import bcrypt from 'bcrypt';
 import { Prisma, PrismaClient, Role } from '@prisma/client';
 import { z } from 'zod';
-import { randomInt } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -19,6 +19,7 @@ const allowedOrigins = (process.env.CORS_ORIGIN ?? process.env.FRONTEND_URL ?? '
 
 app.use(cors({ origin: allowedOrigins.includes('*') ? true : allowedOrigins, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
+attachHttpLogging(app);
 
 const studentRegistrationSchema = z.object({
   name: z.string().trim().min(2),
@@ -71,6 +72,49 @@ function apiError(res: Response, status: number, message: string): void {
   res.status(status).json({ success: false, message, data: null });
 }
 
+
+function redactSensitive(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSensitive);
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).map(([key, entryValue]) => {
+      const normalized = key.toLowerCase();
+      if (
+        normalized.includes('password')
+        || normalized === 'otp'
+        || normalized.includes('token')
+        || normalized.includes('authorization')
+      ) {
+        return [key, '[REDACTED]'];
+      }
+      return [key, redactSensitive(entryValue)];
+    });
+    return Object.fromEntries(entries);
+  }
+  return value;
+}
+
+function attachHttpLogging(appInstance: express.Express): void {
+  appInstance.use((req, res, next) => {
+    const startedAt = Date.now();
+    const requestId = randomUUID();
+
+    console.log(`[api][${requestId}] -> ${req.method} ${req.originalUrl}`, {
+      query: redactSensitive(req.query),
+      body: redactSensitive(req.body),
+    });
+
+    const originalJson = res.json.bind(res);
+    res.json = ((payload: unknown) => {
+      const elapsedMs = Date.now() - startedAt;
+      console.log(`[api][${requestId}] <- ${req.method} ${req.originalUrl} ${res.statusCode} (${elapsedMs}ms)`, {
+        response: redactSensitive(payload),
+      });
+      return originalJson(payload);
+    }) as typeof res.json;
+
+    next();
+  });
+}
 
 async function ensureConfiguredSuperAdmin(email: string): Promise<void> {
   if (email !== DEFAULT_SUPER_ADMIN_EMAIL) return;
@@ -143,12 +187,20 @@ app.post('/api/admin/send-otp', async (req, res) => {
   }
 
   await ensureConfiguredSuperAdmin(email);
+  console.log('[admin-send-otp] Checking admin account', { email });
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || (user.role !== Role.SUPER_ADMIN && user.role !== Role.ADMIN)) {
+    console.warn('[admin-send-otp] Admin account lookup failed', {
+      email,
+      foundUser: Boolean(user),
+      role: user?.role ?? null,
+    });
     apiError(res, 404, 'Admin account not found for this email');
     return;
   }
+
+  console.log('[admin-send-otp] Admin account verified', { email, role: user.role, userId: user.id });
 
   const otp = String(randomInt(100000, 1000000));
   const expiresAt = Date.now() + ADMIN_OTP_TTL_MS;
@@ -168,17 +220,30 @@ app.post('/api/admin/verify-otp', async (req, res) => {
 
   const record = adminOtpStore.get(email);
   if (!record || record.expiresAt < Date.now() || record.otp !== otp) {
+    console.warn('[admin-verify-otp] OTP verification failed', {
+      email,
+      hasOtpRecord: Boolean(record),
+      otpExpired: record ? record.expiresAt < Date.now() : null,
+    });
     apiError(res, 401, 'Invalid or expired OTP');
     return;
   }
 
   await ensureConfiguredSuperAdmin(email);
+  console.log('[admin-verify-otp] Checking admin account', { email });
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || (user.role !== Role.SUPER_ADMIN && user.role !== Role.ADMIN)) {
+    console.warn('[admin-verify-otp] Admin account lookup failed after OTP verification', {
+      email,
+      foundUser: Boolean(user),
+      role: user?.role ?? null,
+    });
     apiError(res, 404, 'Admin account not found for this email');
     return;
   }
+
+  console.log('[admin-verify-otp] Admin login successful after OTP verification', { email, role: user.role, userId: user.id });
 
   adminOtpStore.delete(email);
   apiOk(res, 'OTP verified', buildSessionData(user));
