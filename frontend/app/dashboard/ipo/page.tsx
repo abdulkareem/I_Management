@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { IPODashboard } from '@/lib/types';
@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
-import { API_BASE_URL } from '@/lib/config';
+import { API_BASE_URL, DASHBOARD_POLL_INTERVAL_MS } from '@/lib/config';
 
 type IPOIdea = {
   id: string;
@@ -104,7 +104,7 @@ export default function IPODashboardPage() {
   const connectFormRef = useRef<HTMLFormElement | null>(null);
   const router = useRouter();
 
-  async function load() {
+  const load = useCallback(async () => {
     const [dashboardRes, ideasRes, collegeRes, profileRes, internshipsRes, docRes] = await Promise.all([
       fetchWithSession<IPODashboard>('/api/dashboard/ipo'),
       fetchWithSession<IPOIdea[]>('/api/ipo/ideas'),
@@ -120,7 +120,7 @@ export default function IPODashboardPage() {
     setIpoProfile(profile ? { ...profile, company_address: profile.company_address ?? profile.address ?? null } : null);
     setIPOInternships(internshipsRes.data ?? []);
     setDocuments(docRes.data ?? []);
-  }
+  }, []);
 
   async function downloadDocument(documentId: string) {
     const session = localStorage.getItem('internsuite.session');
@@ -150,7 +150,11 @@ export default function IPODashboardPage() {
 
   useEffect(() => {
     load().catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'));
-  }, []);
+    const intervalId = window.setInterval(() => {
+      void load();
+    }, DASHBOARD_POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [load]);
 
   useEffect(() => {
     if (!selectedCollege) {

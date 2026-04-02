@@ -1,12 +1,13 @@
 'use client';
 
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { fetchWithSession } from '@/lib/auth';
+import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/config';
 
 type KPI = {
   totalColleges: number;
@@ -40,7 +41,7 @@ export default function SuperAdminDashboardPage() {
   const [selectedType, setSelectedType] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     setError(null);
     try {
       const [metricsRes, collegeRes, ipoRes, departmentRes, typeRes, subtypeRes, logsRes] = await Promise.all([
@@ -63,11 +64,15 @@ export default function SuperAdminDashboardPage() {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load dashboard');
     }
-  };
+  }, [selectedType]);
 
   useEffect(() => {
     void loadDashboard();
-  }, []);
+    const intervalId = window.setInterval(() => {
+      void loadDashboard();
+    }, DASHBOARD_POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [loadDashboard]);
 
   const matchesSearch = (row: Record<string, unknown>) => JSON.stringify(row).toLowerCase().includes(search.toLowerCase());
 

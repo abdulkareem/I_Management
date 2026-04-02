@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Modal } from '@/components/ui/modal';
 import { fetchWithSession, loadSession } from '@/lib/auth';
-import { API_BASE_URL } from '@/lib/config';
+import { API_BASE_URL, DASHBOARD_POLL_INTERVAL_MS } from '@/lib/config';
 import type { DepartmentDashboard } from '@/lib/types';
 
 type IPO = { id: string; name: string; is_linked?: number };
@@ -81,7 +81,7 @@ export default function DepartmentDashboardPage() {
   const [summary, setSummary] = useState<DepartmentSummary | null>(null);
   const [analytics, setAnalytics] = useState<DepartmentAnalytics | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     const [internshipsRes, internalApplicationsRes, externalApplicationsRes, requestsRes, linkedIposRes, programsRes, cosRes, posRes, profileRes, summaryRes, analyticsRes] = await Promise.all([
       fetchWithSession<DepartmentDashboard['internships']>('/api/department/internships'),
       fetchWithSession<DepartmentDashboard['applications']>('/api/applications/internal'),
@@ -119,7 +119,7 @@ export default function DepartmentDashboardPage() {
     setDepartmentProfile(profileRes.data ?? null);
     setSummary(summaryRes.data ?? null);
     setAnalytics(analyticsRes.data ?? null);
-  }
+  }, []);
 
   async function downloadFullDepartmentReport() {
     const session = localStorage.getItem('internsuite.session');
@@ -140,7 +140,11 @@ export default function DepartmentDashboardPage() {
       return;
     }
     load().catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard'));
-  }, [router]);
+    const intervalId = window.setInterval(() => {
+      void load();
+    }, DASHBOARD_POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [load, router]);
 
   useEffect(() => {
     if (!selectedInternalIPOId) {
