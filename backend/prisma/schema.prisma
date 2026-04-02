@@ -100,11 +100,11 @@ model Ipo {
   ipoType         String?
   ipoSubCategory  String?
 
-  userId          String?  @unique
+  userId          String   @unique
 
   createdAt DateTime @default(now())
 
-  user         User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   internships  Internship[]
 }
 

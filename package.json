@@ -13,7 +13,12 @@
   "scripts": {
     "build": "npx prisma generate --schema=backend/prisma/schema.prisma && npm run build --workspaces --if-present",
     "prisma:generate": "npx prisma generate --schema=backend/prisma/schema.prisma",
-    "prisma:push": "npx prisma db push --schema=backend/prisma/schema.prisma"
+    "prisma:push": "npx prisma db push --schema=backend/prisma/schema.prisma",
+    "backend:build": "npm run build --workspace backend",
+    "backend:start": "npm run start --workspace backend",
+    "backend:dev": "npm run dev --workspace backend",
+    "backend:prisma:generate": "npm run prisma:generate --workspace backend",
+    "backend:prisma:push": "npm run prisma:push --workspace backend"
   },
   "prisma": {
     "schema": "backend/prisma/schema.prisma"
