@@ -331,7 +331,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       return ok('Departments fetched', rows.results ?? []);
     }
 
-    const scopedCollegeId = actor?.role === 'COLLEGE' ? actor.id : collegeIdFromQuery;
+    const scopedCollegeId = actor?.role === 'COLLEGE_COORDINATOR' ? actor.id : collegeIdFromQuery;
     if (!scopedCollegeId) return badRequest('college_id is required');
 
     const rows = await env.DB.prepare(
@@ -352,7 +352,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
     const body = await readBody(request);
 
-    const collegeId = toText(body?.college_id ?? body?.collegeId ?? (actor.role === 'COLLEGE' ? actor.id : ''));
+    const collegeId = toText(body?.college_id ?? body?.collegeId ?? (actor.role === 'COLLEGE_COORDINATOR' ? actor.id : ''));
     const name = toText(body?.name);
     const coordinatorName = toText(body?.coordinator_name ?? body?.coordinatorName);
     const coordinatorEmail = normalizeEmail(toText(body?.coordinator_email ?? body?.coordinatorEmail));
@@ -393,7 +393,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const existing = await env.DB.prepare('SELECT id, college_id FROM departments WHERE id = ?').bind(departmentId).first<{ id: string; college_id: string }>();
     if (!existing) return errorResponse(404, 'Department not found');
-    if (actor.role === 'COLLEGE' && existing.college_id !== actor.id) return forbidden('Not allowed');
+    if (actor.role === 'COLLEGE_COORDINATOR' && existing.college_id !== actor.id) return forbidden('Not allowed');
 
     await env.DB.prepare(
       `UPDATE departments
@@ -420,7 +420,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const existing = await env.DB.prepare('SELECT id, college_id FROM departments WHERE id = ?').bind(departmentId).first<{ id: string; college_id: string }>();
     if (!existing) return errorResponse(404, 'Department not found');
-    if (actor.role === 'COLLEGE' && existing.college_id !== actor.id) return forbidden('Not allowed');
+    if (actor.role === 'COLLEGE_COORDINATOR' && existing.college_id !== actor.id) return forbidden('Not allowed');
 
     await env.DB.prepare("UPDATE departments SET is_active = 0, updated_at = datetime('now') WHERE id = ?").bind(departmentId).run();
     return ok('Department deleted');
