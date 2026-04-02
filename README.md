@@ -57,6 +57,14 @@ Then run Prisma sync (optional, recommended for Prisma users):
 npm run db:prisma:push
 ```
 
+Need a full destructive reset first (drop all existing tables/fields and recreate schema)?
+
+```bash
+npm run db:railway:reset
+# or include Prisma sync
+npm run db:railway:fresh
+```
+
 Required backend variables for superadmin OTP via Resend:
 - `DATABASE_URL`
 - `RESEND_API_KEY`
