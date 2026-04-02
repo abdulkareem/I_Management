@@ -16,31 +16,43 @@ enum Role {
   STUDENT
 }
 
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id        String   @id @default(uuid())
   name      String?
   email     String   @unique
   phone     String?  @unique
+  password  String
   role      Role     @default(STUDENT)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // 🔁 Relations
+  // Profiles
+  studentProfile Student?
+  ipoProfile     Ipo?
+
+  // Relations
   internshipsCreated Internship[]          @relation("CreatedInternships")
   selectionsMade     Selection[]           @relation("SelectionByUser")
   results            Result[]              @relation("StudentResults")
-
-  // User ↔ Student (1:1)
-  studentProfile     Student?
-
-  // Optional: if user directly applies
   applications       InternshipApplication[] @relation("UserApplications")
 }
 
 model College {
-  id        String   @id @default(uuid())
-  name      String
-  address   String?
+  id               String         @id @default(uuid())
+  name             String
+  address          String?
+  university       String?
+  mobile           String?
+  coordinatorName  String?
+  coordinatorEmail String?
+  status           ApprovalStatus @default(PENDING)
+
   createdAt DateTime @default(now())
 
   departments       Department[]
@@ -59,25 +71,41 @@ model Department {
 }
 
 model Student {
-  id           String @id @default(uuid())
-  userId       String @unique
-  collegeId    String
-  departmentId String
+  id                    String @id @default(uuid())
+  userId                String @unique
+  collegeId             String?
+  departmentId          String?
+
+  // 🔥 NEW FIELDS
+  universityRegNumber   String?
+  sex                   String?
+  collegeNameManual     String?
+  departmentNameManual  String?
+  programme             String?
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  college    College    @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  college    College?   @relation(fields: [collegeId], references: [id], onDelete: SetNull)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   applications InternshipApplication[] @relation("StudentApplications")
 }
 
 model Ipo {
-  id        String   @id @default(uuid())
-  name      String
-  company   String?
+  id              String @id @default(uuid())
+
+  // 🔥 UPDATED
+  name            String   // IPO Name
+  email           String?
+  activity        String?
+  ipoType         String?
+  ipoSubCategory  String?
+
+  userId          String?  @unique
+
   createdAt DateTime @default(now())
 
-  internships Internship[]
+  user         User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  internships  Internship[]
 }
 
 model Internship {
@@ -116,11 +144,8 @@ model InternshipApplication {
 
   internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
 
-  // Student relation
   student Student? @relation("StudentApplications", fields: [studentId], references: [id], onDelete: Cascade)
-
-  // User relation (optional direct)
-  user User? @relation("UserApplications", fields: [userId], references: [id], onDelete: SetNull)
+  user    User?    @relation("UserApplications", fields: [userId], references: [id], onDelete: SetNull)
 
   selections Selection[]
   results    Result[]
