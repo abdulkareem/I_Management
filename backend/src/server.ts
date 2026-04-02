@@ -274,6 +274,140 @@ app.get('/api/departments', async (_req, res) => {
   }
 });
 
+app.get('/api/dashboard/college/control-center', async (_req, res) => {
+  try {
+    const [
+      totalInternships,
+      totalApplications,
+      selectedApplications,
+      departments,
+      ipos,
+      internships,
+      applications,
+    ] = await Promise.all([
+      prisma.internship.count(),
+      prisma.internshipApplication.count(),
+      prisma.internshipApplication.count({ where: { status: 'SELECTED' } }),
+      prisma.department.findMany({
+        include: {
+          students: { select: { id: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.ipo.findMany({
+        include: { internships: { select: { id: true } } },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.internship.findMany({
+        include: {
+          ipo: { select: { name: true } },
+          applications: { select: { id: true } },
+          targets: { include: { college: { select: { name: true } } } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+      prisma.internshipApplication.findMany({
+        include: {
+          internship: { select: { title: true } },
+          student: {
+            include: {
+              user: { select: { name: true, email: true } },
+            },
+          },
+          user: { select: { name: true, email: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      }),
+    ]);
+
+    const internshipsPayload = internships.map((item) => ({
+      id: item.id,
+      title: item.title,
+      created_by: item.ipo?.name ?? 'IPO',
+      target_department: item.targets[0]?.college?.name ?? 'All departments',
+      vacancy: 'N/A',
+      applications_count: item.applications.length,
+      status: 'OPEN',
+      alert: item.applications.length === 0 ? 'No applications yet' : 'Healthy',
+    }));
+
+    const internalApplications = applications.map((item) => ({
+      id: item.id,
+      student_name: item.student?.user?.name ?? item.user?.name ?? 'Student',
+      student_email: item.student?.user?.email ?? item.user?.email ?? '-',
+      internship_title: item.internship.title,
+      status: item.status,
+      application_type: 'INTERNAL' as const,
+    }));
+
+    const payload = {
+      summary: {
+        totalInternships,
+        activeInternships: totalInternships,
+        totalStudentsApplied: totalApplications,
+        studentsPlaced: selectedApplications,
+        pendingAllocations: Math.max(totalApplications - selectedApplications, 0),
+        externalApplicationsCount: 0,
+      },
+      approvalQueue: internshipsPayload.slice(0, 20).map((item) => ({
+        id: item.id,
+        title: item.title,
+        industry_name: item.created_by,
+        assigned_department: item.target_department,
+        status: item.status,
+      })),
+      departmentPerformance: departments.map((department) => ({
+        id: department.id,
+        department_name: department.name,
+        total_students: department.students.length,
+        applications_submitted: 0,
+        students_selected: 0,
+        completion_rate: 0,
+        evaluation_status: 'PENDING',
+      })),
+      internships: internshipsPayload,
+      applications: {
+        internal: internalApplications,
+        external: [],
+      },
+      evaluationStatus: departments.map((department) => ({
+        department: department.name,
+        students_evaluated: 0,
+        pending_evaluations: 0,
+        submission_status: 'PENDING',
+      })),
+      analytics: {
+        departmentParticipation: departments.map((department) => ({
+          label: department.name,
+          value: department.students.length,
+        })),
+        internshipDistribution: internshipsPayload.slice(0, 10).map((item) => ({
+          label: item.title,
+          value: item.applications_count,
+        })),
+        completionRate: departments.map((department) => ({
+          label: department.name,
+          value: 0,
+        })),
+        externalInternalRatio: { internal: totalApplications, external: 0 },
+      },
+      notifications: [],
+      ipoSummary: ipos.map((ipo) => ({
+        ipo_id: ipo.id,
+        ipo_name: ipo.name,
+        internship_count: ipo.internships.length,
+        active_engagements: ipo.internships.length,
+      })),
+    };
+
+    apiOk(res, 'College control center fetched', payload);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
 app.get('/api/logs', async (_req, res) => {
   try {
     const [colleges, ipos, departments] = await Promise.all([
