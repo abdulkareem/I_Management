@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "build": "cd .. && npx prisma generate --schema=backend/prisma/schema.prisma && echo 'Backend build completed'",
-    "prisma:generate": "cd .. && npx prisma generate --schema=backend/prisma/schema.prisma",
-    "prisma:push": "cd .. && npx prisma db push --schema=backend/prisma/schema.prisma",
-    "prisma:bootstrap": "node ./scripts/prisma-bootstrap.mjs",
+    "build": "npx prisma generate --schema=backend/prisma/schema.prisma && echo 'Backend build completed'",
+    "prisma:generate": "npx prisma generate --schema=backend/prisma/schema.prisma",
+    "prisma:push": "npx prisma db push --schema=backend/prisma/schema.prisma",
     "start": "node ./scripts/railway-start.mjs",
     "prisma:sync": "node ./scripts/prisma-auto-sync.mjs"
   },
+
+}
+  
   "devDependencies": {
     "typescript": "^5.7.2",
     "wrangler": "^4.8.0"
