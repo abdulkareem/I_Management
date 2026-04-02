@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { StudentDashboard } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { InternshipProgressTracker } from '@/components/internship-progress-trac
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { StatusBadge } from '@/components/status-badge';
 import { fetchWithSession } from '@/lib/auth';
-import { API_BASE_URL } from '@/lib/config';
+import { API_BASE_URL, DASHBOARD_POLL_INTERVAL_MS } from '@/lib/config';
 
 type InternshipTab = 'college' | 'external';
 
@@ -27,20 +27,24 @@ export default function StudentDashboardPage() {
   const [docPreview, setDocPreview] = useState<string | null>(null);
   const acceptanceLetter = documents.find((doc) => doc.type === 'reply');
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     const [response, docRes] = await Promise.all([
       fetchWithSession<StudentDashboard>('/student/dashboard'),
       fetchWithSession<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>('/api/documents/my'),
     ]);
     setDashboard(response.data);
     setDocuments(docRes.data ?? []);
-  };
+  }, []);
 
   useEffect(() => {
     refresh()
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load dashboard.'))
       .finally(() => setLoading(false));
-  }, []);
+    const intervalId = window.setInterval(() => {
+      void refresh();
+    }, DASHBOARD_POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [refresh]);
 
   const availableSlots = useMemo(() => {
     const maxAllowed = dashboard?.maxSelectableApplications ?? 3;
