@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "build": "npx prisma generate --schema=backend/prisma/schema.prisma && echo \"Backend build completed\"",
+    "build": "echo \"Backend build completed\"",
     "prisma:generate": "npx prisma generate --schema=backend/prisma/schema.prisma",
     "prisma:push": "npx prisma db push --schema=backend/prisma/schema.prisma",
     "start": "node ./scripts/railway-start.mjs",
