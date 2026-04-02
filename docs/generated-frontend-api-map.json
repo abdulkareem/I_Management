@@ -1,0 +1,608 @@
+[
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/${entity}/${id}",
+    "method": "DELETE",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/${entity}/${id}/${action}",
+    "method": "PATCH",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/student/page.tsx",
+    "endpoint": "/api/applications",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/applications/external",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/applications/internal",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/analytics/page.tsx",
+    "endpoint": "/api/college/analytics",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/applications/page.tsx",
+    "endpoint": "/api/college/applications",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/page.tsx",
+    "endpoint": "/api/college/applications/bulk-status",
+    "method": "PUT",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/capacity/page.tsx",
+    "endpoint": "/api/college/capacity",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/compliance/page.tsx",
+    "endpoint": "/api/college/compliance",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/internships/page.tsx",
+    "endpoint": "/api/college/internships",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/page.tsx",
+    "endpoint": "/api/college/internships/${id}/${action}",
+    "method": "PUT",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/ipos/page.tsx",
+    "endpoint": "/api/college/ipos",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/join/college/page.tsx",
+    "endpoint": "/api/college/register",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/page.tsx",
+    "endpoint": "/api/college/report/pdf",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/colleges",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/page.tsx",
+    "endpoint": "/api/dashboard/college/control-center",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/dashboard/ipo",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/dashboard/metrics",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/analytics",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/applications/documents/documents-client.tsx",
+    "endpoint": "/api/department/applications/${applicationId}/documents/pdf",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/applications/evaluation/evaluation-client.tsx",
+    "endpoint": "/api/department/applications/${applicationId}/evaluation",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/applications/documents/documents-client.tsx",
+    "endpoint": "/api/department/applications/${applicationId}/feedback-form",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/applications/documents/documents-client.tsx",
+    "endpoint": "/api/department/applications/${applicationId}/marksheet",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/applications/outcome-assessment/outcome-assessment-client.tsx",
+    "endpoint": "/api/department/applications/${applicationId}/outcome-assessment",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/applications/${id}/reject",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/change-password/page.tsx",
+    "endpoint": "/api/department/change-password",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/dashboard-summary",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/documents/viewer.tsx",
+    "endpoint": "/api/department/documents/${studentId}/${internshipId}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/evaluation/viewer.tsx",
+    "endpoint": "/api/department/evaluation",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/feedback/viewer.tsx",
+    "endpoint": "/api/department/feedback/${studentId}/${internshipId}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/internship-cos",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/internship-pos",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/internships",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/internships/${id}",
+    "method": "DELETE",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/internships/${internshipId}/submit-advertisement",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/internships/${item.id}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/ipo-requests",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/ipo-requests/${id}",
+    "method": "DELETE",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/ipo-requests/${item.id}",
+    "method": "PUT",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/ipos/${selectedInternalIPOId}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/linked-ipos",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/outcome/viewer.tsx",
+    "endpoint": "/api/department/outcome-assessment",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/outcome/viewer.tsx",
+    "endpoint": "/api/department/outcome/${studentId}/${internshipId}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/profile",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/programs",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/programs/${id}",
+    "method": "DELETE",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/programs/${program.id}",
+    "method": "PUT",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/programs/${program.id}/outcomes",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/programs/${programId}/outcomes",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/programs/${programId}/outcomes/${outcome.id}",
+    "method": "PUT",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/programs/${programId}/outcomes/${outcomeId}",
+    "method": "DELETE",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/department/report/pdf",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/departments",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/page.tsx",
+    "endpoint": "/api/departments/${form.id}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/college/page.tsx",
+    "endpoint": "/api/departments/${id}",
+    "method": "DELETE",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/join/student/page.tsx",
+    "endpoint": "/api/departments?collegeId=${encodeURIComponent(collegeId)}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/student/page.tsx",
+    "endpoint": "/api/documents/${documentId}/download",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/student/page.tsx",
+    "endpoint": "/api/documents/${documentId}/preview",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/external-student/page.tsx",
+    "endpoint": "/api/external/applications/${internshipId}",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/industry/applications/${application.id}/generate-letters",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/industry/applications/${applicationId}/complete",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/feedback/feedback-client.tsx",
+    "endpoint": "/api/industry/applications/${applicationId}/feedback",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/industry/applications/${applicationId}/generate-letters",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/industry/internships/${internshipId}",
+    "method": "DELETE",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/industry/internships/${internshipId}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/industry/internships/${internshipId}/close",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/industry/internships/${internshipId}/republish",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/industry/publish",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/department/page.tsx",
+    "endpoint": "/api/ipo-requests",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo-requests/${idea.id}/respond",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo-requests/${ideaId}/respond",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo-requests/${ideaId}/update",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/ipo-subtypes",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/ipo-subtypes",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/ipo-subtypes/${sub.id}",
+    "method": "DELETE",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/ipo-types",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/ipo-types",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/ipo-types/${type.id}",
+    "method": "DELETE",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/student/page.tsx",
+    "endpoint": "/api/ipo/${ipoId}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/applications/${applicationId}/accept",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/applications/${applicationId}/reject",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/colleges",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/colleges/${selectedCollege}/departments",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/ideas",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/ideas/${idea.id}/publish",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/internships",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/profile",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/profile",
+    "method": "PUT",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/join/industry/page.tsx",
+    "endpoint": "/api/ipo/register",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/ipo/send-to-department",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/ipos",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/super-admin/page.tsx",
+    "endpoint": "/api/logs",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/ipo/page.tsx",
+    "endpoint": "/api/programs?departmentId=${connectForm.departmentId}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/join/student/page.tsx",
+    "endpoint": "/api/programs?departmentId=${encodeURIComponent(departmentId)}",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/components/landing-page.tsx",
+    "endpoint": "/api/public/stats",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/student/page.tsx",
+    "endpoint": "/api/student/applications/${item.applicationId}/marksheet/email",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/join/student/page.tsx",
+    "endpoint": "/api/student/register",
+    "method": "POST",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/external-student/apply/page.tsx",
+    "endpoint": "/external/apply",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/external-student/apply/page.tsx",
+    "endpoint": "/internships/public",
+    "method": "GET",
+    "fields": []
+  },
+  {
+    "file": "frontend/app/dashboard/student/page.tsx",
+    "endpoint": "/student/dashboard",
+    "method": "GET",
+    "fields": []
+  }
+]

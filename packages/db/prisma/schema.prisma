@@ -113,6 +113,7 @@ model College {
   internships  Internship[]
   targets      InternshipTarget[]
   results      Result[]
+  students     Student[]
 
   @@map("colleges")
   @@index([status, isActive], map: "idx_colleges_status_active")
@@ -135,10 +136,25 @@ model Department {
   internships  Internship[]
   targets      InternshipTarget[]
   results      Result[]
+  programs     Program[]
+  students     Student[]
 
   @@unique([collegeId, name])
   @@map("departments")
   @@index([isActive], map: "idx_departments_active")
+}
+
+model Program {
+  id           String    @id @default(uuid())
+  departmentId String    @map("department_id")
+  name         String
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  students     Student[]
+
+  @@unique([departmentId, name])
+  @@map("programs")
 }
 
 model Ipo {
@@ -426,6 +442,9 @@ model Student {
   createdAt            DateTime                @default(now()) @map("created_at")
   updatedAt            DateTime                @updatedAt @map("updated_at")
   applications         InternshipApplication[] @relation("StudentApplications")
+  college              College?                @relation(fields: [collegeId], references: [id], onDelete: SetNull)
+  department           Department?             @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  program              Program?                @relation(fields: [programId], references: [id], onDelete: SetNull)
 
   @@map("students")
 }

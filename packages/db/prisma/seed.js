@@ -1,10 +1,9 @@
-require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
 async function main() {
-  await prisma.user.upsert({
+  const admin = await prisma.user.upsert({
     where: { email: 'adelstrategics@gmail.com' },
     update: { password: '12345678', role: 'SUPER_ADMIN', isActive: true, name: 'Platform Super Admin' },
     create: {
@@ -16,23 +15,51 @@ async function main() {
     },
   });
 
-  const existingCollege = await prisma.college.findFirst({ where: { name: 'EMEA College' } });
-  if (!existingCollege) {
-    await prisma.college.create({ data: { name: 'EMEA College' } });
-  }
+  const college = await prisma.college.upsert({
+    where: { code: 'EMEA' },
+    update: { name: 'EMEA College', status: 'approved', isActive: true },
+    create: { name: 'EMEA College', code: 'EMEA', status: 'approved', isActive: true },
+  });
 
-  await prisma.student.upsert({
+  const department = await prisma.department.upsert({
+    where: { collegeId_name: { collegeId: college.id, name: 'Computer Science' } },
+    update: { isActive: true },
+    create: { collegeId: college.id, name: 'Computer Science', code: 'CSE', isActive: true },
+  });
+
+  const program = await prisma.program.upsert({
+    where: { departmentId_name: { departmentId: department.id, name: 'B.Tech CSE' } },
+    update: {},
+    create: { departmentId: department.id, name: 'B.Tech CSE' },
+  });
+
+  const student = await prisma.student.upsert({
     where: { email: 'student.seed@internsuite.test' },
-    update: { name: 'Seed Student', password: '12345678', isActive: true },
+    update: { studentName: 'Seed Student', password: '12345678', isActive: true, collegeId: college.id, departmentId: department.id, programId: program.id },
     create: {
-      name: 'Seed Student',
+      studentName: 'Seed Student',
       email: 'student.seed@internsuite.test',
       password: '12345678',
       isActive: true,
+      collegeId: college.id,
+      departmentId: department.id,
+      programId: program.id,
     },
   });
 
-  console.log('Seed complete: super admin + EMEA College + Seed Student');
+  await prisma.vacancy.upsert({
+    where: { id: 'seed-vacancy-1' },
+    update: { title: 'Software Engineering Intern', capacity: 25 },
+    create: { id: 'seed-vacancy-1', title: 'Software Engineering Intern', capacity: 25 },
+  });
+
+  console.log('Seed complete', {
+    adminId: admin.id,
+    collegeId: college.id,
+    departmentId: department.id,
+    programId: program.id,
+    studentId: student.id,
+  });
 }
 
 main()
