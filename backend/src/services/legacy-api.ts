@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { z } from 'zod';
+import { templates } from './letterTemplates';
 
 interface EnvBindings {
   DB: D1Database;
@@ -264,6 +265,12 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     await ensureInternshipWorkflowSchema(env);
     await ensureDocumentSchema(env);
     await ensureIPOExtensionSchema(env);
+  }
+  if (
+    pathname.startsWith('/api/letters')
+    || pathname.startsWith('/api/application')
+  ) {
+    await ensureInternshipLettersSchema(env);
   }
   if (pathname === '/api/student/register') {
     await ensureStudentRegistrationSchema(env);
@@ -3154,6 +3161,113 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     }
 
     return ok('External applications fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/application/list') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const applicationId = toText(url.searchParams.get('applicationId'));
+    if (applicationId) {
+      const detail = await env.DB.prepare(
+        `SELECT ia.id, ia.status, ia.created_at, ia.internship_id, ia.student_id, ia.external_student_id,
+                i.title AS internship_title, i.duration, i.department_id, i.programme,
+                d.name AS department_name, c.name AS college_name,
+                COALESCE(s.name, es.name) AS student_name,
+                COALESCE(s.email, es.email) AS student_email,
+                COALESCE(s.phone, es.phone) AS student_mobile,
+                COALESCE(p.name, s.custom_program_name, i.programme) AS programme_name,
+                COALESCE(dep.name, s.custom_department_name, d.name, es.department) AS student_department,
+                COALESCE(col.name, s.custom_college_name, c.name, es.college) AS student_college
+         FROM internship_applications ia
+         INNER JOIN internships i ON i.id = ia.internship_id
+         INNER JOIN departments d ON d.id = i.department_id
+         INNER JOIN colleges c ON c.id = d.college_id
+         LEFT JOIN students s ON s.id = ia.student_id
+         LEFT JOIN departments dep ON dep.id = s.department_id
+         LEFT JOIN colleges col ON col.id = s.college_id
+         LEFT JOIN external_students es ON es.id = ia.external_student_id
+         LEFT JOIN programs p ON p.id = s.program_id
+         WHERE ia.id = ? AND i.department_id = ?`,
+      ).bind(applicationId, actor.id).first<any>();
+      if (!detail) return errorResponse(404, 'Application not found');
+      return ok('Application details fetched', detail);
+    }
+    const type = toText(url.searchParams.get('type')).toUpperCase();
+    const isExternalFilter = type === 'EXTERNAL';
+    const rows = await env.DB.prepare(
+      `SELECT ia.id, ia.status, ia.internship_id,
+              i.title AS internship_title,
+              COALESCE(s.name, es.name) AS student_name,
+              COALESCE(col.name, s.custom_college_name, c.name, es.college) AS student_college,
+              CASE
+                WHEN ia.external_student_id IS NOT NULL THEN 1
+                WHEN ia.is_external = 1 THEN 1
+                WHEN s.department_id IS NOT NULL AND COALESCE(s.department_id, '') <> COALESCE(i.department_id, '') THEN 1
+                ELSE 0
+              END AS is_external
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       INNER JOIN departments d ON d.id = i.department_id
+       INNER JOIN colleges c ON c.id = d.college_id
+       LEFT JOIN students s ON s.id = ia.student_id
+       LEFT JOIN colleges col ON col.id = s.college_id
+       LEFT JOIN external_students es ON es.id = ia.external_student_id
+       WHERE i.department_id = ?
+       ORDER BY ia.created_at DESC`,
+    ).bind(actor.id).all<any>();
+    const filtered = (rows.results ?? []).filter((item) => isExternalFilter ? Number(item.is_external) === 1 : Number(item.is_external) === 0);
+    return ok('Application list fetched', filtered);
+  }
+
+  if (request.method === 'PUT' && pathname === '/api/application/update-status') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const applicationId = required(body, ['applicationId', 'application_id']);
+    const status = required(body, ['status']).toUpperCase();
+    if (!applicationId) return badRequest('applicationId is required');
+    if (!['APPROVED', 'REJECTED', 'APPLIED'].includes(status)) return badRequest('Invalid status');
+    const app = await env.DB.prepare(
+      `SELECT ia.id, ia.internship_id
+       FROM internship_applications ia
+       INNER JOIN internships i ON i.id = ia.internship_id
+       WHERE ia.id = ? AND i.department_id = ?`,
+    ).bind(applicationId, actor.id).first<{ id: string; internship_id: string }>();
+    if (!app) return errorResponse(404, 'Application not found');
+    await env.DB.prepare(`UPDATE internship_applications SET status = ?, updated_at = datetime('now') WHERE id = ?`)
+      .bind(status, applicationId).run();
+
+    if (status === 'APPROVED') {
+      await env.DB.prepare(`UPDATE internships SET status = 'STARTED', updated_at = datetime('now') WHERE id = ?`).bind(app.internship_id).run();
+      await upsertInternshipLetters(env, applicationId, actor);
+    }
+
+    return ok('Application status updated', { applicationId, status });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/letters/generate') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR']);
+    if (actor instanceof Response) return actor;
+    const body = await readBody(request);
+    const applicationId = required(body, ['applicationId', 'application_id']);
+    if (!applicationId) return badRequest('applicationId is required');
+    const generated = await upsertInternshipLetters(env, applicationId, actor);
+    return ok('Letters generated', generated);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/letters/download') {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR', 'STUDENT']);
+    if (actor instanceof Response) return actor;
+    const applicationId = toText(url.searchParams.get('applicationId'));
+    if (!applicationId) return badRequest('applicationId is required');
+    return downloadLettersPdf(env, applicationId, actor);
+  }
+
+  const lettersByApplicationMatch = pathname.match(/^\/api\/letters\/([^/]+)$/);
+  if (request.method === 'GET' && lettersByApplicationMatch) {
+    const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR', 'STUDENT']);
+    if (actor instanceof Response) return actor;
+    return downloadLettersPdf(env, lettersByApplicationMatch[1], actor);
   }
 
   if (request.method === 'GET' && pathname === '/api/internships/allocated') {
@@ -7577,6 +7691,165 @@ async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_perf_feedback_industry ON internship_performance_feedback(industry_id, feedback_date)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_perf_feedback_internship ON internship_performance_feedback(internship_id)').run(),
   ]);
+}
+
+async function ensureInternshipLettersSchema(env: EnvBindings): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS internship_letters (
+      id TEXT PRIMARY KEY,
+      application_id TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('APPROVAL', 'ALLOTMENT', 'ACCEPTANCE')),
+      student_name TEXT NOT NULL,
+      internship_title TEXT NOT NULL,
+      department TEXT NOT NULL,
+      programme TEXT NOT NULL,
+      college TEXT NOT NULL,
+      industry_name TEXT,
+      duration INTEGER NOT NULL DEFAULT 0,
+      mode TEXT NOT NULL DEFAULT 'OFFLINE',
+      register_number TEXT,
+      period TEXT,
+      supervisor_name TEXT,
+      supervisor_designation TEXT,
+      generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(application_id, type)
+    )`,
+  ).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_internship_letters_application ON internship_letters(application_id)').run();
+}
+
+async function upsertInternshipLetters(env: EnvBindings, applicationId: string, actor: { id: string; role: AuthSession['user']['role'] }) {
+  await ensureInternshipLettersSchema(env);
+  const app = await env.DB.prepare(
+    `SELECT ia.id AS application_id, ia.student_id, ia.external_student_id, ia.internship_id,
+            i.title AS internship_title, COALESCE(i.duration, 0) AS duration, i.programme,
+            d.name AS department_name, c.name AS college_name,
+            COALESCE(ind.name, i.industry_name, 'Industry') AS industry_name,
+            COALESCE(ind.supervisor_name, '') AS supervisor_name,
+            COALESCE(s.name, es.name) AS student_name,
+            COALESCE(s.university_reg_number, es.reg_number, '') AS register_number,
+            COALESCE(p.name, s.custom_program_name, i.programme, d.name, '-') AS programme_name
+     FROM internship_applications ia
+     INNER JOIN internships i ON i.id = ia.internship_id
+     INNER JOIN departments d ON d.id = i.department_id
+     INNER JOIN colleges c ON c.id = d.college_id
+     LEFT JOIN industries ind ON ind.id = i.industry_id
+     LEFT JOIN students s ON s.id = ia.student_id
+     LEFT JOIN external_students es ON es.id = ia.external_student_id
+     LEFT JOIN programs p ON p.id = s.program_id
+     WHERE ia.id = ? AND i.department_id = ?`,
+  ).bind(applicationId, actor.id).first<any>();
+  if (!app) throw new Error('Application not found');
+
+  const base = {
+    studentName: String(app.student_name ?? '-'),
+    internshipTitle: String(app.internship_title ?? '-'),
+    department: String(app.department_name ?? '-'),
+    programme: String(app.programme_name ?? '-'),
+    college: String(app.college_name ?? '-'),
+    industryName: app.industry_name ? String(app.industry_name) : null,
+    duration: Number(app.duration ?? 0),
+    mode: 'OFFLINE',
+    registerNumber: app.register_number ? String(app.register_number) : null,
+    period: `${Number(app.duration ?? 0)} hours`,
+    supervisorName: app.supervisor_name ? String(app.supervisor_name) : null,
+    supervisorDesignation: 'Industry Supervisor',
+  };
+
+  const types: Array<'APPROVAL' | 'ALLOTMENT' | 'ACCEPTANCE'> = ['APPROVAL', 'ALLOTMENT', 'ACCEPTANCE'];
+  for (const type of types) {
+    await env.DB.prepare(
+      `INSERT INTO internship_letters (
+        id, application_id, type, student_name, internship_title, department, programme, college,
+        industry_name, duration, mode, register_number, period, supervisor_name, supervisor_designation, generated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(application_id, type) DO UPDATE SET
+        student_name = excluded.student_name,
+        internship_title = excluded.internship_title,
+        department = excluded.department,
+        programme = excluded.programme,
+        college = excluded.college,
+        industry_name = excluded.industry_name,
+        duration = excluded.duration,
+        mode = excluded.mode,
+        register_number = excluded.register_number,
+        period = excluded.period,
+        supervisor_name = excluded.supervisor_name,
+        supervisor_designation = excluded.supervisor_designation,
+        generated_at = datetime('now')`,
+    ).bind(
+      crypto.randomUUID(),
+      applicationId,
+      type,
+      base.studentName,
+      base.internshipTitle,
+      base.department,
+      base.programme,
+      base.college,
+      base.industryName,
+      base.duration,
+      base.mode,
+      base.registerNumber,
+      base.period,
+      base.supervisorName,
+      base.supervisorDesignation,
+    ).run();
+  }
+  return env.DB.prepare(`SELECT id, type, generated_at FROM internship_letters WHERE application_id = ? ORDER BY type`).bind(applicationId).all<any>().then((r) => r.results ?? []);
+}
+
+async function downloadLettersPdf(env: EnvBindings, applicationId: string, actor: { id: string; role: AuthSession['user']['role'] }) {
+  const app = await env.DB.prepare(
+    `SELECT ia.id, ia.student_id, i.department_id
+     FROM internship_applications ia
+     INNER JOIN internships i ON i.id = ia.internship_id
+     WHERE ia.id = ?`,
+  ).bind(applicationId).first<{ id: string; student_id: string | null; department_id: string | null }>();
+  if (!app) return errorResponse(404, 'Application not found');
+  if ((actor.role === 'DEPARTMENT_COORDINATOR' || actor.role === 'COORDINATOR') && app.department_id !== actor.id) {
+    return forbidden('Application not available for this department');
+  }
+  if (actor.role === 'STUDENT' && app.student_id !== actor.id) {
+    return forbidden('Application not available for this student');
+  }
+
+  const letters = await env.DB.prepare(
+    `SELECT type, student_name, internship_title, department, programme, college, industry_name, duration, mode,
+            register_number, period, supervisor_name, supervisor_designation
+     FROM internship_letters
+     WHERE application_id = ?
+     ORDER BY CASE type WHEN 'APPROVAL' THEN 1 WHEN 'ALLOTMENT' THEN 2 ELSE 3 END`,
+  ).bind(applicationId).all<any>();
+  if (!(letters.results ?? []).length) return errorResponse(404, 'Letters are not generated yet');
+
+  const pages = (letters.results ?? []).map((letter) => {
+    const data = {
+      studentName: String(letter.student_name ?? '-'),
+      internshipTitle: String(letter.internship_title ?? '-'),
+      department: String(letter.department ?? '-'),
+      programme: String(letter.programme ?? '-'),
+      college: String(letter.college ?? '-'),
+      industryName: letter.industry_name ? String(letter.industry_name) : null,
+      duration: Number(letter.duration ?? 0),
+      mode: String(letter.mode ?? 'OFFLINE'),
+      registerNumber: letter.register_number ? String(letter.register_number) : null,
+      period: letter.period ? String(letter.period) : undefined,
+      supervisorName: letter.supervisor_name ? String(letter.supervisor_name) : null,
+      supervisorDesignation: letter.supervisor_designation ? String(letter.supervisor_designation) : null,
+    };
+    if (String(letter.type) === 'APPROVAL') return templates.approval(data);
+    if (String(letter.type) === 'ALLOTMENT') return templates.allotment(data);
+    return templates.acceptance(data);
+  });
+  const pdfBytes = buildSimplePdf(pages.join('\n\n----- PAGE BREAK -----\n\n').split('\n'));
+  return new Response(pdfBytes.buffer as ArrayBuffer, {
+    status: 200,
+    headers: {
+      ...CORS_HEADERS,
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="letters-${applicationId}.pdf"`,
+    },
+  });
 }
 
 async function ensureDocumentSchema(env: EnvBindings): Promise<void> {

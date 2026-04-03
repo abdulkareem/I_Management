@@ -42,6 +42,11 @@ type Application = {
   status: 'APPLIED' | 'APPROVED' | 'REJECTED' | string;
 };
 
+type ApplicationDetail = Application & {
+  duration?: number | null;
+  department_name?: string | null;
+};
+
 type ApplicationInsights = {
   feedbackSubmitted: boolean | null;
   firstEvaluation: number | null;
@@ -114,14 +119,16 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
   const [error, setError] = useState('');
   const [applicationInsights, setApplicationInsights] = useState<Record<string, ApplicationInsights>>({});
   const [applicationLoading, setApplicationLoading] = useState<Record<string, boolean>>({});
+  const [expandedApplications, setExpandedApplications] = useState<Record<string, boolean>>({});
+  const [applicationDetails, setApplicationDetails] = useState<Record<string, ApplicationDetail>>({});
 
   const load = async () => {
     const [programmeRes, outcomeRes, internshipRes, internalRes, externalRes, industryRes] = await Promise.all([
       fetchWithSession<Programme[]>(`/api/programme/list${departmentId ? `?departmentId=${departmentId}` : ''}`),
       fetchWithSession<InternshipOutcome[]>(`/api/internship-outcome/list${departmentId ? `?departmentId=${departmentId}` : ''}`),
       fetchWithSession<Internship[]>(`/api/internship/list${departmentId ? `?departmentId=${departmentId}` : ''}`),
-      fetchWithSession<Application[]>('/api/applications/internal').catch(() => ({ data: [] })),
-      fetchWithSession<Application[]>('/api/applications/external').catch(() => ({ data: [] })),
+      fetchWithSession<Application[]>('/api/application/list?type=INTERNAL').catch(() => ({ data: [] })),
+      fetchWithSession<Application[]>('/api/application/list?type=EXTERNAL').catch(() => ({ data: [] })),
       fetchWithSession<Industry[]>('/api/industry/list').catch(() => ({ data: [] })),
     ]);
     setProgrammes(programmeRes.data ?? []);
@@ -137,7 +144,7 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
   }, [departmentId]);
 
   useEffect(() => {
-    const applications = [...internalApplications, ...externalApplications];
+    const applications = [...internalApplications, ...externalApplications].filter((application) => expandedApplications[application.id]);
     if (!applications.length) return;
     let cancelled = false;
     applications.forEach((application) => {
@@ -177,7 +184,7 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
     return () => {
       cancelled = true;
     };
-  }, [internalApplications, externalApplications, applicationInsights, applicationLoading]);
+  }, [internalApplications, externalApplications, applicationInsights, applicationLoading, expandedApplications]);
 
   const groupedInternshipOutcomes = useMemo(() => ({
     IPO: internshipOutcomes.filter((item) => item.type === 'IPO'),
@@ -216,48 +223,53 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
 
   async function approveApplication(app: Application) {
     await runAction(async () => {
-      await fetchWithSession(`/api/applications/update-status/${app.id}`, {
+      await fetchWithSession('/api/application/update-status', {
         method: 'PUT',
-        body: JSON.stringify({ status: 'APPROVED' }),
+        body: JSON.stringify({ applicationId: app.id, status: 'APPROVED' }),
       });
-      const internshipId = app.internship_id;
-      const studentId = app.student_id ?? app.external_student_id ?? app.user_id;
-      if (internshipId) {
-        await fetchWithSession('/api/documents/generate/approval', {
-          method: 'POST',
-          body: JSON.stringify({ internshipId }),
-        }).catch(() => null);
-      }
-      if (internshipId && studentId) {
-        await fetchWithSession('/api/documents/generate/allotment', {
-          method: 'POST',
-          body: JSON.stringify({ internshipId, studentId }),
-        }).catch(() => null);
-      }
-    }, 'Application approved. Approval/allotment letter generation triggered.');
+      await fetchWithSession('/api/letters/generate', {
+        method: 'POST',
+        body: JSON.stringify({ applicationId: app.id }),
+      });
+    }, 'Application approved and letters generated.');
   }
 
   async function rejectApplication(app: Application) {
     await runAction(async () => {
-      await fetchWithSession(`/api/applications/update-status/${app.id}`, {
+      await fetchWithSession('/api/application/update-status', {
         method: 'PUT',
-        body: JSON.stringify({ status: 'REJECTED' }),
+        body: JSON.stringify({ applicationId: app.id, status: 'REJECTED' }),
       });
     }, `Application rejected for ${app.student_name}.`);
   }
 
   async function downloadLetters(applicationId: string) {
     await runAction(async () => {
-      const payload = await fetchWithSession<{ html?: string; content?: string }>(`/api/department/applications/${applicationId}/documents/pdf`);
-      const html = payload.data?.html ?? payload.data?.content ?? '';
-      if (!html) throw new Error('Letters are not available yet.');
-      const blob = new Blob([String(html)], { type: 'text/html;charset=utf-8' });
+      const sessionRaw = localStorage.getItem('internsuite.session');
+      const token = sessionRaw ? JSON.parse(sessionRaw).token : '';
+      const response = await fetch(`${window.location.origin}/api/letters/download?applicationId=${encodeURIComponent(applicationId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Letters are not available yet.');
+      const blob = await response.blob();
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `letters-${applicationId}.html`;
+      link.download = `letters-${applicationId}.pdf`;
       link.click();
       URL.revokeObjectURL(link.href);
     }, 'Letters downloaded.');
+  }
+
+  async function toggleApplicationDetails(applicationId: string) {
+    setExpandedApplications((prev) => {
+      const next = !prev[applicationId];
+      return { ...prev, [applicationId]: next };
+    });
+    if (applicationDetails[applicationId]) return;
+    const payload = await fetchWithSession<ApplicationDetail>(`/api/application/list?applicationId=${encodeURIComponent(applicationId)}`);
+    if (payload.data) {
+      setApplicationDetails((prev) => ({ ...prev, [applicationId]: payload.data as ApplicationDetail }));
+    }
   }
 
   async function downloadMarkStatement(applicationId: string) {
@@ -845,21 +857,37 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
           <h2 className="font-semibold">Internal Applications</h2>
           {internalApplications.map((app) => (
             <div key={app.id} className="rounded border p-2 text-sm">
-              <p><strong>Student Name:</strong> {app.student_name}</p>
-              <p><strong>Internship:</strong> {app.internship_title ?? '-'}</p>
-              <p><strong>Programme:</strong> {app.programme ?? '-'}</p>
-              <p><strong>Status:</strong> {app.status}</p>
-              <p><strong>Feedback status:</strong> {applicationLoading[app.id] ? 'Loading...' : (applicationInsights[app.id]?.feedbackSubmitted ? 'Submitted' : 'Pending')}</p>
-              <p><strong>First evaluation:</strong> {applicationInsights[app.id]?.firstEvaluation ?? 'Pending'}</p>
-              <p><strong>Second evaluation:</strong> {applicationInsights[app.id]?.secondEvaluation ?? 'Pending'}</p>
-              <p><strong>Total marks:</strong> {applicationInsights[app.id]?.totalMarks ?? 'Pending'}</p>
-              <p><strong>Outcome evaluation:</strong> {applicationInsights[app.id]?.outcomeEvaluation ?? 'Pending'}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={() => void approveApplication(app)}>Approve</Button>
-                <Button type="button" variant="secondary" onClick={() => void rejectApplication(app)}>Reject</Button>
-                <Button type="button" variant="secondary" onClick={() => void downloadLetters(app.id)}>Download Letters</Button>
-                <Button type="button" variant="secondary" onClick={() => void downloadMarkStatement(app.id)}>Download Mark Statement</Button>
+              <div className="flex items-center justify-between gap-2">
+                <p>{app.student_name} | {app.student_college ?? '-'} | {app.internship_title ?? '-'} </p>
+                <Button type="button" variant="secondary" onClick={() => void toggleApplicationDetails(app.id)}>
+                  {expandedApplications[app.id] ? 'Less' : 'More'}
+                </Button>
               </div>
+              {expandedApplications[app.id] ? (
+                <div className="mt-2 space-y-1">
+                  <p><strong>Student Name:</strong> {applicationDetails[app.id]?.student_name ?? app.student_name}</p>
+                  <p><strong>Internship:</strong> {applicationDetails[app.id]?.internship_title ?? app.internship_title ?? '-'}</p>
+                  <p><strong>College:</strong> {applicationDetails[app.id]?.student_college ?? app.student_college ?? '-'}</p>
+                  <p><strong>Department:</strong> {applicationDetails[app.id]?.student_department ?? '-'}</p>
+                  <p><strong>Programme:</strong> {applicationDetails[app.id]?.programme ?? app.programme ?? '-'}</p>
+                  <p><strong>Email:</strong> {applicationDetails[app.id]?.student_email ?? app.student_email ?? '-'}</p>
+                  <p><strong>Mobile:</strong> {applicationDetails[app.id]?.student_mobile ?? app.student_mobile ?? '-'}</p>
+                  <div className="mt-2 rounded border bg-slate-50 p-2">
+                    <p><strong>Status:</strong> {app.status}</p>
+                    <p><strong>Feedback Status:</strong> {applicationLoading[app.id] ? 'Loading...' : (applicationInsights[app.id]?.feedbackSubmitted ? 'Submitted' : 'Pending')}</p>
+                    <p><strong>First Evaluation:</strong> {applicationInsights[app.id]?.firstEvaluation ?? 'Pending'}</p>
+                    <p><strong>Second Evaluation:</strong> {applicationInsights[app.id]?.secondEvaluation ?? 'Pending'}</p>
+                    <p><strong>Total Marks:</strong> {applicationInsights[app.id]?.totalMarks ?? 'Pending'}</p>
+                    <p><strong>Outcome Evaluation:</strong> {applicationInsights[app.id]?.outcomeEvaluation ?? 'Pending'}</p>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" onClick={() => void approveApplication(app)}>Approve</Button>
+                    <Button type="button" variant="secondary" onClick={() => void rejectApplication(app)}>Reject</Button>
+                    <Button type="button" variant="secondary" onClick={() => void downloadLetters(app.id)}>Download Letters</Button>
+                    <Button type="button" variant="secondary" onClick={() => void downloadMarkStatement(app.id)}>Download Mark Statement</Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ))}
         </Card>
@@ -868,25 +896,37 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
           <h2 className="font-semibold">External Applications</h2>
           {externalApplications.map((app) => (
             <div key={app.id} className="rounded border p-2 text-sm">
-              <p><strong>Student Name:</strong> {app.student_name}</p>
-              <p><strong>Internship:</strong> {app.internship_title ?? '-'}</p>
-              <p><strong>College:</strong> {app.student_college ?? '-'}</p>
-              <p><strong>Department:</strong> {app.student_department ?? '-'}</p>
-              <p><strong>Programme:</strong> {app.programme ?? '-'}</p>
-              <p><strong>Email:</strong> {app.student_email ?? '-'}</p>
-              <p><strong>Mobile:</strong> {app.student_mobile ?? '-'}</p>
-              <p><strong>Status:</strong> {app.status}</p>
-              <p><strong>Feedback status:</strong> {applicationLoading[app.id] ? 'Loading...' : (applicationInsights[app.id]?.feedbackSubmitted ? 'Submitted' : 'Pending')}</p>
-              <p><strong>First evaluation:</strong> {applicationInsights[app.id]?.firstEvaluation ?? 'Pending'}</p>
-              <p><strong>Second evaluation:</strong> {applicationInsights[app.id]?.secondEvaluation ?? 'Pending'}</p>
-              <p><strong>Total marks:</strong> {applicationInsights[app.id]?.totalMarks ?? 'Pending'}</p>
-              <p><strong>Outcome evaluation:</strong> {applicationInsights[app.id]?.outcomeEvaluation ?? 'Pending'}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={() => void approveApplication(app)}>Approve</Button>
-                <Button type="button" variant="secondary" onClick={() => void rejectApplication(app)}>Reject</Button>
-                <Button type="button" variant="secondary" onClick={() => void downloadLetters(app.id)}>Download Letters</Button>
-                <Button type="button" variant="secondary" onClick={() => void downloadMarkStatement(app.id)}>Download Mark Statement</Button>
+              <div className="flex items-center justify-between gap-2">
+                <p>{app.student_name} | {app.student_college ?? '-'} | {app.internship_title ?? '-'} </p>
+                <Button type="button" variant="secondary" onClick={() => void toggleApplicationDetails(app.id)}>
+                  {expandedApplications[app.id] ? 'Less' : 'More'}
+                </Button>
               </div>
+              {expandedApplications[app.id] ? (
+                <div className="mt-2 space-y-1">
+                  <p><strong>Student Name:</strong> {applicationDetails[app.id]?.student_name ?? app.student_name}</p>
+                  <p><strong>Internship:</strong> {applicationDetails[app.id]?.internship_title ?? app.internship_title ?? '-'}</p>
+                  <p><strong>College:</strong> {applicationDetails[app.id]?.student_college ?? app.student_college ?? '-'}</p>
+                  <p><strong>Department:</strong> {applicationDetails[app.id]?.student_department ?? app.student_department ?? '-'}</p>
+                  <p><strong>Programme:</strong> {applicationDetails[app.id]?.programme ?? app.programme ?? '-'}</p>
+                  <p><strong>Email:</strong> {applicationDetails[app.id]?.student_email ?? app.student_email ?? '-'}</p>
+                  <p><strong>Mobile:</strong> {applicationDetails[app.id]?.student_mobile ?? app.student_mobile ?? '-'}</p>
+                  <div className="mt-2 rounded border bg-slate-50 p-2">
+                    <p><strong>Status:</strong> {app.status}</p>
+                    <p><strong>Feedback Status:</strong> {applicationLoading[app.id] ? 'Loading...' : (applicationInsights[app.id]?.feedbackSubmitted ? 'Submitted' : 'Pending')}</p>
+                    <p><strong>First Evaluation:</strong> {applicationInsights[app.id]?.firstEvaluation ?? 'Pending'}</p>
+                    <p><strong>Second Evaluation:</strong> {applicationInsights[app.id]?.secondEvaluation ?? 'Pending'}</p>
+                    <p><strong>Total Marks:</strong> {applicationInsights[app.id]?.totalMarks ?? 'Pending'}</p>
+                    <p><strong>Outcome Evaluation:</strong> {applicationInsights[app.id]?.outcomeEvaluation ?? 'Pending'}</p>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" onClick={() => void approveApplication(app)}>Approve</Button>
+                    <Button type="button" variant="secondary" onClick={() => void rejectApplication(app)}>Reject</Button>
+                    <Button type="button" variant="secondary" onClick={() => void downloadLetters(app.id)}>Download Letters</Button>
+                    <Button type="button" variant="secondary" onClick={() => void downloadMarkStatement(app.id)}>Download Mark Statement</Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ))}
         </Card>
