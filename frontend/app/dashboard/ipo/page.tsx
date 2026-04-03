@@ -466,7 +466,7 @@ export default function IPODashboardPage() {
   const pendingApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'PENDING') ?? [], [dashboard]);
   const acceptedApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'ACCEPTED') ?? [], [dashboard]);
   const departmentSuggestedInternships = useMemo(
-    () => ipoInternships.filter((item) => item.status === 'SENT_TO_INDUSTRY'),
+    () => ipoInternships.filter((item) => item.status === 'SENT_TO_INDUSTRY' || item.status === 'IPO_SENT'),
     [ipoInternships],
   );
   const ideaPageSize = 5;
