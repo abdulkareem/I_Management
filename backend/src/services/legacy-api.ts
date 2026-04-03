@@ -4452,8 +4452,21 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const rows = await env.DB.prepare(
       `SELECT id, title, description, is_paid, fee, internship_category,
               COALESCE(total_vacancy, vacancy, 0) AS total_vacancy,
-              COALESCE(filled_vacancy, 0) AS filled_vacancy,
-              MAX(COALESCE(total_vacancy, vacancy, 0) - COALESCE(filled_vacancy, 0), 0) AS available_vacancy,
+              (
+                SELECT COUNT(*)
+                FROM internship_applications ia
+                WHERE ia.internship_id = internships.id
+                  AND lower(COALESCE(ia.status, '')) != 'rejected'
+              ) AS filled_vacancy,
+              MAX(
+                COALESCE(total_vacancy, vacancy, 0) - (
+                  SELECT COUNT(*)
+                  FROM internship_applications ia
+                  WHERE ia.internship_id = internships.id
+                    AND lower(COALESCE(ia.status, '')) != 'rejected'
+                ),
+                0
+              ) AS available_vacancy,
               COALESCE(vacancy, COALESCE(total_vacancy, 0)) AS vacancy,
               is_external,
               CASE WHEN COALESCE(is_external, 0) = 1 THEN 'EXTERNAL' ELSE 'INTERNAL' END AS applicable_to,
@@ -4476,7 +4489,13 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const internship = await env.DB.prepare(
       `SELECT i.id,
-              MAX(COALESCE(i.total_vacancy, 0) - COALESCE(i.filled_vacancy, 0), 0) AS available_vacancy,
+              COALESCE(i.total_vacancy, COALESCE(i.vacancy, 0)) AS total_vacancy,
+              (
+                SELECT COUNT(*)
+                FROM internship_applications ia
+                WHERE ia.internship_id = i.id
+                  AND lower(COALESCE(ia.status, '')) != 'rejected'
+              ) AS active_application_count,
               COALESCE(i.is_external, 0) AS is_external,
               COALESCE(i.created_by, 'INDUSTRY') AS created_by,
               i.department_id,
@@ -4484,7 +4503,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        FROM internships i
        INNER JOIN departments d ON d.id = i.department_id
        WHERE i.id = ?`,
-    ).bind(internshipId).first<{ id: string; available_vacancy: number | null; is_external: number; created_by: string; department_id: string | null; college_id: string }>();
+    ).bind(internshipId).first<{ id: string; total_vacancy: number | null; active_application_count: number | null; is_external: number; created_by: string; department_id: string | null; college_id: string }>();
     if (!internship) return badRequest('Invalid internship_id');
     if (actor.role === 'STUDENT') {
       const student = await env.DB.prepare('SELECT college_id, department_id FROM students WHERE id = ?').bind(actor.id).first<{ college_id: string; department_id: string }>();
@@ -4500,7 +4519,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       if (isDepartmentCreatedExternal && internship.department_id && student.department_id === internship.department_id) {
         return forbidden('External internships are not available to the same department that created them.');
       }
-      if (internship.available_vacancy !== null && Number(internship.available_vacancy) <= 0) return forbidden('No vacancy available for this internship');
+      const availableVacancy = Number(internship.total_vacancy ?? 0) - Number(internship.active_application_count ?? 0);
+      if (availableVacancy <= 0) return forbidden('No vacancy available for this internship');
     }
 
     const isExternal = actor.role === 'EXTERNAL_STUDENT' ? 1 : 0;
@@ -4518,18 +4538,6 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const applicationId = crypto.randomUUID();
     try {
       await runAtomic(env, null, async () => {
-        const vacancyUpdated = await env.DB.prepare(
-          `UPDATE internships
-           SET filled_vacancy = filled_vacancy + 1,
-               available_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
-               remaining_vacancy = MAX(total_vacancy - (filled_vacancy + 1), 0),
-               status = CASE WHEN total_vacancy - (filled_vacancy + 1) <= 0 THEN 'FULL' ELSE status END,
-               updated_at = datetime('now')
-           WHERE id = ?
-             AND filled_vacancy < total_vacancy`,
-        ).bind(internshipId).run();
-        if ((vacancyUpdated.meta.changes ?? 0) === 0) throw new Error('No vacancy available for this internship');
-
         await env.DB.prepare(
           `INSERT INTO internship_applications (id, student_id, external_student_id, internship_id, status, is_external)
            VALUES (?, ?, ?, ?, 'pending', ?)`,
@@ -4543,6 +4551,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
           )
           .run();
       });
+      await syncInternshipVacancy(env, internshipId);
     } catch (error) {
       if (error instanceof Error) return conflict(error.message);
       return conflict('Unable to submit application');
@@ -4753,17 +4762,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       .run();
 
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'Application not found for this department');
-    if (prior.previous_status === 'accepted') {
-      await env.DB.prepare(
-        `UPDATE internships
-         SET filled_vacancy = MAX(filled_vacancy - 1, 0),
-             available_vacancy = MIN(total_vacancy, MAX(total_vacancy - MAX(filled_vacancy - 1, 0), 0)),
-             remaining_vacancy = MIN(total_vacancy, MAX(total_vacancy - MAX(filled_vacancy - 1, 0), 0)),
-             status = CASE WHEN status = 'FULL' THEN 'PUBLISHED' ELSE status END,
-             updated_at = datetime('now')
-         WHERE id = ?`,
-      ).bind(prior.internship_id).run();
-    }
+    if (['accepted', 'pending'].includes(prior.previous_status)) await syncInternshipVacancy(env, prior.internship_id);
     return ok('Application rejected');
   }
 
@@ -6098,8 +6097,21 @@ async function loadStudentDashboard(env: EnvBindings, studentId: string): Promis
               COALESCE(i.is_external, 0) AS is_external,
               COALESCE(i.created_by, 'INDUSTRY') AS created_by,
               COALESCE(i.total_vacancy, 0) AS total_vacancy,
-              COALESCE(i.filled_vacancy, 0) AS filled_vacancy,
-              MAX(COALESCE(i.total_vacancy, 0) - COALESCE(i.filled_vacancy, 0), 0) AS available_vacancy,
+              (
+                SELECT COUNT(*)
+                FROM internship_applications iax
+                WHERE iax.internship_id = i.id
+                  AND lower(COALESCE(iax.status, '')) != 'rejected'
+              ) AS filled_vacancy,
+              MAX(
+                COALESCE(i.total_vacancy, 0) - (
+                  SELECT COUNT(*)
+                  FROM internship_applications iax
+                  WHERE iax.internship_id = i.id
+                    AND lower(COALESCE(iax.status, '')) != 'rejected'
+                ),
+                0
+              ) AS available_vacancy,
               ia.id AS application_id, ia.status AS application_status, ia.industry_feedback, ia.industry_score,
               (
                 SELECT AVG(orx.weighted_score)
