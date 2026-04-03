@@ -163,16 +163,19 @@ model Internship {
   id          String   @id @default(uuid())
   title       String
   description String?
+  targetType  String   @default("INTERNAL")
   isInternal  Boolean  @default(true)
-  industryName String?
+  industryName String  @default("")
+  isRegistered Boolean @default(false)
   programmeId String?
-  isFree      Boolean  @default(true)
   gender      String?
-  duration    Int?
-  vacancy     Int?
+  type        String   @default("FREE")
+  fee         Float?
+  stipend     Float?
+  duration    Int      @default(60)
+  vacancy     Int      @default(1)
   ipoId       String?
   createdById String?
-  type        String   @default("INTERNAL")
   visibility  String   @default("DEPARTMENT")
   departmentId String?
   status      String   @default("DRAFT")

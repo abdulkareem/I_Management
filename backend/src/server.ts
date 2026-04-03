@@ -58,19 +58,21 @@ const ipoRegistrationSchema = z.object({
 const internshipCreateSchema = z.object({
   title: z.string().trim().min(2),
   description: z.string().trim().min(2),
-  type: z.enum(['INTERNAL', 'EXTERNAL']).optional(),
+  targetType: z.enum(['INTERNAL', 'EXTERNAL']).optional(),
   visibility: z.enum(['DEPARTMENT', 'COLLEGE', 'GLOBAL']).optional(),
   departmentId: z.string().trim().optional().nullable(),
   createdById: z.string().trim().optional().nullable(),
-  isInternal: z.boolean().optional(),
-  industryName: z.string().trim().optional().nullable(),
+  industryName: z.string().trim().min(1),
+  isRegistered: z.boolean().optional(),
   programmeId: z.string().trim().optional().nullable(),
-  isFree: z.boolean().optional(),
   gender: z.enum(['BOYS', 'GIRLS', 'BOTH']).optional(),
+  type: z.enum(['FREE', 'PAID', 'STIPEND']).optional(),
+  fee: z.coerce.number().min(0).optional().nullable(),
+  stipend: z.coerce.number().min(0).optional().nullable(),
   duration: z.coerce.number().int().min(60).optional(),
   vacancy: z.coerce.number().int().min(1).optional(),
   outcomeIds: z.array(z.string().trim().min(1)).optional(),
-  status: z.enum(['DRAFT', 'IPO_SENT', 'PUBLISHED']).optional(),
+  status: z.enum(['DRAFT', 'IPO_SENT', 'PUBLISHED_INTERNAL', 'PUBLISHED_EXTERNAL']).optional(),
 });
 
 const programmeCreateSchema = z.object({
@@ -2052,8 +2054,8 @@ app.post('/api/internship/create', async (req, res) => {
       return;
     }
 
-    const internshipType = payload.type ?? (payload.isInternal === false ? 'EXTERNAL' : 'INTERNAL');
-    const visibility = internshipType === 'EXTERNAL'
+    const targetType = payload.targetType ?? 'INTERNAL';
+    const visibility = targetType === 'EXTERNAL'
       ? 'GLOBAL'
       : (payload.visibility ?? 'DEPARTMENT');
 
@@ -2061,19 +2063,22 @@ app.post('/api/internship/create', async (req, res) => {
       data: {
         title: payload.title,
         description: payload.description,
-        isInternal: payload.isInternal ?? internshipType === 'INTERNAL',
-        industryName: payload.industryName ?? null,
+        targetType,
+        isInternal: targetType === 'INTERNAL',
+        industryName: payload.industryName,
+        isRegistered: payload.isRegistered ?? false,
         programmeId: payload.programmeId ?? null,
-        isFree: payload.isFree ?? true,
-        gender: payload.gender ?? 'BOTH',
+        gender: payload.gender ?? (targetType === 'EXTERNAL' ? 'BOTH' : null),
+        type: payload.type ?? 'FREE',
+        fee: payload.fee ?? null,
+        stipend: payload.stipend ?? null,
         duration: payload.duration ?? 60,
         vacancy: payload.vacancy ?? 1,
-        type: internshipType,
         visibility,
         departmentId: scopedDepartmentId,
         createdById,
-        status: payload.status ?? 'IPO_SENT',
-        isExternal: internshipType === 'EXTERNAL',
+        status: payload.status ?? 'DRAFT',
+        isExternal: targetType === 'EXTERNAL',
       },
     });
 
@@ -2100,7 +2105,7 @@ app.post('/api/internship/send-to-ipo', async (req, res) => {
 
     const internship = await prisma.internship.update({
       where: { id: internshipId },
-      data: { status: 'IPO_SENT' },
+      data: { status: 'IPO_SENT', targetType: 'INTERNAL', isExternal: false, isInternal: true },
     });
 
     const ipoRequest = await prisma.iPORequest.create({
@@ -2126,21 +2131,24 @@ app.post('/api/internship/send-to-ipo', async (req, res) => {
 app.post('/api/internship/publish', async (req, res) => {
   try {
     const internshipId = String(req.body?.internshipId ?? '').trim();
+    const targetType = String(req.body?.targetType ?? '').trim().toUpperCase();
     if (!internshipId) {
       apiError(res, 400, 'internshipId is required');
       return;
     }
 
+    const status = targetType === 'INTERNAL' ? 'PUBLISHED_INTERNAL' : 'PUBLISHED_EXTERNAL';
     const internship = await prisma.internship.update({
       where: { id: internshipId },
       data: {
-        status: 'PUBLISHED_EXTERNAL',
-        isExternal: true,
-        visibility: 'GLOBAL',
+        status,
+        isExternal: targetType !== 'INTERNAL',
+        targetType: targetType === 'INTERNAL' ? 'INTERNAL' : 'EXTERNAL',
+        visibility: targetType === 'INTERNAL' ? 'DEPARTMENT' : 'GLOBAL',
       },
     });
 
-    apiOk(res, 'Internship published to global feed', internship);
+    apiOk(res, 'Internship published', internship);
   } catch (error) {
     apiError(res, 400, toMessage(error));
   }
@@ -2148,11 +2156,11 @@ app.post('/api/internship/publish', async (req, res) => {
 
 app.get('/api/internship/list', async (req, res) => {
   try {
-    const type = String(req.query.type ?? '').trim();
+    const targetType = String(req.query.targetType ?? '').trim();
     const departmentId = String(req.query.departmentId ?? '').trim();
     const internships = await prisma.internship.findMany({
       where: {
-        ...(type ? { type } : {}),
+        ...(targetType ? { targetType } : {}),
         ...(departmentId ? { departmentId } : {}),
       },
       include: {
@@ -2449,10 +2457,14 @@ app.put('/api/internship/update', async (req, res) => {
         title: req.body?.title ?? undefined,
         description: req.body?.description ?? undefined,
         industryName: req.body?.industryName ?? undefined,
+        isRegistered: typeof req.body?.isRegistered === 'boolean' ? req.body.isRegistered : undefined,
         programmeId: req.body?.programmeId ?? undefined,
-        isFree: typeof req.body?.isFree === 'boolean' ? req.body.isFree : undefined,
+        targetType: req.body?.targetType ?? undefined,
         isInternal: typeof req.body?.isInternal === 'boolean' ? req.body.isInternal : undefined,
         gender: req.body?.gender ?? undefined,
+        type: req.body?.type ?? undefined,
+        fee: typeof req.body?.fee === 'number' ? req.body.fee : undefined,
+        stipend: typeof req.body?.stipend === 'number' ? req.body.stipend : undefined,
         duration: typeof req.body?.duration === 'number' ? req.body.duration : undefined,
         vacancy: typeof req.body?.vacancy === 'number' ? req.body.vacancy : undefined,
         status: req.body?.status ?? undefined,
@@ -2472,10 +2484,14 @@ app.put('/api/internship/update/:id', async (req, res) => {
         title: req.body?.title ?? undefined,
         description: req.body?.description ?? undefined,
         industryName: req.body?.industryName ?? undefined,
+        isRegistered: typeof req.body?.isRegistered === 'boolean' ? req.body.isRegistered : undefined,
         programmeId: req.body?.programmeId ?? undefined,
-        isFree: typeof req.body?.isFree === 'boolean' ? req.body.isFree : undefined,
+        targetType: req.body?.targetType ?? undefined,
         isInternal: typeof req.body?.isInternal === 'boolean' ? req.body.isInternal : undefined,
         gender: req.body?.gender ?? undefined,
+        type: req.body?.type ?? undefined,
+        fee: typeof req.body?.fee === 'number' ? req.body.fee : undefined,
+        stipend: typeof req.body?.stipend === 'number' ? req.body.stipend : undefined,
         duration: typeof req.body?.duration === 'number' ? req.body.duration : undefined,
         vacancy: typeof req.body?.vacancy === 'number' ? req.body.vacancy : undefined,
         status: req.body?.status ?? undefined,
