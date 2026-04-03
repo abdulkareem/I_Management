@@ -134,6 +134,26 @@ model Ipo {
   internships  Internship[]
 }
 
+model IpoType {
+  id        String       @id @default(uuid())
+  name      String       @unique
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  subtypes  IpoSubtype[]
+}
+
+model IpoSubtype {
+  id         String   @id @default(uuid())
+  name       String
+  ipoTypeId  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ipoType IpoType @relation(fields: [ipoTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([ipoTypeId, name])
+}
+
 model Internship {
   id          String   @id @default(uuid())
   title       String

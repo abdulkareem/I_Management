@@ -226,12 +226,52 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-app.get('/api/ipo-types', (_req, res) => {
-  apiOk(res, 'IPO types fetched', [
-    { id: 'service', name: 'Service' },
-    { id: 'manufacturing', name: 'Manufacturing' },
-    { id: 'technology', name: 'Technology' },
-  ]);
+app.get('/api/ipo-types', async (_req, res) => {
+  try {
+    const types = await prisma.ipoType.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    });
+    apiOk(res, 'IPO types fetched', types);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.post('/api/ipo-types', async (req, res) => {
+  try {
+    const name = String(req.body?.name ?? '').trim();
+    if (!name) {
+      apiError(res, 400, 'name is required');
+      return;
+    }
+
+    const duplicate = await prisma.ipoType.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (duplicate) {
+      apiError(res, 409, 'IPO type already exists');
+      return;
+    }
+
+    const type = await prisma.ipoType.create({
+      data: { name },
+      select: { id: true, name: true },
+    });
+    apiOk(res, 'IPO type created', type, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/ipo-types/:id', async (req, res) => {
+  try {
+    await prisma.ipoType.delete({ where: { id: req.params.id } });
+    apiOk(res, 'IPO type deleted', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
 });
 
 
@@ -276,14 +316,20 @@ app.get('/api/colleges', async (_req, res) => {
 
 app.get('/api/ipos', async (_req, res) => {
   try {
-    const ipos = await prisma.ipo.findMany({ orderBy: { createdAt: 'desc' } });
+    const [ipos, types, subtypes] = await Promise.all([
+      prisma.ipo.findMany({ orderBy: { createdAt: 'desc' } }),
+      prisma.ipoType.findMany({ select: { id: true, name: true } }),
+      prisma.ipoSubtype.findMany({ select: { id: true, name: true } }),
+    ]);
+    const typeLookup = new Map(types.map((type) => [type.id, type.name]));
+    const subtypeLookup = new Map(subtypes.map((subtype) => [subtype.id, subtype.name]));
     apiOk(res, 'IPOs fetched', ipos.map((ipo) => ({
       id: ipo.id,
       name: ipo.name,
       email: ipo.email ?? '-',
       status: 'APPROVED',
-      ipo_type_name: ipo.ipoType ?? '-',
-      ipo_subtype_name: ipo.ipoSubCategory ?? '-',
+      ipo_type_name: ipo.ipoType ? (typeLookup.get(ipo.ipoType) ?? ipo.ipoType) : '-',
+      ipo_subtype_name: ipo.ipoSubCategory ? (subtypeLookup.get(ipo.ipoSubCategory) ?? ipo.ipoSubCategory) : '-',
     })));
   } catch (error) {
     apiError(res, 500, toMessage(error));
@@ -605,28 +651,69 @@ app.get('/api/logs', async (_req, res) => {
   }
 });
 
-app.get('/api/ipo-subtypes', async (_req, res) => {
+app.get('/api/ipo-subtypes', async (req, res) => {
   try {
-    const ipos = await prisma.ipo.findMany({ select: { ipoType: true, ipoSubCategory: true } });
-    const keys = new Set<string>();
-    const subtypes: Array<{ id: string; name: string; ipo_type_id: string }> = [];
+    const ipoTypeId = String(req.query.ipo_type_id ?? req.query.ipoTypeId ?? '').trim();
+    const subtypes = await prisma.ipoSubtype.findMany({
+      where: ipoTypeId ? { ipoTypeId } : undefined,
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, ipoTypeId: true },
+    });
 
-    for (const ipo of ipos) {
-      if (!ipo.ipoType || !ipo.ipoSubCategory) continue;
-      const typeId = ipo.ipoType.trim().toLowerCase().replace(/\s+/g, '-');
-      const key = `${typeId}::${ipo.ipoSubCategory}`;
-      if (keys.has(key)) continue;
-      keys.add(key);
-      subtypes.push({
-        id: key,
-        name: ipo.ipoSubCategory,
-        ipo_type_id: typeId,
-      });
-    }
-
-    apiOk(res, 'IPO subtypes fetched', subtypes);
+    apiOk(res, 'IPO subtypes fetched', subtypes.map((subtype) => ({
+      id: subtype.id,
+      name: subtype.name,
+      ipo_type_id: subtype.ipoTypeId,
+    })));
   } catch (error) {
     apiError(res, 500, toMessage(error));
+  }
+});
+
+app.post('/api/ipo-subtypes', async (req, res) => {
+  try {
+    const name = String(req.body?.name ?? '').trim();
+    const ipoTypeId = String(req.body?.ipo_type_id ?? req.body?.ipoTypeId ?? '').trim();
+    if (!name || !ipoTypeId) {
+      apiError(res, 400, 'name and ipo_type_id are required');
+      return;
+    }
+
+    const type = await prisma.ipoType.findUnique({ where: { id: ipoTypeId }, select: { id: true } });
+    if (!type) {
+      apiError(res, 400, 'Invalid ipo_type_id');
+      return;
+    }
+
+    const duplicate = await prisma.ipoSubtype.findFirst({
+      where: { ipoTypeId, name: { equals: name, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (duplicate) {
+      apiError(res, 409, 'IPO subtype already exists for this type');
+      return;
+    }
+
+    const subtype = await prisma.ipoSubtype.create({
+      data: { name, ipoTypeId },
+      select: { id: true, name: true, ipoTypeId: true },
+    });
+    apiOk(res, 'IPO subtype created', {
+      id: subtype.id,
+      name: subtype.name,
+      ipo_type_id: subtype.ipoTypeId,
+    }, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/ipo-subtypes/:id', async (req, res) => {
+  try {
+    await prisma.ipoSubtype.delete({ where: { id: req.params.id } });
+    apiOk(res, 'IPO subtype deleted', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
   }
 });
 
@@ -887,6 +974,19 @@ app.post(['/api/ipo/register', '/join/ipo'], async (req, res) => {
   try {
     const payload = ipoRegistrationSchema.parse(req.body);
     const passwordHash = await bcrypt.hash(payload.password, 12);
+    const ipoTypeId = payload.ipoTypeId?.trim() || null;
+    const [ipoType, ipoSubtype] = await Promise.all([
+      ipoTypeId ? prisma.ipoType.findUnique({ where: { id: ipoTypeId }, select: { id: true, name: true } }) : Promise.resolve(null),
+      payload.ipoSubCategory?.trim() ? prisma.ipoSubtype.findUnique({ where: { id: payload.ipoSubCategory.trim() }, select: { id: true } }) : Promise.resolve(null),
+    ]);
+    if (ipoTypeId && !ipoType) {
+      apiError(res, 400, 'Invalid ipoTypeId');
+      return;
+    }
+    if (payload.ipoSubCategory?.trim() && !ipoSubtype) {
+      apiError(res, 400, 'Invalid ipoSubCategory');
+      return;
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
@@ -903,8 +1003,8 @@ app.post(['/api/ipo/register', '/join/ipo'], async (req, res) => {
           name: payload.companyName,
           email: payload.email.toLowerCase(),
           activity: payload.businessActivity ?? null,
-          ipoType: payload.ipoType ?? payload.ipoTypeId ?? null,
-          ipoSubCategory: payload.ipoSubCategory ?? null,
+          ipoType: ipoType?.id ?? payload.ipoType ?? null,
+          ipoSubCategory: ipoSubtype?.id ?? null,
           userId: user.id,
         },
       });
