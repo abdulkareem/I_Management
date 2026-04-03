@@ -16,6 +16,11 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
     throw new Error('NEXT_PUBLIC_API_BASE_URL is not configured.');
   }
 
+  const authToken = (() => {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem('token');
+  })();
+
   let res: Response;
 
   try {
@@ -23,6 +28,7 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<A
       ...init,
       headers: {
         'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...(init?.headers ?? {}),
       },
       cache: 'no-store',
