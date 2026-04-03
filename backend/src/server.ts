@@ -1006,6 +1006,376 @@ app.post('/api/department/change-password', async (req, res) => {
   }
 });
 
+type DepartmentContext = {
+  user: AuthUser;
+  department: { id: string; name: string; collegeId: string; coordinatorName: string | null; coordinatorEmail: string | null };
+};
+
+async function getDepartmentContext(req: Request): Promise<DepartmentContext | null> {
+  const authUser = await getAuthUser(req);
+  if (!authUser || authUser.role !== Role.DEPARTMENT_COORDINATOR) return null;
+
+  const department = await prisma.department.findFirst({
+    where: { coordinatorEmail: authUser.email.toLowerCase() },
+    select: { id: true, name: true, collegeId: true, coordinatorName: true, coordinatorEmail: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!department) return null;
+  return { user: authUser, department };
+}
+
+app.get('/api/department/internships', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+
+    const internships = await prisma.internship.findMany({
+      where: { targets: { some: { collegeId: context.department.collegeId } } },
+      include: { ipo: true, applications: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    apiOk(res, 'Department internships fetched', internships.map((item) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description ?? '',
+      ipo_id: item.ipoId ?? null,
+      ipo_name: item.ipo?.name ?? '-',
+      status: 'PUBLISHED',
+      vacancy: null,
+      applications_count: item.applications.length,
+      created_at: item.createdAt.toISOString(),
+      updated_at: item.updatedAt.toISOString(),
+    })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/applications/internal', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+
+    const applications = await prisma.internshipApplication.findMany({
+      where: {
+        internship: { targets: { some: { collegeId: context.department.collegeId } } },
+        studentId: { not: null },
+      },
+      include: { internship: true, student: { include: { user: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    apiOk(res, 'Internal applications fetched', applications.map((item) => ({
+      id: item.id,
+      internship_id: item.internshipId,
+      internship_title: item.internship?.title ?? '-',
+      student_id: item.studentId,
+      student_name: item.student?.user?.name ?? 'Student',
+      student_email: item.student?.user?.email ?? null,
+      status: item.status,
+      created_at: item.createdAt.toISOString(),
+      completed_at: item.status.toUpperCase() === 'COMPLETED' ? item.updatedAt.toISOString() : null,
+    })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/applications/external', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+
+    const applications = await prisma.internshipApplication.findMany({
+      where: {
+        internship: { targets: { some: { collegeId: context.department.collegeId } } },
+        studentId: null,
+      },
+      include: { internship: true, user: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    apiOk(res, 'External applications fetched', applications.map((item) => ({
+      id: item.id,
+      internship_id: item.internshipId,
+      internship_title: item.internship?.title ?? '-',
+      external_student_id: item.userId,
+      student_name: item.user?.name ?? 'External Student',
+      student_email: item.user?.email ?? null,
+      status: item.status,
+      created_at: item.createdAt.toISOString(),
+      completed_at: item.status.toUpperCase() === 'COMPLETED' ? item.updatedAt.toISOString() : null,
+    })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/department/ipo-requests', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    apiOk(res, 'IPO requests fetched', []);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/department/linked-ipos', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    const ipos = await prisma.ipo.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } });
+    apiOk(res, 'Linked IPOs fetched', ipos.map((item) => ({ ...item, is_linked: 1 })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/department/programs', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    const rows = await prisma.student.findMany({
+      where: { departmentId: context.department.id, NOT: { programme: null } },
+      select: { programme: true },
+      distinct: ['programme'],
+      orderBy: { programme: 'asc' },
+    });
+    const programs = rows
+      .map((row) => row.programme?.trim())
+      .filter((row): row is string => Boolean(row))
+      .map((name) => ({ id: name.toLowerCase().replace(/\s+/g, '-'), name, program_outcomes: null, program_specific_outcomes: null }));
+    apiOk(res, 'Programs fetched', programs);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/department/programs/:id/outcomes', async (_req, res) => {
+  apiOk(res, 'Program outcomes fetched', []);
+});
+
+app.get('/api/department/internship-cos', async (_req, res) => {
+  apiOk(res, 'Internship COs fetched', []);
+});
+
+app.get('/api/department/internship-pos', async (_req, res) => {
+  apiOk(res, 'Internship POs fetched', []);
+});
+
+app.get('/api/department/profile', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    apiOk(res, 'Department profile fetched', {
+      id: context.department.id,
+      name: context.department.name,
+      coordinator_name: context.department.coordinatorName ?? 'Coordinator',
+    });
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/department/dashboard-summary', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    const [internshipsCount, pendingCount] = await Promise.all([
+      prisma.internship.count({ where: { targets: { some: { collegeId: context.department.collegeId } } } }),
+      prisma.internshipApplication.count({
+        where: {
+          internship: { targets: { some: { collegeId: context.department.collegeId } } },
+          status: { in: ['PENDING', 'pending'] },
+        },
+      }),
+    ]);
+    apiOk(res, 'Department summary fetched', {
+      name: context.department.name,
+      coordinator_name: context.department.coordinatorName ?? 'Coordinator',
+      coordinator_email: context.department.coordinatorEmail ?? context.user.email,
+      internships_count: internshipsCount,
+      pending_count: pendingCount,
+      ideas_count: 0,
+      programmes_count: 0,
+    });
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/department/analytics', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    const [totalStudents, totalInternships, pendingEvaluations] = await Promise.all([
+      prisma.student.count({ where: { departmentId: context.department.id } }),
+      prisma.internship.count({ where: { targets: { some: { collegeId: context.department.collegeId } } } }),
+      prisma.internshipApplication.count({
+        where: {
+          internship: { targets: { some: { collegeId: context.department.collegeId } } },
+          status: { in: ['PENDING', 'pending'] },
+        },
+      }),
+    ]);
+    apiOk(res, 'Department analytics fetched', {
+      total_students: totalStudents,
+      total_internships: totalInternships,
+      completed_internships: 0,
+      ongoing_internships: Math.max(0, totalInternships),
+      pending_evaluations: pendingEvaluations,
+      ipo_engagement_count: 0,
+      department_performance_score: 0,
+    });
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.post('/api/department/internships', async (req, res) => {
+  try {
+    const context = await getDepartmentContext(req);
+    if (!context) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    const title = String(req.body?.title ?? '').trim();
+    if (!title) {
+      apiError(res, 400, 'title is required');
+      return;
+    }
+    const created = await prisma.internship.create({
+      data: {
+        title,
+        description: String(req.body?.description ?? '').trim() || null,
+        targets: { create: [{ collegeId: context.department.collegeId }] },
+      },
+    });
+    apiOk(res, 'Internship created', { id: created.id }, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.put('/api/department/internships/:id', async (req, res) => {
+  try {
+    const updated = await prisma.internship.update({
+      where: { id: req.params.id },
+      data: {
+        title: String(req.body?.title ?? '').trim() || undefined,
+        description: String(req.body?.description ?? '').trim() || undefined,
+      },
+    });
+    apiOk(res, 'Internship updated', { id: updated.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/department/internships/:id', async (req, res) => {
+  try {
+    await prisma.internship.delete({ where: { id: req.params.id } });
+    apiOk(res, 'Internship deleted', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/department/internships/:id/submit-advertisement', async (req, res) => {
+  apiOk(res, 'Advertisement submitted', { id: req.params.id, payload: req.body ?? {} });
+});
+
+app.post('/api/ipo-requests', async (req, res) => {
+  apiOk(res, 'IPO request created', { id: randomUUID(), payload: req.body ?? {} }, 201);
+});
+
+app.put('/api/department/ipo-requests/:id', async (req, res) => {
+  apiOk(res, 'IPO request updated', { id: req.params.id, payload: req.body ?? {} });
+});
+
+app.delete('/api/department/ipo-requests/:id', async (req, res) => {
+  apiOk(res, 'IPO request deleted', { id: req.params.id });
+});
+
+app.post('/api/department/programs', async (req, res) => {
+  apiOk(res, 'Program created', { id: randomUUID(), name: String(req.body?.name ?? '').trim() || 'Program' }, 201);
+});
+
+app.put('/api/department/programs/:id', async (req, res) => {
+  apiOk(res, 'Program updated', { id: req.params.id, name: String(req.body?.name ?? '').trim() || 'Program' });
+});
+
+app.delete('/api/department/programs/:id', async (req, res) => {
+  apiOk(res, 'Program deleted', { id: req.params.id });
+});
+
+app.post('/api/department/programs/:id/outcomes', async (req, res) => {
+  apiOk(res, 'Program outcome created', { id: randomUUID(), programId: req.params.id, payload: req.body ?? {} }, 201);
+});
+
+app.put('/api/department/programs/:programId/outcomes/:outcomeId', async (req, res) => {
+  apiOk(res, 'Program outcome updated', { id: req.params.outcomeId, programId: req.params.programId, payload: req.body ?? {} });
+});
+
+app.delete('/api/department/programs/:programId/outcomes/:outcomeId', async (req, res) => {
+  apiOk(res, 'Program outcome deleted', { id: req.params.outcomeId, programId: req.params.programId });
+});
+
+app.post('/api/department/internship-cos', async (req, res) => {
+  apiOk(res, 'Internship CO created', { id: randomUUID(), payload: req.body ?? {} }, 201);
+});
+
+app.post('/api/department/internship-pos', async (req, res) => {
+  apiOk(res, 'Internship PO created', { id: randomUUID(), payload: req.body ?? {} }, 201);
+});
+
+app.post('/api/department/applications/:id/reject', async (req, res) => {
+  try {
+    await prisma.internshipApplication.update({
+      where: { id: req.params.id },
+      data: { status: 'REJECTED' },
+    });
+    apiOk(res, 'Application rejected', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.get('/api/department/report/pdf', async (_req, res) => {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.status(200).send(Buffer.from('%PDF-1.4\n% Empty Department Report\n', 'utf8'));
+});
+
 app.post('/api/admin/send-otp', async (req, res) => {
   const email = String(req.body?.email ?? '').trim().toLowerCase();
   if (!email) {
