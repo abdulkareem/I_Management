@@ -22,6 +22,29 @@ enum ApprovalStatus {
   REJECTED
 }
 
+enum TargetType {
+  INTERNAL
+  EXTERNAL
+}
+
+enum Gender {
+  BOYS
+  GIRLS
+  BOTH
+}
+
+enum InternshipStatus {
+  DRAFT
+  IPO_SENT
+  PUBLISHED
+}
+
+enum InternshipType {
+  FREE
+  PAID
+  STIPEND
+}
+
 model User {
   id        String   @id @default(uuid())
   name      String?
@@ -163,13 +186,13 @@ model Internship {
   id          String   @id @default(uuid())
   title       String
   description String?
-  targetType  String   @default("INTERNAL")
+  targetType  TargetType @default(INTERNAL)
   isInternal  Boolean  @default(true)
-  industryName String  @default("")
+  industryName String?
   isRegistered Boolean @default(false)
   programmeId String?
-  gender      String?
-  type        String   @default("FREE")
+  gender      Gender?
+  type        InternshipType?
   fee         Float?
   stipend     Float?
   duration    Int      @default(60)
@@ -178,7 +201,7 @@ model Internship {
   createdById String?
   visibility  String   @default("DEPARTMENT")
   departmentId String?
-  status      String   @default("DRAFT")
+  status      InternshipStatus @default(DRAFT)
   isExternal  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -208,7 +231,7 @@ model InternshipApplication {
   internshipId String
   studentId    String?
   userId       String?
-  isInternal   Boolean?
+  isInternal   Boolean  @default(true)
   status       String   @default("APPLIED")
   appliedAt    DateTime @default(now())
   createdAt    DateTime @default(now())
