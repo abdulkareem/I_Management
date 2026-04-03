@@ -5,20 +5,18 @@ import type { StudentDashboard } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Modal } from '@/components/ui/modal';
 import { InternshipProgressTracker } from '@/components/internship-progress-tracker';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
 import { StatusBadge } from '@/components/status-badge';
 import { fetchWithSession } from '@/lib/auth';
 import { API_BASE_URL, DASHBOARD_POLL_INTERVAL_MS } from '@/lib/config';
 
-type InternshipTab = 'college' | 'external';
-
 export default function StudentDashboardPage() {
   const [dashboard, setDashboard] = useState<StudentDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedTab, setSelectedTab] = useState<InternshipTab>('external');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [emailingId, setEmailingId] = useState<string | null>(null);
@@ -186,32 +184,7 @@ export default function StudentDashboardPage() {
             </div>
           </Card>
 
-          <section className="grid gap-4 md:grid-cols-2">
-            <Button variant={selectedTab === 'college' ? 'primary' : 'secondary'} onClick={() => setSelectedTab('college')}>
-              Internship from {dashboard?.studentCollegeName ?? 'your college'}
-            </Button>
-            <Button variant={selectedTab === 'external' ? 'primary' : 'secondary'} onClick={() => setSelectedTab('external')}>
-              Internship from other organizations
-            </Button>
-          </section>
-
-          {selectedTab === 'college' ? (
-            <Card className="rounded-[30px] p-6">
-              <h2 className="text-xl font-semibold text-slate-900">Internships from {dashboard?.studentCollegeName ?? 'your college'}</h2>
-              <p className="mt-2 text-sm text-slate-600">Internal and ipo internships are visible here. External-only postings from your own college are blocked.</p>
-              <div className="mt-4 space-y-3">
-                {dashboard?.collegeInternships?.length ? dashboard.collegeInternships.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-slate-200 bg-white/80 p-4">
-                    <p className="font-semibold text-slate-900">{item.title}</p>
-                    <p className="text-sm text-slate-600">{item.collegeName} • {item.departmentName}</p>
-                    <p className="mt-2 text-sm text-slate-600">{item.description}</p>
-                    <Button className="mt-3" disabled>View on External tab for apply status</Button>
-                  </div>
-                )) : <p className="text-slate-600">No college-hosted internships found.</p>}
-              </div>
-            </Card>
-          ) : (
-            <Card className="rounded-[30px] p-6">
+          <Card className="rounded-[30px] p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-xl font-semibold text-slate-900">Internships from other organizations</h2>
                 <Button disabled={!canApply || submitting || selectedIds.length === 0} onClick={applySelected}>
@@ -224,7 +197,7 @@ export default function StudentDashboardPage() {
                     <tr className="border-b border-slate-200 text-slate-600">
                       <th className="py-2 pr-2">Select</th>
                       <th className="py-2 pr-2">Internship</th>
-                      <th className="py-2 pr-2">IPO</th>
+                      <th className="py-2 pr-2">Industry</th>
                       <th className="py-2 pr-2">Department</th>
                       <th className="py-2 pr-2">College</th>
                       <th className="py-2 pr-2">Total Seats</th>
@@ -300,18 +273,16 @@ export default function StudentDashboardPage() {
                 </table>
               </div>
             </Card>
-          )}
-          {ipoDetails ? (
-            <Card className="rounded-[30px] p-6">
-              <h2 className="text-xl font-semibold text-slate-900">{ipoDetails.name}</h2>
-              <p className="mt-2 text-sm text-slate-600">Address: {ipoDetails.company_address || '-'}</p>
-              <p className="text-sm text-slate-600">Contact: {ipoDetails.contact_number || '-'}</p>
-              <p className="text-sm text-slate-600">Email: {ipoDetails.email || '-'}</p>
-              <p className="text-sm text-slate-600">Registration No: {ipoDetails.registration_number || '-'}</p>
-              <p className="text-sm text-slate-600">Registration Year: {ipoDetails.registration_year || '-'}</p>
-              <div className="mt-3"><Button variant="secondary" onClick={() => setIpoDetails(null)}>Close IPO Profile</Button></div>
-            </Card>
-          ) : null}
+          <Modal open={Boolean(ipoDetails)} title={ipoDetails?.name ?? 'Industry details'} onClose={() => setIpoDetails(null)}>
+            <div className="rounded-[30px] p-1">
+              <h2 className="text-xl font-semibold text-slate-900">{ipoDetails?.name ?? '-'}</h2>
+              <p className="mt-2 text-sm text-slate-600">Address: {ipoDetails?.company_address || '-'}</p>
+              <p className="text-sm text-slate-600">Contact: {ipoDetails?.contact_number || '-'}</p>
+              <p className="text-sm text-slate-600">Email: {ipoDetails?.email || '-'}</p>
+              <p className="text-sm text-slate-600">Registration No: {ipoDetails?.registration_number || '-'}</p>
+              <p className="text-sm text-slate-600">Registration Year: {ipoDetails?.registration_year || '-'}</p>
+            </div>
+          </Modal>
           <Card className="rounded-[30px] p-6">
             <h2 className="text-xl font-semibold text-slate-900">System Generated Documents</h2>
             <p className="mt-2 text-sm text-slate-600">Download your acceptance/invitation letter, allotment letter and feedback summary.</p>

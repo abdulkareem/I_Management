@@ -1200,6 +1200,116 @@ app.get('/api/applications/external', async (req, res) => {
   }
 });
 
+app.post('/api/applications', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    if (!authUser || authUser.role !== Role.STUDENT) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+
+    const internshipId = String(req.body?.internshipId ?? '').trim();
+    if (!internshipId) {
+      apiError(res, 400, 'internshipId is required');
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { userId: authUser.id },
+      select: {
+        id: true,
+        sex: true,
+        collegeId: true,
+      },
+    });
+
+    if (!student) {
+      apiError(res, 404, 'Student profile not found');
+      return;
+    }
+
+    const internship = await prisma.internship.findUnique({
+      where: { id: internshipId },
+      include: {
+        department: { include: { college: { select: { id: true } } } },
+        applications: {
+          where: { status: { in: ['PENDING', 'ACCEPTED', 'APPLIED'] } },
+          select: { id: true },
+        },
+        targets: { select: { collegeId: true } },
+      },
+    });
+
+    if (!internship || internship.status !== InternshipStatus.PUBLISHED || internship.description === '[CLOSED]') {
+      apiError(res, 404, 'Internship not available');
+      return;
+    }
+
+    const existingApplication = await prisma.internshipApplication.findFirst({
+      where: { internshipId, studentId: student.id },
+      select: { id: true },
+    });
+    if (existingApplication) {
+      apiError(res, 409, 'Already applied for this internship');
+      return;
+    }
+
+    const postingCollegeId = internship.department?.college?.id ?? null;
+    const isSameCollege = Boolean(postingCollegeId && student.collegeId && postingCollegeId === student.collegeId);
+    const isVisibleToStudent = internship.targetType === TargetType.INTERNAL
+      || (internship.targetType === TargetType.EXTERNAL && !isSameCollege);
+    if (!isVisibleToStudent) {
+      apiError(res, 403, 'This internship is not available for your college');
+      return;
+    }
+
+    if (internship.gender && internship.gender !== Gender.BOTH) {
+      const studentSex = String(student.sex ?? '').toUpperCase();
+      const eligibleByGender = (internship.gender === Gender.BOYS && studentSex === 'MALE')
+        || (internship.gender === Gender.GIRLS && studentSex === 'FEMALE');
+      if (!eligibleByGender) {
+        apiError(res, 403, 'You are not eligible for this internship');
+        return;
+      }
+    }
+
+    const activeCount = await prisma.internshipApplication.count({
+      where: {
+        studentId: student.id,
+        status: { in: ['PENDING', 'ACCEPTED', 'APPLIED'] },
+      },
+    });
+    const maxSelectableApplications = 3;
+    if (activeCount >= maxSelectableApplications) {
+      apiError(res, 400, 'Application limit reached');
+      return;
+    }
+
+    const totalVacancy = internship.vacancy ?? 0;
+    if (internship.applications.length >= totalVacancy) {
+      apiError(res, 400, 'No vacancy available');
+      return;
+    }
+
+    const created = await prisma.internshipApplication.create({
+      data: {
+        internshipId,
+        studentId: student.id,
+        isInternal: internship.targetType === TargetType.INTERNAL,
+        status: 'APPLIED',
+      },
+    });
+
+    apiOk(res, 'Application submitted', {
+      id: created.id,
+      internshipId: created.internshipId,
+      status: String(created.status).toUpperCase(),
+    }, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
 app.put('/api/applications/update-status/:id', async (req, res) => {
   try {
     const payload = applicationStatusSchema.parse(req.body ?? {});
@@ -1773,13 +1883,10 @@ app.get(['/api/dashboard/student', '/student/dashboard'], async (req, res) => {
     const externalInternships = visibleInternships
       .filter((item) => {
         const postingCollegeId = item.department?.college?.id ?? null;
-        const targetsStudentCollege = item.targets.length === 0 || item.targets.some((target) => target.collegeId === student.collegeId);
-        const isInternalMatch = item.targetType === TargetType.INTERNAL
-          && targetsStudentCollege
-          && postingCollegeId === student.collegeId
-          && item.departmentId === student.departmentId;
-        const isExternalPosting = item.targetType === TargetType.EXTERNAL;
-        return isExternalPosting || isInternalMatch;
+        const isSameCollege = Boolean(postingCollegeId && student.collegeId && postingCollegeId === student.collegeId);
+        const isInternalPosting = item.targetType === TargetType.INTERNAL;
+        const isExternalFromOtherCollege = item.targetType === TargetType.EXTERNAL && !isSameCollege;
+        return isInternalPosting || isExternalFromOtherCollege;
       })
       .map((item) => {
         const application = allApplications.find((existing) => existing.internshipId === item.id);
@@ -1804,7 +1911,7 @@ app.get(['/api/dashboard/student', '/student/dashboard'], async (req, res) => {
           evaluationMarks: null,
           outcomeMarks: null,
           isExternal: item.targetType === TargetType.EXTERNAL,
-          sameCollege: false,
+          sameCollege: item.department?.college?.id === student.collegeId,
           eligible: canApplyForExternal && !application && availableVacancy > 0,
           eligibilityMessage: canApplyForExternal ? 'Available for apply' : 'Application limit reached',
         };
