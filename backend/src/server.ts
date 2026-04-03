@@ -918,6 +918,360 @@ app.post(['/api/ipo/register', '/join/ipo'], async (req, res) => {
   }
 });
 
+app.get('/api/dashboard/ipo', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    if (!authUser || authUser.role !== Role.IPO) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+
+    const ipo = await prisma.ipo.findUnique({ where: { userId: authUser.id } });
+    if (!ipo) {
+      apiError(res, 404, 'IPO profile not found');
+      return;
+    }
+
+    const internships = await prisma.internship.findMany({
+      where: { ipoId: ipo.id },
+      include: {
+        applications: {
+          include: {
+            student: { include: { user: true, college: true } },
+            user: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const applications = internships.flatMap((internship) => internship.applications.map((application) => ({
+      id: application.id,
+      studentId: application.studentId ?? null,
+      internshipId: application.internshipId,
+      studentName: application.student?.user?.name ?? application.user?.name ?? 'Student',
+      studentEmail: application.student?.user?.email ?? application.user?.email ?? null,
+      collegeName: application.student?.college?.name ?? '-',
+      opportunityTitle: internship.title,
+      status: application.status,
+      createdAt: application.createdAt.toISOString(),
+      completedAt: application.status === 'COMPLETED' ? application.updatedAt.toISOString() : null,
+    })));
+
+    apiOk(res, 'IPO dashboard fetched', {
+      ipo: { id: ipo.id, name: ipo.name, description: ipo.activity ?? null, emblem: null },
+      stats: {
+        liveOpportunities: internships.length,
+        pendingApplications: applications.filter((item) => item.status === 'PENDING').length,
+        acceptedApplications: applications.filter((item) => item.status === 'ACCEPTED' || item.status === 'SELECTED' || item.status === 'COMPLETED').length,
+        internships: internships.length,
+      },
+      opportunities: internships.map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description ?? '',
+        applications: item.applications.length,
+      })),
+      applications,
+      approvedColleges: [],
+    });
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/ipo/ideas', async (_req, res) => {
+  apiOk(res, 'IPO ideas fetched', []);
+});
+
+app.put('/api/ipo-requests/:id/update', async (_req, res) => {
+  apiOk(res, 'IPO request updated', { id: _req.params.id });
+});
+
+app.post('/api/ipo-requests/:id/respond', async (_req, res) => {
+  apiOk(res, 'IPO request responded', { id: _req.params.id });
+});
+
+app.post('/api/ipo/ideas/:id/publish', async (_req, res) => {
+  apiOk(res, 'Idea published', { id: _req.params.id });
+});
+
+app.get('/api/ipo/colleges', async (_req, res) => {
+  try {
+    const colleges = await prisma.college.findMany({ orderBy: { name: 'asc' } });
+    apiOk(res, 'Colleges fetched', colleges.map((college) => ({ id: college.id, name: college.name })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/ipo/colleges/:collegeId/departments', async (req, res) => {
+  try {
+    const departments = await prisma.department.findMany({
+      where: { collegeId: req.params.collegeId },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    apiOk(res, 'Departments fetched', departments);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/programs', async (req, res) => {
+  try {
+    const departmentId = String(req.query.departmentId ?? '').trim();
+    if (!departmentId) {
+      apiOk(res, 'Programs fetched', []);
+      return;
+    }
+    const rows = await prisma.student.findMany({
+      where: { departmentId, NOT: { programme: null } },
+      select: { programme: true },
+      distinct: ['programme'],
+      orderBy: { programme: 'asc' },
+    });
+    const programs = rows
+      .map((row) => row.programme?.trim())
+      .filter((row): row is string => Boolean(row))
+      .map((name) => ({ id: name.toLowerCase().replace(/\s+/g, '-'), name }));
+    apiOk(res, 'Programs fetched', programs);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/ipo/profile', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    if (!authUser || authUser.role !== Role.IPO) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    const ipo = await prisma.ipo.findUnique({ where: { userId: authUser.id } });
+    if (!ipo) {
+      apiError(res, 404, 'IPO profile not found');
+      return;
+    }
+    apiOk(res, 'IPO profile fetched', {
+      id: ipo.id,
+      name: ipo.name,
+      email: ipo.email ?? authUser.email,
+      company_address: ipo.activity ?? null,
+      contact_number: null,
+      registration_number: null,
+      registration_year: null,
+      supervisor_name: null,
+    });
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.put('/api/ipo/profile', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    if (!authUser || authUser.role !== Role.IPO) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    const ipo = await prisma.ipo.findUnique({ where: { userId: authUser.id } });
+    if (!ipo) {
+      apiError(res, 404, 'IPO profile not found');
+      return;
+    }
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const companyAddress = String(req.body?.companyAddress ?? '').trim();
+    const updated = await prisma.ipo.update({
+      where: { id: ipo.id },
+      data: {
+        email: email || undefined,
+        activity: companyAddress || undefined,
+      },
+    });
+    apiOk(res, 'IPO profile updated', { id: updated.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/ipo/send-to-department', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    if (!authUser || authUser.role !== Role.IPO) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    const ipo = await prisma.ipo.findUnique({ where: { userId: authUser.id } });
+    const collegeId = String(req.body?.college ?? '').trim();
+    const internshipTitle = String(req.body?.internshipTitle ?? '').trim();
+    const natureOfWork = String(req.body?.natureOfWork ?? '').trim();
+
+    if (!ipo) {
+      apiError(res, 404, 'IPO profile not found');
+      return;
+    }
+    if (!collegeId || !internshipTitle) {
+      apiError(res, 400, 'college and internshipTitle are required');
+      return;
+    }
+    const created = await prisma.internship.create({
+      data: {
+        title: internshipTitle,
+        description: natureOfWork,
+        ipoId: ipo.id,
+        createdById: authUser.id,
+        targets: { create: [{ collegeId }] },
+      },
+    });
+    apiOk(res, 'Sent to Department', { id: created.id }, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.get('/api/ipo/internships', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    if (!authUser || authUser.role !== Role.IPO) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+    const ipo = await prisma.ipo.findUnique({ where: { userId: authUser.id } });
+    if (!ipo) {
+      apiError(res, 404, 'IPO profile not found');
+      return;
+    }
+    const internships = await prisma.internship.findMany({
+      where: { ipoId: ipo.id },
+      include: { targets: { include: { college: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    apiOk(res, 'IPO internships fetched', internships.map((item) => ({
+      id: item.id,
+      internship_title: item.title,
+      description: item.description ?? '',
+      college_id: item.targets[0]?.collegeId ?? '',
+      college_name: item.targets[0]?.college?.name ?? '-',
+      department_id: '',
+      department_name: '-',
+      programme: null,
+      category: 'FREE',
+      vacancy: null,
+      status: item.description === '[CLOSED]' ? 'CLOSED' : 'PUBLISHED',
+      student_visibility: 1,
+      created_at: item.createdAt.toISOString(),
+    })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.put('/api/ipo/internships/:id', async (req, res) => {
+  try {
+    const title = String(req.body?.title ?? '').trim();
+    const description = String(req.body?.description ?? '').trim();
+    const internship = await prisma.internship.update({
+      where: { id: req.params.id },
+      data: { title: title || undefined, description: description || undefined },
+    });
+    apiOk(res, 'Internship updated', { id: internship.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/ipo/publish', async (req, res) => {
+  apiOk(res, 'Published for students', { id: req.body?.id ?? null });
+});
+
+app.post('/api/ipo/internships/:id/close', async (req, res) => {
+  try {
+    const internship = await prisma.internship.update({
+      where: { id: req.params.id },
+      data: { description: '[CLOSED]' },
+    });
+    apiOk(res, 'Internship closed', { id: internship.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/ipo/internships/:id/republish', async (req, res) => {
+  try {
+    const internship = await prisma.internship.update({
+      where: { id: req.params.id },
+      data: { description: '' },
+    });
+    apiOk(res, 'Internship published again', { id: internship.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/ipo/internships/:id', async (req, res) => {
+  try {
+    await prisma.internship.delete({ where: { id: req.params.id } });
+    apiOk(res, 'Internship removed', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/ipo/applications/:id/accept', async (req, res) => {
+  try {
+    const updated = await prisma.internshipApplication.update({
+      where: { id: req.params.id },
+      data: { status: 'ACCEPTED' },
+    });
+    apiOk(res, 'Application accepted', { id: updated.id, status: updated.status });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/ipo/applications/:id/reject', async (req, res) => {
+  try {
+    const updated = await prisma.internshipApplication.update({
+      where: { id: req.params.id },
+      data: { status: 'REJECTED' },
+    });
+    apiOk(res, 'Application rejected', { id: updated.id, status: updated.status });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/ipo/applications/:id/complete', async (req, res) => {
+  try {
+    const updated = await prisma.internshipApplication.update({
+      where: { id: req.params.id },
+      data: { status: 'COMPLETED' },
+    });
+    apiOk(res, 'Application completed', { id: updated.id, status: updated.status });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/ipo/applications/:id/generate-letters', async (_req, res) => {
+  apiOk(res, 'Letters generated', { generated: true });
+});
+
+app.post('/api/ipo/applications/:id/feedback', async (_req, res) => {
+  apiOk(res, 'Feedback submitted', { saved: true });
+});
+
+app.get('/api/documents/my', async (_req, res) => {
+  apiOk(res, 'Documents fetched', []);
+});
+
+app.get('/api/documents/:id/download', async (_req, res) => {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.send(Buffer.from('%PDF-1.4\n%EOF'));
+});
+
 app.use((req, res) => {
   apiError(res, 404, `Route not found: ${req.method} ${req.path}`);
 });
