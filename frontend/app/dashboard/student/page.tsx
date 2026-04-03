@@ -29,7 +29,7 @@ export default function StudentDashboardPage() {
 
   const refresh = useCallback(async () => {
     const [response, docRes] = await Promise.all([
-      fetchWithSession<StudentDashboard>('/student/dashboard'),
+      fetchWithSession<StudentDashboard>('/api/dashboard/student'),
       fetchWithSession<Array<{ id: string; type: string; internship_id: string; generated_at: string }>>('/api/documents/my'),
     ]);
     setDashboard(response.data);

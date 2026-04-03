@@ -1702,6 +1702,134 @@ app.post(['/api/ipo/register', '/join/ipo'], async (req, res) => {
   }
 });
 
+app.get(['/api/dashboard/student', '/student/dashboard'], async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    if (!authUser || authUser.role !== Role.STUDENT) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { userId: authUser.id },
+      include: {
+        user: { select: { name: true } },
+        college: { select: { id: true, name: true } },
+        department: { select: { id: true, name: true } },
+      },
+    });
+    if (!student) {
+      apiError(res, 404, 'Student profile not found');
+      return;
+    }
+
+    const internships = await prisma.internship.findMany({
+      where: { status: InternshipStatus.PUBLISHED },
+      include: {
+        ipo: { select: { id: true, name: true } },
+        department: { include: { college: { select: { id: true, name: true } } } },
+        targets: { select: { collegeId: true } },
+        applications: { where: { status: { in: ['PENDING', 'ACCEPTED', 'APPLIED'] } }, select: { id: true, studentId: true, status: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const allApplications = await prisma.internshipApplication.findMany({
+      where: { studentId: student.id },
+      include: {
+        internship: { include: { ipo: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const activeCount = allApplications.filter((item) => ['PENDING', 'ACCEPTED', 'APPLIED'].includes(String(item.status).toUpperCase())).length;
+    const maxSelectableApplications = 3;
+    const canApplyForExternal = activeCount < maxSelectableApplications;
+    const studentSex = String(student.sex ?? '').toUpperCase();
+
+    const visibleInternships = internships.filter((item) => {
+      if (item.gender === Gender.BOTH || item.gender === null) return true;
+      if (item.gender === Gender.BOYS) return studentSex === 'MALE';
+      if (item.gender === Gender.GIRLS) return studentSex === 'FEMALE';
+      return true;
+    });
+
+    const collegeInternships = visibleInternships
+      .filter((item) => item.department?.college?.id && item.department.college.id === student.collegeId)
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description ?? '',
+        departmentName: item.department?.name ?? '-',
+        collegeName: item.department?.college?.name ?? '-',
+      }));
+
+    const externalInternships = visibleInternships
+      .filter((item) => {
+        const postingCollegeId = item.department?.college?.id ?? null;
+        const targetsStudentCollege = item.targets.length === 0 || item.targets.some((target) => target.collegeId === student.collegeId);
+        const visibleByTarget = item.targetType === TargetType.EXTERNAL || (item.targetType === TargetType.INTERNAL && targetsStudentCollege);
+        return visibleByTarget && postingCollegeId !== student.collegeId;
+      })
+      .map((item) => {
+        const application = allApplications.find((existing) => existing.internshipId === item.id);
+        const totalVacancy = item.vacancy ?? 0;
+        const filledVacancy = item.applications.length;
+        const availableVacancy = Math.max(totalVacancy - filledVacancy, 0);
+        return {
+          id: item.id,
+          title: item.title,
+          description: item.description ?? '',
+          ipoName: item.ipo?.name ?? '-',
+          ipoId: item.ipo?.id ?? null,
+          departmentName: item.department?.name ?? '-',
+          collegeName: item.department?.college?.name ?? '-',
+          totalVacancy,
+          filledVacancy,
+          availableVacancy,
+          applied: Boolean(application),
+          applicationId: application?.id ?? null,
+          status: application?.status ? String(application.status).toUpperCase() : undefined,
+          ipoFeedback: null,
+          evaluationMarks: null,
+          outcomeMarks: null,
+          isExternal: item.targetType === TargetType.EXTERNAL,
+          sameCollege: false,
+          eligible: canApplyForExternal && !application && availableVacancy > 0,
+          eligibilityMessage: canApplyForExternal ? 'Available for apply' : 'Application limit reached',
+        };
+      });
+
+    apiOk(res, 'Student dashboard loaded', {
+      studentName: student.user?.name ?? 'Student',
+      studentUniversityRegNumber: student.universityRegNumber ?? '',
+      studentCollegeName: student.college?.name ?? student.collegeNameManual ?? 'Your College',
+      internships: [],
+      collegeInternships,
+      externalInternships,
+      applications: allApplications.map((item) => ({
+        id: item.id,
+        internshipTitle: item.internship?.title ?? '-',
+        ipoName: item.internship?.ipo?.name ?? '-',
+        status: String(item.status).toUpperCase(),
+        acceptanceUrl: null,
+      })),
+      activeApplicationLock: false,
+      maxSelectableApplications,
+      canApplyForExternal,
+      policyNote: 'University policy applies.',
+      journeyCompletion: allApplications.length > 0 ? 60 : 20,
+      journeySteps: [
+        { label: 'Profile created', done: true },
+        { label: 'Applied to internship', done: allApplications.length > 0 },
+        { label: 'Selection completed', done: allApplications.some((item) => String(item.status).toUpperCase() === 'ACCEPTED') },
+      ],
+    });
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
 app.get('/api/dashboard/ipo', async (req, res) => {
   try {
     const authUser = await getAuthUser(req);
@@ -1842,6 +1970,8 @@ app.get('/api/ipo/profile', async (req, res) => {
       registration_number: null,
       registration_year: null,
       supervisor_name: null,
+      ipo_type_id: ipo.ipoType ?? null,
+      ipo_subtype_id: ipo.ipoSubCategory ?? null,
     });
   } catch (error) {
     apiError(res, 500, toMessage(error));
@@ -1862,11 +1992,35 @@ app.put('/api/ipo/profile', async (req, res) => {
     }
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const companyAddress = String(req.body?.companyAddress ?? '').trim();
+    const ipoTypeId = String(req.body?.ipoTypeId ?? '').trim() || null;
+    const ipoSubtypeId = String(req.body?.ipoSubtypeId ?? '').trim() || null;
+
+    if (ipoSubtypeId && !ipoTypeId) {
+      apiError(res, 400, 'ipoTypeId is required when ipoSubtypeId is provided');
+      return;
+    }
+    if (ipoTypeId) {
+      const type = await prisma.ipoType.findUnique({ where: { id: ipoTypeId }, select: { id: true } });
+      if (!type) {
+        apiError(res, 400, 'Invalid ipoTypeId');
+        return;
+      }
+    }
+    if (ipoSubtypeId) {
+      const subtype = await prisma.ipoSubtype.findUnique({ where: { id: ipoSubtypeId }, select: { id: true, ipoTypeId: true } });
+      if (!subtype || subtype.ipoTypeId !== ipoTypeId) {
+        apiError(res, 400, 'Invalid ipoSubtypeId for selected IPO type');
+        return;
+      }
+    }
+
     const updated = await prisma.ipo.update({
       where: { id: ipo.id },
       data: {
         email: email || undefined,
         activity: companyAddress || undefined,
+        ipoType: ipoTypeId,
+        ipoSubCategory: ipoSubtypeId,
       },
     });
     apiOk(res, 'IPO profile updated', { id: updated.id });

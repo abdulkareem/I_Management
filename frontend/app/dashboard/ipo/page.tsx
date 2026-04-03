@@ -38,9 +38,11 @@ type IPOIdea = {
 type College = { id: string; name: string };
 type Department = { id: string; name: string };
 type Program = { id: string; name: string };
+type IPOTypeOption = { id: string; name: string };
+type IPOSubtypeOption = { id: string; name: string; ipo_type_id?: string };
 type InternshipCategory = 'FREE' | 'PAID' | 'STIPEND';
 type StipendDuration = 'DAY' | 'WEEK' | 'MONTH';
-type IpoProfile = { id: string; name: string; email: string; company_address?: string | null; contact_number?: string | null; registration_number?: string | null; registration_year?: number | null; supervisor_name?: string | null };
+type IpoProfile = { id: string; name: string; email: string; company_address?: string | null; contact_number?: string | null; registration_number?: string | null; registration_year?: number | null; supervisor_name?: string | null; ipo_type_id?: string | null; ipo_subtype_id?: string | null };
 type IPOInternship = {
   id: string;
   internship_title: string;
@@ -83,6 +85,8 @@ export default function IPODashboardPage() {
   const [colleges, setColleges] = useState<College[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [ipoTypes, setIpoTypes] = useState<IPOTypeOption[]>([]);
+  const [ipoSubtypes, setIpoSubtypes] = useState<IPOSubtypeOption[]>([]);
   const [ipoInternships, setIPOInternships] = useState<IPOInternship[]>([]);
   const [selectedCollege, setSelectedCollege] = useState('');
   const [connectForm, setConnectForm] = useState(EMPTY_CONNECT);
@@ -105,22 +109,34 @@ export default function IPODashboardPage() {
   const router = useRouter();
 
   const load = useCallback(async () => {
-    const [dashboardRes, ideasRes, collegeRes, profileRes, internshipsRes, docRes] = await Promise.all([
+    const [dashboardRes, ideasRes, collegeRes, profileRes, internshipsRes, docRes, ipoTypesRes] = await Promise.all([
       fetchWithSession<IPODashboard>('/api/dashboard/ipo'),
       fetchWithSession<IPOIdea[]>('/api/ipo/ideas'),
       fetchWithSession<College[]>('/api/ipo/colleges'),
       fetchWithSession<IpoProfile>('/api/ipo/profile'),
       fetchWithSession<IPOInternship[]>('/api/ipo/internships'),
       fetchWithSession<Array<{ id: string; type: string; internship_id: string; student_id?: string | null; generated_at: string }>>('/api/documents/my'),
+      fetchWithSession<IPOTypeOption[]>('/api/ipo-types'),
     ]);
     setDashboard(dashboardRes.data);
     setIdeas(ideasRes.data);
     setColleges(collegeRes.data ?? []);
     const profile = profileRes.data as (IpoProfile & { address?: string | null }) | null;
     setIpoProfile(profile ? { ...profile, company_address: profile.company_address ?? profile.address ?? null } : null);
+    setIpoTypes(ipoTypesRes.data ?? []);
     setIPOInternships(internshipsRes.data ?? []);
     setDocuments(docRes.data ?? []);
   }, []);
+
+  useEffect(() => {
+    if (!ipoProfile?.ipo_type_id) {
+      setIpoSubtypes([]);
+      return;
+    }
+    fetchWithSession<IPOSubtypeOption[]>(`/api/ipo-subtypes?ipo_type_id=${encodeURIComponent(ipoProfile.ipo_type_id)}`)
+      .then((res) => setIpoSubtypes(res.data ?? []))
+      .catch(() => setIpoSubtypes([]));
+  }, [ipoProfile?.ipo_type_id]);
 
   async function downloadDocument(documentId: string) {
     const session = localStorage.getItem('internsuite.session');
@@ -340,6 +356,8 @@ export default function IPODashboardPage() {
         registrationNumber: ipoProfile.registration_number,
         registrationYear: ipoProfile.registration_year,
         supervisorName: ipoProfile.supervisor_name,
+        ipoTypeId: ipoProfile.ipo_type_id,
+        ipoSubtypeId: ipoProfile.ipo_subtype_id,
       }),
     });
     setProfileOpen(false);
@@ -466,7 +484,7 @@ export default function IPODashboardPage() {
   const pendingApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'PENDING') ?? [], [dashboard]);
   const acceptedApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'ACCEPTED') ?? [], [dashboard]);
   const departmentSuggestedInternships = useMemo(
-    () => ipoInternships.filter((item) => item.status === 'SENT_TO_INDUSTRY' || item.status === 'IPO_SENT'),
+    () => ipoInternships.filter((item) => item.status === 'SENT_TO_INDUSTRY'),
     [ipoInternships],
   );
   const ideaPageSize = 5;
@@ -531,6 +549,14 @@ export default function IPODashboardPage() {
                 <Input placeholder="Registration number" value={ipoProfile.registration_number ?? ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, registration_number: event.target.value } : prev))} />
                 <Input placeholder="Registration year" value={ipoProfile.registration_year ? String(ipoProfile.registration_year) : ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, registration_year: Number(event.target.value || 0) || null } : prev))} />
                 <Input placeholder="Supervisor name" value={ipoProfile.supervisor_name ?? ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, supervisor_name: event.target.value } : prev))} />
+                <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={ipoProfile.ipo_type_id ?? ''} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, ipo_type_id: event.target.value || null, ipo_subtype_id: null } : prev))}>
+                  <option value="">Type of IPO (IPO)</option>
+                  {ipoTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+                </select>
+                <select className="rounded-md border border-slate-300 bg-white px-3 py-2" value={ipoProfile.ipo_subtype_id ?? ''} disabled={!ipoProfile.ipo_type_id} onChange={(event) => setIpoProfile((prev) => (prev ? { ...prev, ipo_subtype_id: event.target.value || null } : prev))}>
+                  <option value="">{ipoProfile.ipo_type_id ? 'Select IPO subtype' : 'Choose IPO type first'}</option>
+                  {ipoSubtypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+                </select>
               </div>
               <div className="mt-4"><Button onClick={saveProfile}>Save IPO Profile</Button></div>
             </Card>

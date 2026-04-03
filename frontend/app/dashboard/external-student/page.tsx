@@ -13,7 +13,7 @@ export default function ExternalStudentDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const res = await fetchWithSession<StudentDashboard>('/student/dashboard');
+    const res = await fetchWithSession<StudentDashboard>('/api/dashboard/student');
     setDashboard(res.data);
   }
 
