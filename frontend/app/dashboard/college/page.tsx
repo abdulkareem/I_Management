@@ -23,6 +23,7 @@ type IpoSummaryItem = { ipo_id: string; ipo_name: string; internship_count: numb
 type Department = { id: string; name: string; coordinator_name: string; coordinator_email: string; college_id: string; login_status?: string; is_first_login?: boolean };
 
 type DashboardData = {
+  college: { id: string; name: string } | null;
   summary: Summary;
   approvalQueue: ApprovalQueueItem[];
   departmentPerformance: DepartmentPerformance[];
@@ -103,7 +104,12 @@ export default function CollegeDashboardPage() {
     ];
   }, [data]);
 
-  return <RoleDashboardShell allowedRoles={['COLLEGE_COORDINATOR']} title="College Internship Control System" subtitle="Approval, routing, applications, compliance, monitoring and reports.">{() => <>
+  return <RoleDashboardShell
+    allowedRoles={['COLLEGE_COORDINATOR']}
+    title="College Internship Control System"
+    subtitle="Approval, routing, applications, compliance, monitoring and reports."
+    spaceLabel={data?.college?.name}
+  >{() => <>
     {toast ? <div className="fixed top-4 right-4 z-50 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white shadow">{toast}</div> : null}
     {error ? <Card className="rounded-[24px] border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</Card> : null}
     <div className="flex items-center justify-between text-xs text-slate-500">
