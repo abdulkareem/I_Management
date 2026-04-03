@@ -2091,35 +2091,63 @@ app.post('/api/internship/create', async (req, res) => {
       : (payload.visibility ?? 'DEPARTMENT');
     const industryName = targetType === TargetType.EXTERNAL ? null : (payload.industryName ?? null);
 
-    const internship = await prisma.internship.create({
-      data: {
-        title: payload.title,
-        description: payload.description,
-        targetType,
-        isInternal: targetType === 'INTERNAL',
-        industryName,
-        isRegistered: payload.isRegistered ?? false,
-        programmeId: payload.programmeId ?? null,
-        gender: payload.gender ?? (targetType === TargetType.EXTERNAL ? Gender.BOTH : null),
-        type: internshipType,
-        fee: payload.fee ?? null,
-        stipend: payload.stipend ?? null,
-        duration: payload.duration ?? 60,
-        vacancy: payload.vacancy ?? 1,
-        visibility,
-        departmentId: scopedDepartmentId,
-        createdById,
-        status: payload.status ?? InternshipStatus.DRAFT,
-        isExternal: targetType === TargetType.EXTERNAL,
-      },
-    });
-
-    if (payload.outcomeIds?.length) {
-      await prisma.internshipOutcomeMapping.createMany({
-        data: payload.outcomeIds.map((outcomeId) => ({ internshipId: internship.id, outcomeId })),
-        skipDuplicates: true,
+    const rawOutcomeIds = Array.isArray(payload.outcomeIds) ? payload.outcomeIds : [];
+    const outcomeIds: string[] = [...new Set(
+      rawOutcomeIds
+        .filter((outcomeId): outcomeId is string => typeof outcomeId === 'string')
+        .map((outcomeId) => outcomeId.trim())
+        .filter((outcomeId) => outcomeId.length > 0),
+    )];
+    if (outcomeIds.length) {
+      const existingOutcomes = await prisma.internshipOutcome.findMany({
+        where: { id: { in: outcomeIds } },
+        select: { id: true },
       });
+      const existingOutcomeIds = new Set(existingOutcomes.map((outcome) => outcome.id));
+      const invalidOutcomeIds = outcomeIds.filter((outcomeId) => !existingOutcomeIds.has(outcomeId));
+      if (invalidOutcomeIds.length) {
+        apiError(
+          res,
+          400,
+          `Invalid outcomeIds provided. These ids do not exist in internship outcomes: ${invalidOutcomeIds.join(', ')}`,
+        );
+        return;
+      }
     }
+
+    const internship = await prisma.$transaction(async (tx) => {
+      const createdInternship = await tx.internship.create({
+        data: {
+          title: payload.title,
+          description: payload.description,
+          targetType,
+          isInternal: targetType === 'INTERNAL',
+          industryName,
+          isRegistered: payload.isRegistered ?? false,
+          programmeId: payload.programmeId ?? null,
+          gender: payload.gender ?? (targetType === TargetType.EXTERNAL ? Gender.BOTH : null),
+          type: internshipType,
+          fee: payload.fee ?? null,
+          stipend: payload.stipend ?? null,
+          duration: payload.duration ?? 60,
+          vacancy: payload.vacancy ?? 1,
+          visibility,
+          departmentId: scopedDepartmentId,
+          createdById,
+          status: payload.status ?? InternshipStatus.DRAFT,
+          isExternal: targetType === TargetType.EXTERNAL,
+        },
+      });
+
+      if (outcomeIds.length) {
+        await tx.internshipOutcomeMapping.createMany({
+          data: outcomeIds.map((outcomeId) => ({ internshipId: createdInternship.id, outcomeId })),
+          skipDuplicates: true,
+        });
+      }
+
+      return createdInternship;
+    });
 
     apiOk(res, 'Internship created', internship, 201);
   } catch (error) {
