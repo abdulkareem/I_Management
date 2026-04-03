@@ -249,6 +249,26 @@ model InternshipApplication {
 
   selections Selection[]
   results    Result[]
+  letters    InternshipLetter[]
+}
+
+model InternshipLetter {
+  id              String   @id @default(uuid())
+  applicationId   String
+  type            String
+  studentName     String
+  internshipTitle String
+  department      String
+  programme       String
+  college         String
+  industryName    String?
+  duration        Int
+  mode            String
+  generatedAt     DateTime @default(now())
+
+  application InternshipApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, type])
 }
 
 model Selection {
