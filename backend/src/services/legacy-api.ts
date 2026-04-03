@@ -1945,10 +1945,21 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const departmentId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO departments (id, college_id, name, coordinator_name, coordinator_email, coordinator_mobile, password, is_first_login, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+      `INSERT INTO departments (
+        id,
+        college_id,
+        name,
+        coordinator_name,
+        coordinator_email,
+        coordinator_mobile,
+        password,
+        temporary_password,
+        is_first_login,
+        is_active
+      )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
     )
-      .bind(departmentId, collegeId, name, coordinatorName, coordinatorEmail, coordinatorMobile, password)
+      .bind(departmentId, collegeId, name, coordinatorName, coordinatorEmail, coordinatorMobile, password, password)
       .run();
 
     await upsertIdentity(env, { role: 'department', entityId: departmentId, email: coordinatorEmail, isActive: 1 });
@@ -2025,11 +2036,15 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!email || !password) return badRequest('email and password are required');
 
     const dept = await env.DB.prepare(
-      `SELECT id, coordinator_email, password, is_first_login, is_active
+      `SELECT id, coordinator_email, password, temporary_password, is_first_login, is_active
        FROM departments WHERE lower(coordinator_email) = lower(?)`,
-    ).bind(email).first<{ id: string; coordinator_email: string; password: string; is_first_login: number; is_active: number }>();
+    ).bind(email).first<{ id: string; coordinator_email: string; password: string; temporary_password: string | null; is_first_login: number; is_active: number }>();
 
-    if (!dept || dept.password !== password) return unauthorized('Invalid credentials');
+    const effectivePassword = Number(dept?.is_first_login ?? 0) === 1
+      ? String(dept?.temporary_password ?? dept?.password ?? '')
+      : String(dept?.password ?? '');
+
+    if (!dept || effectivePassword !== password) return unauthorized('Invalid credentials');
     if (Number(dept.is_active) !== 1) return forbidden('Department account inactive');
 
     return ok('Department login successful', {
@@ -2049,10 +2064,19 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const newPassword = required(body, ['new_password', 'newPassword']);
     if (!currentPassword || !newPassword) return badRequest('current_password and new_password are required');
 
-    const row = await env.DB.prepare('SELECT id, password FROM departments WHERE id = ?').bind(actor.id).first<{ id: string; password: string }>();
-    if (!row || row.password !== currentPassword) return unauthorized('Current password is incorrect');
+    const row = await env.DB.prepare(
+      'SELECT id, password, temporary_password, is_first_login FROM departments WHERE id = ?',
+    ).bind(actor.id).first<{ id: string; password: string; temporary_password: string | null; is_first_login: number }>();
 
-    await env.DB.prepare("UPDATE departments SET password = ?, is_first_login = 0, updated_at = datetime('now') WHERE id = ?")
+    const effectiveCurrentPassword = Number(row?.is_first_login ?? 0) === 1
+      ? String(row?.temporary_password ?? row?.password ?? '')
+      : String(row?.password ?? '');
+
+    if (!row || effectiveCurrentPassword !== currentPassword) return unauthorized('Current password is incorrect');
+
+    await env.DB.prepare(
+      "UPDATE departments SET password = ?, temporary_password = NULL, is_first_login = 0, updated_at = datetime('now') WHERE id = ?",
+    )
       .bind(newPassword, actor.id)
       .run();
 
@@ -6602,13 +6626,18 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
 
   if (!email || !password) return badRequest('email and password are required');
 
-  const department = await env.DB.prepare('SELECT id, coordinator_email, password, is_active, is_first_login FROM departments WHERE lower(coordinator_email) = lower(?)')
+  const department = await env.DB.prepare(
+    'SELECT id, coordinator_email, password, temporary_password, is_active, is_first_login FROM departments WHERE lower(coordinator_email) = lower(?)',
+  )
     .bind(email)
-    .first<{ id: string; coordinator_email: string; password: string; is_active: number; is_first_login: number }>();
+    .first<{ id: string; coordinator_email: string; password: string; temporary_password: string | null; is_active: number; is_first_login: number }>();
   console.log('[AUTH] Department user exists:', Boolean(department));
   if (department) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
-    const isMatch = isPasswordMatch(password, department.password);
+    const effectivePassword = Number(department.is_first_login) === 1
+      ? String(department.temporary_password ?? department.password ?? '')
+      : String(department.password ?? '');
+    const isMatch = isPasswordMatch(password, effectivePassword);
     console.log('[AUTH] Department password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
     if (Number(department.is_active) !== 1) return forbidden('Department account inactive');
@@ -6986,6 +7015,13 @@ async function ensureDepartmentCompatibility(env: EnvBindings): Promise<void> {
 
   if (!names.has('coordinator_mobile')) {
     await env.DB.prepare('ALTER TABLE departments ADD COLUMN coordinator_mobile TEXT').run();
+  }
+
+  if (!names.has('temporary_password')) {
+    await env.DB.prepare('ALTER TABLE departments ADD COLUMN temporary_password TEXT').run();
+    await env.DB.prepare(
+      "UPDATE departments SET temporary_password = password WHERE is_first_login = 1 AND (temporary_password IS NULL OR temporary_password = '')",
+    ).run();
   }
 }
 
