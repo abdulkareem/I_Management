@@ -48,7 +48,8 @@ type InternshipFormState = {
   stipend: string;
   duration: number;
   vacancy: number;
-  selectedOutcomes: string[];
+  selectedProgrammeOutcomes: string[];
+  selectedInternshipOutcomes: string[];
 };
 
 const initialInternshipFormState: InternshipFormState = {
@@ -65,7 +66,8 @@ const initialInternshipFormState: InternshipFormState = {
   stipend: '',
   duration: 60,
   vacancy: 1,
-  selectedOutcomes: [],
+  selectedProgrammeOutcomes: [],
+  selectedInternshipOutcomes: [],
 };
 
 export function DepartmentDashboardSystem({ departmentId }: { departmentId?: string }) {
@@ -188,12 +190,21 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
     }, 'Internship outcomes saved.');
   }
 
-  const toggleOutcome = (outcomeId: string) => {
+  const toggleProgrammeOutcome = (outcomeId: string) => {
     setInternshipForm((prev) => ({
       ...prev,
-      selectedOutcomes: prev.selectedOutcomes.includes(outcomeId)
-        ? prev.selectedOutcomes.filter((id) => id !== outcomeId)
-        : [...prev.selectedOutcomes, outcomeId],
+      selectedProgrammeOutcomes: prev.selectedProgrammeOutcomes.includes(outcomeId)
+        ? prev.selectedProgrammeOutcomes.filter((id) => id !== outcomeId)
+        : [...prev.selectedProgrammeOutcomes, outcomeId],
+    }));
+  };
+
+  const toggleInternshipOutcome = (outcomeId: string) => {
+    setInternshipForm((prev) => ({
+      ...prev,
+      selectedInternshipOutcomes: prev.selectedInternshipOutcomes.includes(outcomeId)
+        ? prev.selectedInternshipOutcomes.filter((id) => id !== outcomeId)
+        : [...prev.selectedInternshipOutcomes, outcomeId],
     }));
   };
 
@@ -215,8 +226,8 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
       return;
     }
 
-    if (internshipForm.selectedOutcomes.length === 0) {
-      setError('Please select at least one outcome.');
+    if (internshipForm.selectedInternshipOutcomes.length === 0) {
+      setError('Please select at least one internship outcome.');
       return;
     }
 
@@ -255,7 +266,7 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
           vacancy: Number(internshipForm.vacancy ?? 1),
           departmentId,
           status,
-          outcomeIds: internshipForm.selectedOutcomes,
+          outcomeIds: internshipForm.selectedInternshipOutcomes,
         }),
       });
 
@@ -489,7 +500,12 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
           <select
             className="rounded border px-3 py-2"
             value={internshipForm.targetType}
-            onChange={(e) => setInternshipForm((prev) => ({ ...prev, targetType: e.target.value as 'INTERNAL' | 'EXTERNAL', selectedOutcomes: [] }))}
+            onChange={(e) => setInternshipForm((prev) => ({
+              ...prev,
+              targetType: e.target.value as 'INTERNAL' | 'EXTERNAL',
+              selectedProgrammeOutcomes: [],
+              selectedInternshipOutcomes: [],
+            }))}
           >
             <option value="INTERNAL">Internal Students</option>
             <option value="EXTERNAL">External Students</option>
@@ -508,7 +524,12 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
               <select
                 className="rounded border px-3 py-2"
                 value={internshipForm.programmeId}
-                onChange={(e) => setInternshipForm((prev) => ({ ...prev, programmeId: e.target.value, selectedOutcomes: [] }))}
+                onChange={(e) => setInternshipForm((prev) => ({
+                  ...prev,
+                  programmeId: e.target.value,
+                  selectedProgrammeOutcomes: [],
+                  selectedInternshipOutcomes: [],
+                }))}
               >
                 <option value="">Select Programme</option>
                 {programmes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -541,11 +562,11 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
               <div className="md:col-span-2 grid gap-2 md:grid-cols-2 text-sm">
                 <div>
                   <p className="font-medium">Programme Outcomes (PO)</p>
-                  {selectedProgrammeOutcomes.map((item) => <label key={item.id} className="block"><input type="checkbox" checked={internshipForm.selectedOutcomes.includes(item.id)} onChange={() => toggleOutcome(item.id)} className="mr-2" />{item.description}</label>)}
+                  {selectedProgrammeOutcomes.map((item) => <label key={item.id} className="block"><input type="checkbox" checked={internshipForm.selectedProgrammeOutcomes.includes(item.id)} onChange={() => toggleProgrammeOutcome(item.id)} className="mr-2" />{item.description}</label>)}
                 </div>
                 <div>
                   <p className="font-medium">Internship Outcomes (IPO + CO)</p>
-                  {[...groupedInternshipOutcomes.IPO, ...groupedInternshipOutcomes.CO].map((item) => <label key={item.id} className="block"><input type="checkbox" checked={internshipForm.selectedOutcomes.includes(item.id)} onChange={() => toggleOutcome(item.id)} className="mr-2" />{item.description}</label>)}
+                  {[...groupedInternshipOutcomes.IPO, ...groupedInternshipOutcomes.CO].map((item) => <label key={item.id} className="block"><input type="checkbox" checked={internshipForm.selectedInternshipOutcomes.includes(item.id)} onChange={() => toggleInternshipOutcome(item.id)} className="mr-2" />{item.description}</label>)}
                 </div>
               </div>
             </>
@@ -574,7 +595,7 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
               {internshipForm.type === 'STIPEND' ? <input name="stipend" type="number" min={0} step="0.01" className="rounded border px-3 py-2" placeholder="Stipend per month" value={internshipForm.stipend} onChange={(e) => setInternshipForm((prev) => ({ ...prev, stipend: e.target.value }))} required /> : null}
               <div className="md:col-span-2 text-sm">
                 <p className="font-medium">Internship Outcomes (IPO + CO)</p>
-                {[...groupedInternshipOutcomes.IPO, ...groupedInternshipOutcomes.CO].map((item) => <label key={item.id} className="block"><input type="checkbox" checked={internshipForm.selectedOutcomes.includes(item.id)} onChange={() => toggleOutcome(item.id)} className="mr-2" />{item.description}</label>)}
+                {[...groupedInternshipOutcomes.IPO, ...groupedInternshipOutcomes.CO].map((item) => <label key={item.id} className="block"><input type="checkbox" checked={internshipForm.selectedInternshipOutcomes.includes(item.id)} onChange={() => toggleInternshipOutcome(item.id)} className="mr-2" />{item.description}</label>)}
               </div>
             </>
           )}
