@@ -103,6 +103,24 @@ const applicationStatusSchema = z.object({
 const allowedTargetTypes = new Set<TargetType>([TargetType.INTERNAL, TargetType.EXTERNAL]);
 const allowedInternshipTypes = new Set<InternshipType>([InternshipType.FREE, InternshipType.PAID, InternshipType.STIPEND]);
 
+function normalizeTargetType(value: unknown): TargetType | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === TargetType.INTERNAL || normalized === TargetType.EXTERNAL) {
+    return normalized as TargetType;
+  }
+  return undefined;
+}
+
+function normalizeInternshipType(value: unknown): InternshipType | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === InternshipType.FREE || normalized === InternshipType.PAID || normalized === InternshipType.STIPEND) {
+    return normalized as InternshipType;
+  }
+  return undefined;
+}
+
 function toMessage(error: unknown): string {
   if (error instanceof z.ZodError) return error.errors.map((item) => item.message).join(', ');
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -2040,7 +2058,14 @@ app.get('/api/documents/:id/download', async (_req, res) => {
 
 app.post('/api/internship/create', async (req, res) => {
   try {
-    const payload = internshipCreateSchema.parse(req.body ?? {});
+    const rawBody = (req.body ?? {}) as Record<string, unknown>;
+    const normalizedTargetType = normalizeTargetType(rawBody.targetType);
+    const normalizedInternshipType = normalizeInternshipType(rawBody.type ?? rawBody.targetType);
+    const payload = internshipCreateSchema.parse({
+      ...rawBody,
+      targetType: normalizedTargetType,
+      type: normalizedInternshipType ?? rawBody.type,
+    });
     const authUser = await getAuthUser(req);
     const scopedDepartmentId = payload.departmentId
       || (authUser ? await getDepartmentIdForCoordinator(authUser) : null);
@@ -2462,12 +2487,12 @@ app.put('/api/internship/update', async (req, res) => {
       apiError(res, 400, 'id is required');
       return;
     }
-    const rawTargetType = req.body?.targetType;
+    const rawTargetType = normalizeTargetType(req.body?.targetType);
     if (rawTargetType !== undefined && !allowedTargetTypes.has(rawTargetType)) {
       apiError(res, 400, 'Invalid targetType. Expected INTERNAL or EXTERNAL.');
       return;
     }
-    const rawInternshipType = req.body?.type;
+    const rawInternshipType = normalizeInternshipType(req.body?.type);
     if (rawInternshipType !== undefined && !allowedInternshipTypes.has(rawInternshipType)) {
       apiError(res, 400, 'Invalid type. Expected FREE, PAID, or STIPEND.');
       return;
@@ -2500,12 +2525,12 @@ app.put('/api/internship/update', async (req, res) => {
 
 app.put('/api/internship/update/:id', async (req, res) => {
   try {
-    const rawTargetType = req.body?.targetType;
+    const rawTargetType = normalizeTargetType(req.body?.targetType);
     if (rawTargetType !== undefined && !allowedTargetTypes.has(rawTargetType)) {
       apiError(res, 400, 'Invalid targetType. Expected INTERNAL or EXTERNAL.');
       return;
     }
-    const rawInternshipType = req.body?.type;
+    const rawInternshipType = normalizeInternshipType(req.body?.type);
     if (rawInternshipType !== undefined && !allowedInternshipTypes.has(rawInternshipType)) {
       apiError(res, 400, 'Invalid type. Expected FREE, PAID, or STIPEND.');
       return;
