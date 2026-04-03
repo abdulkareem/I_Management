@@ -24,7 +24,7 @@ attachHttpLogging(app);
 const studentRegistrationSchema = z.object({
   name: z.string().trim().min(2),
   email: z.string().trim().email(),
-  password: z.string().min(8),
+  password: z.string().min(8, 'Password should atleast 8 characters'),
   universityRegNumber: z.string().trim().min(2),
   sex: z.enum(['MALE', 'FEMALE']).optional(),
   collegeId: z.string().trim().optional().nullable(),
@@ -42,13 +42,13 @@ const collegeRegistrationSchema = z.object({
   mobile: z.string().trim().optional().nullable(),
   coordinatorName: z.string().trim().min(2),
   email: z.string().trim().email(),
-  password: z.string().min(8),
+  password: z.string().min(8, 'Password should atleast 8 characters'),
 });
 
 const ipoRegistrationSchema = z.object({
   companyName: z.string().trim().min(2),
   email: z.string().trim().email(),
-  password: z.string().min(8),
+  password: z.string().min(8, 'Password should atleast 8 characters'),
   businessActivity: z.string().trim().min(2).optional().nullable(),
   ipoTypeId: z.string().trim().optional().nullable(),
   ipoType: z.string().trim().optional().nullable(),
@@ -1755,7 +1755,13 @@ app.get(['/api/dashboard/student', '/student/dashboard'], async (req, res) => {
     });
 
     const collegeInternships = visibleInternships
-      .filter((item) => item.department?.college?.id && item.department.college.id === student.collegeId)
+      .filter((item) => {
+        const postingCollegeId = item.department?.college?.id ?? null;
+        if (!postingCollegeId || postingCollegeId !== student.collegeId) return false;
+        if (item.targetType === TargetType.INTERNAL && item.departmentId === student.departmentId) return false;
+        if (item.targetType === TargetType.EXTERNAL) return false;
+        return true;
+      })
       .map((item) => ({
         id: item.id,
         title: item.title,
@@ -1768,8 +1774,12 @@ app.get(['/api/dashboard/student', '/student/dashboard'], async (req, res) => {
       .filter((item) => {
         const postingCollegeId = item.department?.college?.id ?? null;
         const targetsStudentCollege = item.targets.length === 0 || item.targets.some((target) => target.collegeId === student.collegeId);
-        const visibleByTarget = item.targetType === TargetType.EXTERNAL || (item.targetType === TargetType.INTERNAL && targetsStudentCollege);
-        return visibleByTarget && postingCollegeId !== student.collegeId;
+        const isInternalMatch = item.targetType === TargetType.INTERNAL
+          && targetsStudentCollege
+          && postingCollegeId === student.collegeId
+          && item.departmentId === student.departmentId;
+        const isExternalPosting = item.targetType === TargetType.EXTERNAL;
+        return isExternalPosting || isInternalMatch;
       })
       .map((item) => {
         const application = allApplications.find((existing) => existing.internshipId === item.id);
