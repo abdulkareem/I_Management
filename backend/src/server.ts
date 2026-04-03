@@ -1165,7 +1165,16 @@ app.get('/api/applications/internal', async (req, res) => {
         internship: { departmentId: context.department.id },
         isInternal: true,
       },
-      include: { internship: { include: { programme: true } }, student: { include: { user: true } } },
+      include: {
+        internship: { include: { programme: true } },
+        student: {
+          include: {
+            user: true,
+            college: { select: { name: true } },
+            department: { select: { name: true } },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -1176,6 +1185,9 @@ app.get('/api/applications/internal', async (req, res) => {
       student_id: item.studentId,
       student_name: item.student?.user?.name ?? 'Student',
       student_email: item.student?.user?.email ?? null,
+      student_mobile: item.student?.user?.phone ?? null,
+      student_college: item.student?.college?.name ?? item.student?.collegeNameManual ?? null,
+      student_department: item.student?.department?.name ?? item.student?.departmentNameManual ?? null,
       programme: item.internship?.programme?.name ?? item.student?.programme ?? null,
       status: item.status,
       applied_at: (item.appliedAt ?? item.createdAt).toISOString(),
@@ -1208,8 +1220,12 @@ app.get('/api/applications/external', async (req, res) => {
       internship_id: item.internshipId,
       internship_title: item.internship?.title ?? '-',
       external_student_id: item.userId,
+      user_id: item.userId,
       student_name: item.user?.name ?? 'External Student',
       student_email: item.user?.email ?? null,
+      student_mobile: item.user?.phone ?? null,
+      student_college: null,
+      student_department: null,
       programme: item.internship?.programme?.name ?? null,
       status: item.status,
       applied_at: (item.appliedAt ?? item.createdAt).toISOString(),
@@ -1904,7 +1920,7 @@ app.get(['/api/dashboard/student', '/student/dashboard'], async (req, res) => {
       .filter((item) => {
         const postingCollegeId = item.department?.college?.id ?? null;
         const isSameCollege = Boolean(postingCollegeId && student.collegeId && postingCollegeId === student.collegeId);
-        const isInternalPosting = item.targetType === TargetType.INTERNAL;
+        const isInternalPosting = item.targetType === TargetType.INTERNAL && isSameCollege;
         const isExternalFromOtherCollege = item.targetType === TargetType.EXTERNAL && !isSameCollege;
         return isInternalPosting || isExternalFromOtherCollege;
       })
