@@ -216,6 +216,15 @@ function buildSessionData(user: { id: string; email: string; role: Role; name: s
 
 type AuthUser = { id: string; email: string; role: Role };
 
+type DepartmentCoordinatorUser = {
+  id: string;
+  email: string;
+  role: Role;
+  name: string | null;
+  isTempPassword: boolean;
+  isActive: boolean;
+};
+
 function decodeSessionUserId(authorizationHeader: string | undefined): string | null {
   if (!authorizationHeader) return null;
   const token = authorizationHeader.replace(/^Bearer\s+/i, '').trim();
@@ -248,6 +257,47 @@ async function getCollegeIdForCoordinator(user: AuthUser): Promise<string | null
     orderBy: { createdAt: 'desc' },
   });
   return college?.id ?? null;
+}
+
+async function upsertDepartmentCoordinatorUser(params: {
+  tx: Prisma.TransactionClient;
+  email: string;
+  coordinatorName: string;
+  passwordHash: string;
+}): Promise<DepartmentCoordinatorUser> {
+  const normalizedEmail = params.email.trim().toLowerCase();
+  const existing = await params.tx.user.findUnique({ where: { email: normalizedEmail } });
+
+  if (existing && existing.role !== Role.DEPARTMENT_COORDINATOR) {
+    throw new Error('Coordinator email already exists for another role');
+  }
+
+  if (existing) {
+    return params.tx.user.update({
+      where: { id: existing.id },
+      data: {
+        name: params.coordinatorName,
+        email: normalizedEmail,
+        password: params.passwordHash,
+        role: Role.DEPARTMENT_COORDINATOR,
+        isTempPassword: true,
+        isActive: true,
+      },
+      select: { id: true, email: true, role: true, name: true, isTempPassword: true, isActive: true },
+    });
+  }
+
+  return params.tx.user.create({
+    data: {
+      name: params.coordinatorName,
+      email: normalizedEmail,
+      password: params.passwordHash,
+      role: Role.DEPARTMENT_COORDINATOR,
+      isTempPassword: true,
+      isActive: true,
+    },
+    select: { id: true, email: true, role: true, name: true, isTempPassword: true, isActive: true },
+  });
 }
 
 app.get('/api/health', async (_req, res) => {
@@ -418,18 +468,32 @@ app.post('/api/departments', async (req, res) => {
     }
 
     const temporaryPassword = generateTemporaryPassword();
-    const hashedPassword = await bcrypt.hash(temporaryPassword, 12);
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+    console.log('[department-create] temporary password generated', {
+      coordinatorEmail,
+      tempPassword: temporaryPassword,
+      storedHash: hashedPassword,
+    });
 
-    const department = await prisma.department.create({
-      data: {
-        collegeId: scopedCollegeId,
-        name,
+    const department = await prisma.$transaction(async (tx) => {
+      await upsertDepartmentCoordinatorUser({
+        tx,
+        email: coordinatorEmail,
         coordinatorName,
-        coordinatorEmail,
-        password: hashedPassword,
-        isFirstLogin: true,
-      },
-      include: { college: true },
+        passwordHash: hashedPassword,
+      });
+
+      return tx.department.create({
+        data: {
+          collegeId: scopedCollegeId,
+          name,
+          coordinatorName,
+          coordinatorEmail,
+          password: hashedPassword,
+          isFirstLogin: true,
+        },
+        include: { college: true },
+      });
     });
 
     await sendDepartmentTemporaryPasswordEmail(coordinatorEmail, temporaryPassword, name);
@@ -476,18 +540,51 @@ app.patch('/api/departments/:id', async (req, res) => {
     const emailChanged = Boolean(incomingEmail) && incomingEmail !== (existing.coordinatorEmail ?? '').toLowerCase();
     const shouldRotatePassword = emailChanged || Boolean(name) || Boolean(coordinatorName);
     const temporaryPassword = shouldRotatePassword ? generateTemporaryPassword() : null;
-    const hashedPassword = temporaryPassword ? await bcrypt.hash(temporaryPassword, 12) : null;
+    const hashedPassword = temporaryPassword ? await bcrypt.hash(temporaryPassword, 10) : null;
+    if (temporaryPassword && hashedPassword) {
+      console.log('[department-update] temporary password rotated', {
+        departmentId: req.params.id,
+        coordinatorEmail: incomingEmail || existing.coordinatorEmail,
+        tempPassword: temporaryPassword,
+        storedHash: hashedPassword,
+      });
+    }
 
-    const department = await prisma.department.update({
-      where: { id: req.params.id },
-      data: {
-        name: name || undefined,
-        coordinatorName: coordinatorName || undefined,
-        coordinatorEmail: incomingEmail || undefined,
-        password: hashedPassword ?? undefined,
-        isFirstLogin: temporaryPassword ? true : undefined,
-      },
-      include: { college: true },
+    const department = await prisma.$transaction(async (tx) => {
+      const updatedDepartment = await tx.department.update({
+        where: { id: req.params.id },
+        data: {
+          name: name || undefined,
+          coordinatorName: coordinatorName || undefined,
+          coordinatorEmail: incomingEmail || undefined,
+          password: hashedPassword ?? undefined,
+          isFirstLogin: temporaryPassword ? true : undefined,
+        },
+        include: { college: true },
+      });
+
+      if (temporaryPassword && hashedPassword && updatedDepartment.coordinatorEmail) {
+        await upsertDepartmentCoordinatorUser({
+          tx,
+          email: updatedDepartment.coordinatorEmail,
+          coordinatorName: (updatedDepartment.coordinatorName ?? coordinatorName) || 'Department Coordinator',
+          passwordHash: hashedPassword,
+        });
+      }
+
+      if (emailChanged && existing.coordinatorEmail) {
+        await tx.user.updateMany({
+          where: {
+            email: existing.coordinatorEmail.toLowerCase(),
+            role: Role.DEPARTMENT_COORDINATOR,
+          },
+          data: {
+            isActive: false,
+          },
+        });
+      }
+
+      return updatedDepartment;
     });
 
     if (temporaryPassword && department.coordinatorEmail) {
@@ -817,7 +914,7 @@ app.delete('/api/ipos/:id', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const email = String(req.body?.email ?? '').trim().toLowerCase();
-  const password = String(req.body?.password ?? '');
+  const password = String(req.body?.password ?? '').trim();
   if (!email || !password) {
     apiError(res, 400, 'Email and password are required');
     return;
@@ -831,13 +928,82 @@ app.post('/api/auth/login', async (req, res) => {
     return;
   }
 
+  console.log('LOGIN DEBUG:', {
+    email,
+    inputPassword: password,
+    storedHash: user.password,
+  });
   const isValid = await bcrypt.compare(password, user.password);
   if (!isValid) {
     apiError(res, 401, 'Invalid email or password');
     return;
   }
+  if (!user.isActive) {
+    apiError(res, 403, 'Account inactive');
+    return;
+  }
 
-  apiOk(res, 'Login successful', buildSessionData(user));
+  apiOk(res, 'Login successful', {
+    ...buildSessionData(user),
+    mustChangePassword: user.role === Role.DEPARTMENT_COORDINATOR && user.isTempPassword,
+    requirePasswordReset: user.role === Role.DEPARTMENT_COORDINATOR && user.isTempPassword,
+  });
+});
+
+app.post('/api/department/change-password', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    if (!authUser || authUser.role !== Role.DEPARTMENT_COORDINATOR) {
+      apiError(res, 403, 'Department coordinator authentication required');
+      return;
+    }
+
+    const currentPassword = String(req.body?.current_password ?? req.body?.currentPassword ?? '').trim();
+    const newPassword = String(req.body?.new_password ?? req.body?.newPassword ?? '').trim();
+    if (!currentPassword || !newPassword) {
+      apiError(res, 400, 'current_password and new_password are required');
+      return;
+    }
+    if (newPassword.length < 8) {
+      apiError(res, 400, 'New password must be at least 8 characters');
+      return;
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: authUser.id } });
+    if (!user) {
+      apiError(res, 404, 'User not found');
+      return;
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      apiError(res, 401, 'Current password is incorrect');
+      return;
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          password: newHash,
+          isTempPassword: false,
+        },
+      });
+
+      await tx.department.updateMany({
+        where: { coordinatorEmail: user.email },
+        data: {
+          password: newHash,
+          isFirstLogin: false,
+        },
+      });
+    });
+
+    apiOk(res, 'Password changed successfully', { passwordUpdated: true });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
 });
 
 app.post('/api/admin/send-otp', async (req, res) => {
