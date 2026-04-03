@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { fetchWithSession } from '@/lib/auth';
@@ -34,6 +34,39 @@ type Application = {
 
 type InternshipAction = 'SEND_TO_IPO' | 'PUBLISH' | 'SAVE_DRAFT';
 type ActiveCard = 'programmes' | 'pos' | 'internship-outcomes' | null;
+type InternshipFormState = {
+  title: string;
+  description: string;
+  targetType: 'INTERNAL' | 'EXTERNAL';
+  programmeId: string;
+  industryMode: 'REGISTERED' | 'MANUAL';
+  selectedIndustry: string;
+  customIndustry: string;
+  gender: 'BOYS' | 'GIRLS' | 'BOTH';
+  type: 'FREE' | 'PAID' | 'STIPEND';
+  fee: string;
+  stipend: string;
+  duration: number;
+  vacancy: number;
+  selectedOutcomes: string[];
+};
+
+const initialInternshipFormState: InternshipFormState = {
+  title: '',
+  description: '',
+  targetType: 'INTERNAL',
+  programmeId: '',
+  industryMode: 'REGISTERED',
+  selectedIndustry: '',
+  customIndustry: '',
+  gender: 'BOTH',
+  type: 'FREE',
+  fee: '',
+  stipend: '',
+  duration: 60,
+  vacancy: 1,
+  selectedOutcomes: [],
+};
 
 export function DepartmentDashboardSystem({ departmentId }: { departmentId?: string }) {
   const [programmes, setProgrammes] = useState<Programme[]>([]);
@@ -46,21 +79,19 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
   const [selectedProgramme, setSelectedProgramme] = useState('');
   const [programmeOutcomeDrafts, setProgrammeOutcomeDrafts] = useState<string[]>(['']);
   const [internshipOutcomeDrafts, setInternshipOutcomeDrafts] = useState<Array<{ type: 'IPO' | 'CO'; description: string }>>([{ type: 'IPO', description: '' }]);
-
-  const [targetType, setTargetType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
-  const [selectedOutcomeIds, setSelectedOutcomeIds] = useState<string[]>([]);
-  const [industryMode, setIndustryMode] = useState<'REGISTERED' | 'MANUAL'>('REGISTERED');
-  const [selectedIndustry, setSelectedIndustry] = useState('');
-  const [customIndustry, setCustomIndustry] = useState('');
-  const [internshipType, setInternshipType] = useState<'FREE' | 'PAID' | 'STIPEND'>('FREE');
+  const [internshipForm, setInternshipForm] = useState<InternshipFormState>(initialInternshipFormState);
   const [activeCard, setActiveCard] = useState<ActiveCard>(null);
+  const [editingProgrammeOutcomeId, setEditingProgrammeOutcomeId] = useState<string | null>(null);
+  const [editingProgrammeOutcomeDescription, setEditingProgrammeOutcomeDescription] = useState('');
+  const [editingInternshipOutcomeId, setEditingInternshipOutcomeId] = useState<string | null>(null);
+  const [editingInternshipOutcomeDescription, setEditingInternshipOutcomeDescription] = useState('');
+  const [editingInternshipOutcomeType, setEditingInternshipOutcomeType] = useState<'IPO' | 'CO'>('IPO');
 
   const [editingInternshipId, setEditingInternshipId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<Internship>>({});
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const internshipFormRef = useRef<HTMLFormElement | null>(null);
 
   const load = async () => {
     const [programmeRes, outcomeRes, internshipRes, internalRes, externalRes, industryRes] = await Promise.all([
@@ -89,6 +120,11 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
   }), [internshipOutcomes]);
 
   const selectedProgrammeOutcomes = useMemo(
+    () => programmes.find((programme) => programme.id === internshipForm.programmeId)?.outcomes ?? [],
+    [programmes, internshipForm.programmeId],
+  );
+
+  const displayedProgrammeOutcomes = useMemo(
     () => programmes.find((programme) => programme.id === selectedProgramme)?.outcomes ?? [],
     [programmes, selectedProgramme],
   );
@@ -111,13 +147,14 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
 
   async function addProgramme(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     await runAction(async () => {
       await fetchWithSession('/api/programme/create', {
         method: 'POST',
         body: JSON.stringify({ name: String(form.get('name') ?? ''), departmentId }),
       });
-      event.currentTarget.reset();
+      formElement?.reset();
     }, 'Programme saved.');
   }
 
@@ -152,45 +189,42 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
   }
 
   const toggleOutcome = (outcomeId: string) => {
-    setSelectedOutcomeIds((prev) => (prev.includes(outcomeId) ? prev.filter((id) => id !== outcomeId) : [...prev, outcomeId]));
+    setInternshipForm((prev) => ({
+      ...prev,
+      selectedOutcomes: prev.selectedOutcomes.includes(outcomeId)
+        ? prev.selectedOutcomes.filter((id) => id !== outcomeId)
+        : [...prev.selectedOutcomes, outcomeId],
+    }));
   };
 
   const resetInternshipForm = () => {
-    if (internshipFormRef?.current) {
-      internshipFormRef.current.reset();
-    }
-    setSelectedOutcomeIds([]);
-    setTargetType('INTERNAL');
-    setIndustryMode('REGISTERED');
-    setSelectedIndustry('');
-    setCustomIndustry('');
-    setInternshipType('FREE');
-    setSelectedProgramme('');
+    setInternshipForm(initialInternshipFormState);
   };
 
   async function submitInternship(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     resetNotice();
-    const form = new FormData(event.currentTarget);
-    const duration = Number(form.get('duration') ?? 0);
+    const duration = Number(internshipForm.duration);
     if (duration < 60) {
       setError('Duration must be at least 60 hours.');
       return;
     }
 
-    if (targetType === 'INTERNAL' && !selectedProgramme) {
+    if (internshipForm.targetType === 'INTERNAL' && !internshipForm.programmeId) {
       setError('Please select a programme for internal internships.');
       return;
     }
 
-    if (selectedOutcomeIds.length === 0) {
+    if (internshipForm.selectedOutcomes.length === 0) {
       setError('Please select at least one outcome.');
       return;
     }
 
     const action = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') as InternshipAction | null;
-    const resolvedIndustry = industryMode === 'REGISTERED' ? selectedIndustry : customIndustry.trim();
-    if (targetType === 'INTERNAL' && !resolvedIndustry) {
+    const resolvedIndustry = internshipForm.industryMode === 'REGISTERED'
+      ? internshipForm.selectedIndustry
+      : internshipForm.customIndustry.trim();
+    if (internshipForm.targetType === 'INTERNAL' && !resolvedIndustry) {
       setError('Please choose or enter an industry.');
       return;
     }
@@ -207,21 +241,21 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
       const createRes = await fetchWithSession<{ id: string }>('/api/internship/create', {
         method: 'POST',
         body: JSON.stringify({
-          title: String(form.get('title') ?? ''),
-          description: String(form.get('description') ?? ''),
-          targetType,
-          programmeId: targetType === 'INTERNAL' ? selectedProgramme : null,
-          industryName: targetType === 'INTERNAL' ? resolvedIndustry : null,
-          isRegistered: industryMode === 'REGISTERED',
-          gender: targetType === 'EXTERNAL' ? String(form.get('gender') ?? 'BOTH') : 'BOTH',
-          type: internshipType,
-          fee: targetType === 'EXTERNAL' && internshipType === 'PAID' ? Number(form.get('fee') ?? 0) : null,
-          stipend: targetType === 'EXTERNAL' && internshipType === 'STIPEND' ? Number(form.get('stipend') ?? 0) : null,
+          title: internshipForm.title.trim(),
+          description: internshipForm.description.trim(),
+          targetType: internshipForm.targetType,
+          programmeId: internshipForm.targetType === 'INTERNAL' ? internshipForm.programmeId : null,
+          industryName: internshipForm.targetType === 'INTERNAL' ? resolvedIndustry : null,
+          isRegistered: internshipForm.industryMode === 'REGISTERED',
+          gender: internshipForm.targetType === 'EXTERNAL' ? internshipForm.gender : 'BOTH',
+          type: internshipForm.type,
+          fee: internshipForm.targetType === 'EXTERNAL' && internshipForm.type === 'PAID' ? Number(internshipForm.fee || 0) : null,
+          stipend: internshipForm.targetType === 'EXTERNAL' && internshipForm.type === 'STIPEND' ? Number(internshipForm.stipend || 0) : null,
           duration,
-          vacancy: Number(form.get('vacancy') ?? 1),
+          vacancy: Number(internshipForm.vacancy ?? 1),
           departmentId,
           status,
-          outcomeIds: selectedOutcomeIds,
+          outcomeIds: internshipForm.selectedOutcomes,
         }),
       });
 
@@ -293,6 +327,63 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
             <Button type="submit">Save</Button>
           </div>
         </form>
+        {selectedProgramme ? (
+          <div className="space-y-2 text-sm">
+            <p className="font-medium">Programme Outcomes</p>
+            {displayedProgrammeOutcomes.length === 0 ? <p className="text-slate-600">No outcomes found for this programme.</p> : null}
+            {displayedProgrammeOutcomes.map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2">
+                {editingProgrammeOutcomeId === item.id ? (
+                  <input
+                    className="min-w-[18rem] flex-1 rounded border px-2 py-1"
+                    value={editingProgrammeOutcomeDescription}
+                    onChange={(e) => setEditingProgrammeOutcomeDescription(e.target.value)}
+                  />
+                ) : (
+                  <span>{item.description}</span>
+                )}
+                <div className="flex gap-2">
+                  {editingProgrammeOutcomeId === item.id ? (
+                    <Button
+                      type="button"
+                      onClick={() => void runAction(async () => {
+                        await fetchWithSession(`/api/programme-outcome/update/${item.id}`, {
+                          method: 'PUT',
+                          body: JSON.stringify({ description: editingProgrammeOutcomeDescription }),
+                        });
+                        setEditingProgrammeOutcomeId(null);
+                        setEditingProgrammeOutcomeDescription('');
+                      }, 'Programme outcome updated.')}
+                    >
+                      Save
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setEditingProgrammeOutcomeId(item.id);
+                        setEditingProgrammeOutcomeDescription(item.description);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void runAction(
+                      () => fetchWithSession(`/api/programme-outcome/delete/${item.id}`, { method: 'DELETE' }).then(() => undefined),
+                      'Programme outcome deleted.',
+                    )}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </Card> : null}
 
       {activeCard === 'internship-outcomes' ? <Card className="p-4 space-y-3">
@@ -312,74 +403,188 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
             <Button type="submit">Save Outcome</Button>
           </div>
         </form>
+        <div className="space-y-2 text-sm">
+          <p className="font-medium">Internship Outcomes</p>
+          {internshipOutcomes.length === 0 ? <p className="text-slate-600">No IPO / CO outcomes saved.</p> : null}
+          {internshipOutcomes.map((item) => (
+            <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2">
+              {editingInternshipOutcomeId === item.id ? (
+                <div className="flex min-w-[18rem] flex-1 gap-2">
+                  <select
+                    className="rounded border px-2 py-1"
+                    value={editingInternshipOutcomeType}
+                    onChange={(e) => setEditingInternshipOutcomeType(e.target.value as 'IPO' | 'CO')}
+                  >
+                    <option value="IPO">IPO</option>
+                    <option value="CO">CO</option>
+                  </select>
+                  <input
+                    className="flex-1 rounded border px-2 py-1"
+                    value={editingInternshipOutcomeDescription}
+                    onChange={(e) => setEditingInternshipOutcomeDescription(e.target.value)}
+                  />
+                </div>
+              ) : (
+                <span>{item.type}: {item.description}</span>
+              )}
+              <div className="flex gap-2">
+                {editingInternshipOutcomeId === item.id ? (
+                  <Button
+                    type="button"
+                    onClick={() => void runAction(async () => {
+                      await fetchWithSession(`/api/internship-outcome/update/${item.id}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                          description: editingInternshipOutcomeDescription,
+                          type: editingInternshipOutcomeType,
+                        }),
+                      });
+                      setEditingInternshipOutcomeId(null);
+                      setEditingInternshipOutcomeDescription('');
+                      setEditingInternshipOutcomeType('IPO');
+                    }, 'Internship outcome updated.')}
+                  >
+                    Save
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setEditingInternshipOutcomeId(item.id);
+                      setEditingInternshipOutcomeDescription(item.description);
+                      setEditingInternshipOutcomeType(item.type === 'CO' ? 'CO' : 'IPO');
+                    }}
+                  >
+                    Edit
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void runAction(
+                    () => fetchWithSession(`/api/internship-outcome/delete/${item.id}`, { method: 'DELETE' }).then(() => undefined),
+                    'Internship outcome deleted.',
+                  )}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
       </Card> : null}
 
       <Card className="p-4 space-y-3">
         <h2 className="font-semibold">Create Internship</h2>
-        <form ref={internshipFormRef} className="grid gap-2 md:grid-cols-2" onSubmit={submitInternship}>
-          <input name="title" className="rounded border px-3 py-2" placeholder="Internship Title" required />
-          <select className="rounded border px-3 py-2" value={targetType} onChange={(e) => setTargetType(e.target.value as 'INTERNAL' | 'EXTERNAL')}>
+        <form className="grid gap-2 md:grid-cols-2" onSubmit={submitInternship}>
+          <input
+            name="title"
+            className="rounded border px-3 py-2"
+            placeholder="Internship Title"
+            value={internshipForm.title}
+            onChange={(e) => setInternshipForm((prev) => ({ ...prev, title: e.target.value }))}
+            required
+          />
+          <select
+            className="rounded border px-3 py-2"
+            value={internshipForm.targetType}
+            onChange={(e) => setInternshipForm((prev) => ({ ...prev, targetType: e.target.value as 'INTERNAL' | 'EXTERNAL', selectedOutcomes: [] }))}
+          >
             <option value="INTERNAL">Internal Students</option>
             <option value="EXTERNAL">External Students</option>
           </select>
-          <textarea name="description" className="rounded border px-3 py-2 md:col-span-2" placeholder="Description" required />
+          <textarea
+            name="description"
+            className="rounded border px-3 py-2 md:col-span-2"
+            placeholder="Description"
+            value={internshipForm.description}
+            onChange={(e) => setInternshipForm((prev) => ({ ...prev, description: e.target.value }))}
+            required
+          />
 
-          {targetType === 'INTERNAL' ? (
+          {internshipForm.targetType === 'INTERNAL' ? (
             <>
-              <select className="rounded border px-3 py-2" value={selectedProgramme} onChange={(e) => setSelectedProgramme(e.target.value)}>
+              <select
+                className="rounded border px-3 py-2"
+                value={internshipForm.programmeId}
+                onChange={(e) => setInternshipForm((prev) => ({ ...prev, programmeId: e.target.value, selectedOutcomes: [] }))}
+              >
                 <option value="">Select Programme</option>
                 {programmes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
-              <select className="rounded border px-3 py-2" value={industryMode} onChange={(e) => setIndustryMode(e.target.value as 'REGISTERED' | 'MANUAL')}>
+              <select
+                className="rounded border px-3 py-2"
+                value={internshipForm.industryMode}
+                onChange={(e) => setInternshipForm((prev) => ({ ...prev, industryMode: e.target.value as 'REGISTERED' | 'MANUAL', selectedIndustry: '', customIndustry: '' }))}
+              >
                 <option value="REGISTERED">Registered Industry</option>
                 <option value="MANUAL">Not Registered (Manual Entry)</option>
               </select>
-              {industryMode === 'REGISTERED' ? (
-                <select className="rounded border px-3 py-2 md:col-span-2" value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)}>
+              {internshipForm.industryMode === 'REGISTERED' ? (
+                <select
+                  className="rounded border px-3 py-2 md:col-span-2"
+                  value={internshipForm.selectedIndustry}
+                  onChange={(e) => setInternshipForm((prev) => ({ ...prev, selectedIndustry: e.target.value }))}
+                >
                   <option value="">Select Registered Industry</option>
                   {industries.map((industry) => <option key={industry.id} value={industry.name}>{industry.name}</option>)}
                 </select>
               ) : (
-                <input className="rounded border px-3 py-2 md:col-span-2" placeholder="Industry name" value={customIndustry} onChange={(e) => setCustomIndustry(e.target.value)} />
+                <input
+                  className="rounded border px-3 py-2 md:col-span-2"
+                  placeholder="Industry name"
+                  value={internshipForm.customIndustry}
+                  onChange={(e) => setInternshipForm((prev) => ({ ...prev, customIndustry: e.target.value }))}
+                />
               )}
               <div className="md:col-span-2 grid gap-2 md:grid-cols-2 text-sm">
                 <div>
                   <p className="font-medium">Programme Outcomes (PO)</p>
-                  {selectedProgrammeOutcomes.map((item) => <label key={item.id} className="block"><input type="checkbox" checked={selectedOutcomeIds.includes(item.id)} onChange={() => toggleOutcome(item.id)} className="mr-2" />{item.description}</label>)}
+                  {selectedProgrammeOutcomes.map((item) => <label key={item.id} className="block"><input type="checkbox" checked={internshipForm.selectedOutcomes.includes(item.id)} onChange={() => toggleOutcome(item.id)} className="mr-2" />{item.description}</label>)}
                 </div>
                 <div>
                   <p className="font-medium">Internship Outcomes (IPO + CO)</p>
-                  {[...groupedInternshipOutcomes.IPO, ...groupedInternshipOutcomes.CO].map((item) => <label key={item.id} className="block"><input type="checkbox" checked={selectedOutcomeIds.includes(item.id)} onChange={() => toggleOutcome(item.id)} className="mr-2" />{item.description}</label>)}
+                  {[...groupedInternshipOutcomes.IPO, ...groupedInternshipOutcomes.CO].map((item) => <label key={item.id} className="block"><input type="checkbox" checked={internshipForm.selectedOutcomes.includes(item.id)} onChange={() => toggleOutcome(item.id)} className="mr-2" />{item.description}</label>)}
                 </div>
               </div>
             </>
           ) : (
             <>
-              <select name="gender" className="rounded border px-3 py-2" defaultValue="BOTH">
+              <select
+                name="gender"
+                className="rounded border px-3 py-2"
+                value={internshipForm.gender}
+                onChange={(e) => setInternshipForm((prev) => ({ ...prev, gender: e.target.value as 'BOYS' | 'GIRLS' | 'BOTH' }))}
+              >
                 <option value="BOYS">Boys</option>
                 <option value="GIRLS">Girls</option>
                 <option value="BOTH">Both</option>
               </select>
-              <select className="rounded border px-3 py-2" value={internshipType} onChange={(e) => setInternshipType(e.target.value as 'FREE' | 'PAID' | 'STIPEND')}>
+              <select
+                className="rounded border px-3 py-2"
+                value={internshipForm.type}
+                onChange={(e) => setInternshipForm((prev) => ({ ...prev, type: e.target.value as 'FREE' | 'PAID' | 'STIPEND', fee: '', stipend: '' }))}
+              >
                 <option value="FREE">Free</option>
                 <option value="PAID">Paid</option>
                 <option value="STIPEND">With Stipend</option>
               </select>
-              {internshipType === 'PAID' ? <input name="fee" type="number" min={0} step="0.01" className="rounded border px-3 py-2" placeholder="Fee" required /> : null}
-              {internshipType === 'STIPEND' ? <input name="stipend" type="number" min={0} step="0.01" className="rounded border px-3 py-2" placeholder="Stipend per month" required /> : null}
+              {internshipForm.type === 'PAID' ? <input name="fee" type="number" min={0} step="0.01" className="rounded border px-3 py-2" placeholder="Fee" value={internshipForm.fee} onChange={(e) => setInternshipForm((prev) => ({ ...prev, fee: e.target.value }))} required /> : null}
+              {internshipForm.type === 'STIPEND' ? <input name="stipend" type="number" min={0} step="0.01" className="rounded border px-3 py-2" placeholder="Stipend per month" value={internshipForm.stipend} onChange={(e) => setInternshipForm((prev) => ({ ...prev, stipend: e.target.value }))} required /> : null}
               <div className="md:col-span-2 text-sm">
                 <p className="font-medium">Internship Outcomes (IPO + CO)</p>
-                {[...groupedInternshipOutcomes.IPO, ...groupedInternshipOutcomes.CO].map((item) => <label key={item.id} className="block"><input type="checkbox" checked={selectedOutcomeIds.includes(item.id)} onChange={() => toggleOutcome(item.id)} className="mr-2" />{item.description}</label>)}
+                {[...groupedInternshipOutcomes.IPO, ...groupedInternshipOutcomes.CO].map((item) => <label key={item.id} className="block"><input type="checkbox" checked={internshipForm.selectedOutcomes.includes(item.id)} onChange={() => toggleOutcome(item.id)} className="mr-2" />{item.description}</label>)}
               </div>
             </>
           )}
 
-          <input name="duration" type="number" min={60} defaultValue={60} className="rounded border px-3 py-2" placeholder="Duration (hours)" required />
-          <input name="vacancy" type="number" min={1} defaultValue={1} className="rounded border px-3 py-2" placeholder="Vacancy" required />
+          <input name="duration" type="number" min={60} value={internshipForm.duration} onChange={(e) => setInternshipForm((prev) => ({ ...prev, duration: Number(e.target.value) || 0 }))} className="rounded border px-3 py-2" placeholder="Duration (hours)" required />
+          <input name="vacancy" type="number" min={1} value={internshipForm.vacancy} onChange={(e) => setInternshipForm((prev) => ({ ...prev, vacancy: Number(e.target.value) || 1 }))} className="rounded border px-3 py-2" placeholder="Vacancy" required />
 
           <div className="md:col-span-2 flex flex-wrap gap-2">
             <Button type="submit" value="SAVE_DRAFT" variant="secondary">Save Draft</Button>
-            {targetType === 'INTERNAL' && industryMode === 'REGISTERED' ? (
+            {internshipForm.targetType === 'INTERNAL' && internshipForm.industryMode === 'REGISTERED' ? (
               <Button type="submit" value="SEND_TO_IPO">Send to IPO</Button>
             ) : (
               <Button type="submit" value="PUBLISH">Publish</Button>
