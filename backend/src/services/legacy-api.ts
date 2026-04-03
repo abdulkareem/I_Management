@@ -370,6 +370,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       'SELECT id FROM departments WHERE lower(coordinator_email) = lower(?) AND is_active = 1',
     ).bind(coordinatorEmail).first<{ id: string }>();
     if (duplicateEmail) return conflict('Coordinator email already in use');
+    const existingAccount = await findAccountByEmail(env, coordinatorEmail);
+    if (existingAccount && existingAccount.type !== 'DEPARTMENT_COORDINATOR') {
+      return conflict('Coordinator email is already used by another account');
+    }
 
     const generatedPassword = generatePassword(10);
     const departmentId = crypto.randomUUID();
@@ -1934,6 +1938,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const exists = await env.DB.prepare('SELECT id FROM departments WHERE lower(coordinator_email) = lower(?)').bind(coordinatorEmail).first();
     if (exists) return conflict('Department coordinator email already exists');
+    const existingAccount = await findAccountByEmail(env, coordinatorEmail);
+    if (existingAccount && existingAccount.type !== 'DEPARTMENT_COORDINATOR') {
+      return conflict('Coordinator email is already used by another account');
+    }
 
     const departmentId = crypto.randomUUID();
     await env.DB.prepare(
@@ -6594,6 +6602,22 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
 
   if (!email || !password) return badRequest('email and password are required');
 
+  const department = await env.DB.prepare('SELECT id, coordinator_email, password, is_active, is_first_login FROM departments WHERE lower(coordinator_email) = lower(?)')
+    .bind(email)
+    .first<{ id: string; coordinator_email: string; password: string; is_active: number; is_first_login: number }>();
+  console.log('[AUTH] Department user exists:', Boolean(department));
+  if (department) {
+    // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
+    const isMatch = isPasswordMatch(password, department.password);
+    console.log('[AUTH] Department password match:', isMatch);
+    if (!isMatch) return unauthorized('Invalid email or password');
+    if (Number(department.is_active) !== 1) return forbidden('Department account inactive');
+    return ok('Login successful', {
+      ...createSession({ id: department.id, email: department.coordinator_email, role: 'DEPARTMENT_COORDINATOR' }),
+      mustChangePassword: Number(department.is_first_login) === 1,
+    });
+  }
+
   const college = await env.DB.prepare('SELECT id, coordinator_email AS email, password, status, is_active FROM colleges WHERE lower(coordinator_email) = lower(?)')
     .bind(email)
     .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
@@ -6619,22 +6643,6 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     if (!isMatch) return unauthorized('Invalid email or password');
     if (industry.status !== 'approved' || Number(industry.is_active) !== 1) return forbidden('Waiting for approval');
     return ok('Login successful', createSession({ id: industry.id, email: industry.email, role: 'INDUSTRY' }));
-  }
-
-  const department = await env.DB.prepare('SELECT id, coordinator_email, password, is_active, is_first_login FROM departments WHERE lower(coordinator_email) = lower(?)')
-    .bind(email)
-    .first<{ id: string; coordinator_email: string; password: string; is_active: number; is_first_login: number }>();
-  console.log('[AUTH] Department user exists:', Boolean(department));
-  if (department) {
-    // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
-    const isMatch = isPasswordMatch(password, department.password);
-    console.log('[AUTH] Department password match:', isMatch);
-    if (!isMatch) return unauthorized('Invalid email or password');
-    if (Number(department.is_active) !== 1) return forbidden('Department account inactive');
-    return ok('Login successful', {
-      ...createSession({ id: department.id, email: department.coordinator_email, role: 'DEPARTMENT_COORDINATOR' }),
-      mustChangePassword: Number(department.is_first_login) === 1,
-    });
   }
 
   const student = await env.DB.prepare('SELECT id, email, password, is_active FROM students WHERE lower(email) = lower(?)')
