@@ -80,6 +80,10 @@ export default function StudentDashboardPage() {
   }
 
   const canApply = Boolean(dashboard?.canApplyForExternal) && availableSlots > 0;
+  const visibleExternalInternships = useMemo(
+    () => (dashboard?.externalInternships ?? []).filter((item) => !(item.isExternal === false && item.sameCollege === false)),
+    [dashboard?.externalInternships],
+  );
 
   async function openIpoProfile(ipoId?: string | null) {
     if (!ipoId) return;
@@ -212,7 +216,7 @@ export default function StudentDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {dashboard?.externalInternships?.length ? dashboard.externalInternships.map((item) => {
+                    {visibleExternalInternships.length ? visibleExternalInternships.map((item) => {
                       const disabledByRule = item.eligible === false;
                       const noVacancy = Number(item.availableVacancy ?? 0) <= 0;
                       const disabled = item.applied || !canApply || disabledByRule || noVacancy;

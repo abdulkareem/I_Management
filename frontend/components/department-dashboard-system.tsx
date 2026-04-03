@@ -28,9 +28,26 @@ type Internship = {
 type Industry = { id: string; name: string };
 type Application = {
   id: string;
+  internship_id?: string;
+  internship_title?: string;
+  student_id?: string;
+  external_student_id?: string;
+  user_id?: string;
   student_name: string;
+  student_email?: string | null;
+  student_mobile?: string | null;
+  student_college?: string | null;
+  student_department?: string | null;
   programme: string | null;
   status: 'APPLIED' | 'APPROVED' | 'REJECTED' | string;
+};
+
+type ApplicationInsights = {
+  feedbackSubmitted: boolean | null;
+  firstEvaluation: number | null;
+  secondEvaluation: number | null;
+  totalMarks: number | null;
+  outcomeEvaluation: number | null;
 };
 
 type InternshipAction = 'SEND_TO_IPO' | 'PUBLISH' | 'SAVE_DRAFT';
@@ -95,6 +112,8 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [applicationInsights, setApplicationInsights] = useState<Record<string, ApplicationInsights>>({});
+  const [applicationLoading, setApplicationLoading] = useState<Record<string, boolean>>({});
 
   const load = async () => {
     const [programmeRes, outcomeRes, internshipRes, internalRes, externalRes, industryRes] = await Promise.all([
@@ -116,6 +135,49 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
   useEffect(() => {
     void load();
   }, [departmentId]);
+
+  useEffect(() => {
+    const applications = [...internalApplications, ...externalApplications];
+    if (!applications.length) return;
+    let cancelled = false;
+    applications.forEach((application) => {
+      if (!application?.id || applicationInsights[application.id] || applicationLoading[application.id]) return;
+      setApplicationLoading((prev) => ({ ...prev, [application.id]: true }));
+      Promise.allSettled([
+        fetchWithSession(`/api/department/applications/${application.id}/feedback-form`),
+        fetchWithSession<{ evaluation?: { cca_total?: number; ese_total?: number; final_total?: number }; outcomes?: Array<{ percentage?: number }> }>(`/api/department/applications/${application.id}/marksheet`),
+      ]).then((results) => {
+        if (cancelled) return;
+        const feedbackResult = results[0].status === 'fulfilled' ? results[0].value.data : null;
+        const marksheetResult = results[1].status === 'fulfilled' ? results[1].value.data : null;
+        const evaluation = marksheetResult?.evaluation ?? null;
+        const firstEvaluation = evaluation?.cca_total !== undefined ? Number(evaluation.cca_total ?? 0) : null;
+        const secondEvaluation = evaluation?.ese_total !== undefined ? Number(evaluation.ese_total ?? 0) : null;
+        const totalMarks = evaluation?.final_total !== undefined ? Number(evaluation.final_total ?? 0) : null;
+        const outcomes = Array.isArray(marksheetResult?.outcomes) ? marksheetResult.outcomes : [];
+        const outcomeEvaluation = outcomes.length
+          ? outcomes.reduce((sum: number, item: any) => sum + Number(item?.percentage ?? 0), 0) / outcomes.length
+          : null;
+
+        setApplicationInsights((prev) => ({
+          ...prev,
+          [application.id]: {
+            feedbackSubmitted: Boolean(feedbackResult),
+            firstEvaluation,
+            secondEvaluation,
+            totalMarks,
+            outcomeEvaluation,
+          },
+        }));
+      }).finally(() => {
+        if (cancelled) return;
+        setApplicationLoading((prev) => ({ ...prev, [application.id]: false }));
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [internalApplications, externalApplications, applicationInsights, applicationLoading]);
 
   const groupedInternshipOutcomes = useMemo(() => ({
     IPO: internshipOutcomes.filter((item) => item.type === 'IPO'),
@@ -151,6 +213,64 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
       setError(reason instanceof Error ? reason.message : 'Request failed');
     }
   };
+
+  async function approveApplication(app: Application) {
+    await runAction(async () => {
+      await fetchWithSession(`/api/applications/update-status/${app.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: 'APPROVED' }),
+      });
+      const internshipId = app.internship_id;
+      const studentId = app.student_id ?? app.external_student_id ?? app.user_id;
+      if (internshipId) {
+        await fetchWithSession('/api/documents/generate/approval', {
+          method: 'POST',
+          body: JSON.stringify({ internshipId }),
+        }).catch(() => null);
+      }
+      if (internshipId && studentId) {
+        await fetchWithSession('/api/documents/generate/allotment', {
+          method: 'POST',
+          body: JSON.stringify({ internshipId, studentId }),
+        }).catch(() => null);
+      }
+    }, 'Application approved. Approval/allotment letter generation triggered.');
+  }
+
+  async function rejectApplication(app: Application) {
+    await runAction(async () => {
+      await fetchWithSession(`/api/applications/update-status/${app.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: 'REJECTED' }),
+      });
+    }, `Application rejected for ${app.student_name}.`);
+  }
+
+  async function downloadLetters(applicationId: string) {
+    await runAction(async () => {
+      const payload = await fetchWithSession<{ html?: string; content?: string }>(`/api/department/applications/${applicationId}/documents/pdf`);
+      const html = payload.data?.html ?? payload.data?.content ?? '';
+      if (!html) throw new Error('Letters are not available yet.');
+      const blob = new Blob([String(html)], { type: 'text/html;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `letters-${applicationId}.html`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }, 'Letters downloaded.');
+  }
+
+  async function downloadMarkStatement(applicationId: string) {
+    await runAction(async () => {
+      const payload = await fetchWithSession<Record<string, unknown>>(`/api/department/applications/${applicationId}/marksheet`);
+      const blob = new Blob([JSON.stringify(payload.data ?? {}, null, 2)], { type: 'application/json;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `mark-statement-${applicationId}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }, 'Mark statement downloaded.');
+  }
 
   async function addProgramme(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -726,12 +846,20 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
           {internalApplications.map((app) => (
             <div key={app.id} className="rounded border p-2 text-sm">
               <p><strong>Student Name:</strong> {app.student_name}</p>
+              <p><strong>Internship:</strong> {app.internship_title ?? '-'}</p>
               <p><strong>Programme:</strong> {app.programme ?? '-'}</p>
-              <select className="mt-2 rounded border px-2 py-1" value={app.status} onChange={(e) => void runAction(() => fetchWithSession(`/api/applications/update-status/${app.id}`, { method: 'PUT', body: JSON.stringify({ status: e.target.value }) }).then(() => undefined), 'Application status updated.')}>
-                <option value="APPLIED">APPLIED</option>
-                <option value="APPROVED">APPROVED</option>
-                <option value="REJECTED">REJECTED</option>
-              </select>
+              <p><strong>Status:</strong> {app.status}</p>
+              <p><strong>Feedback status:</strong> {applicationLoading[app.id] ? 'Loading...' : (applicationInsights[app.id]?.feedbackSubmitted ? 'Submitted' : 'Pending')}</p>
+              <p><strong>First evaluation:</strong> {applicationInsights[app.id]?.firstEvaluation ?? 'Pending'}</p>
+              <p><strong>Second evaluation:</strong> {applicationInsights[app.id]?.secondEvaluation ?? 'Pending'}</p>
+              <p><strong>Total marks:</strong> {applicationInsights[app.id]?.totalMarks ?? 'Pending'}</p>
+              <p><strong>Outcome evaluation:</strong> {applicationInsights[app.id]?.outcomeEvaluation ?? 'Pending'}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => void approveApplication(app)}>Approve</Button>
+                <Button type="button" variant="secondary" onClick={() => void rejectApplication(app)}>Reject</Button>
+                <Button type="button" variant="secondary" onClick={() => void downloadLetters(app.id)}>Download Letters</Button>
+                <Button type="button" variant="secondary" onClick={() => void downloadMarkStatement(app.id)}>Download Mark Statement</Button>
+              </div>
             </div>
           ))}
         </Card>
@@ -741,12 +869,24 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
           {externalApplications.map((app) => (
             <div key={app.id} className="rounded border p-2 text-sm">
               <p><strong>Student Name:</strong> {app.student_name}</p>
+              <p><strong>Internship:</strong> {app.internship_title ?? '-'}</p>
+              <p><strong>College:</strong> {app.student_college ?? '-'}</p>
+              <p><strong>Department:</strong> {app.student_department ?? '-'}</p>
               <p><strong>Programme:</strong> {app.programme ?? '-'}</p>
-              <select className="mt-2 rounded border px-2 py-1" value={app.status} onChange={(e) => void runAction(() => fetchWithSession(`/api/applications/update-status/${app.id}`, { method: 'PUT', body: JSON.stringify({ status: e.target.value }) }).then(() => undefined), 'Application status updated.')}>
-                <option value="APPLIED">APPLIED</option>
-                <option value="APPROVED">APPROVED</option>
-                <option value="REJECTED">REJECTED</option>
-              </select>
+              <p><strong>Email:</strong> {app.student_email ?? '-'}</p>
+              <p><strong>Mobile:</strong> {app.student_mobile ?? '-'}</p>
+              <p><strong>Status:</strong> {app.status}</p>
+              <p><strong>Feedback status:</strong> {applicationLoading[app.id] ? 'Loading...' : (applicationInsights[app.id]?.feedbackSubmitted ? 'Submitted' : 'Pending')}</p>
+              <p><strong>First evaluation:</strong> {applicationInsights[app.id]?.firstEvaluation ?? 'Pending'}</p>
+              <p><strong>Second evaluation:</strong> {applicationInsights[app.id]?.secondEvaluation ?? 'Pending'}</p>
+              <p><strong>Total marks:</strong> {applicationInsights[app.id]?.totalMarks ?? 'Pending'}</p>
+              <p><strong>Outcome evaluation:</strong> {applicationInsights[app.id]?.outcomeEvaluation ?? 'Pending'}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => void approveApplication(app)}>Approve</Button>
+                <Button type="button" variant="secondary" onClick={() => void rejectApplication(app)}>Reject</Button>
+                <Button type="button" variant="secondary" onClick={() => void downloadLetters(app.id)}>Download Letters</Button>
+                <Button type="button" variant="secondary" onClick={() => void downloadMarkStatement(app.id)}>Download Mark Statement</Button>
+              </div>
             </div>
           ))}
         </Card>
