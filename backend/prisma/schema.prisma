@@ -53,6 +53,7 @@ model User {
   phone     String?  @unique
   password  String
   role      Role     @default(STUDENT)
+  isApproved Boolean @default(false)
   isTempPassword Boolean @default(false)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

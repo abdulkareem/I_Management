@@ -361,7 +361,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
     const body = await readBody(request);
 
-    const collegeId = toText(body?.college_id ?? body?.collegeId ?? (actor.role === 'COLLEGE_COORDINATOR' ? actor.id : ''));
+    const collegeId = actor.role === 'COLLEGE_COORDINATOR'
+      ? actor.id
+      : toText(body?.college_id ?? body?.collegeId);
     const name = toText(body?.name);
     const coordinatorName = toText(body?.coordinator_name ?? body?.coordinatorName);
     const coordinatorEmail = normalizeEmail(toText(body?.coordinator_email ?? body?.coordinatorEmail));
@@ -450,8 +452,24 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/courses') {
-    const departmentId = toText(url.searchParams.get('departmentId'));
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN', 'COLLEGE', 'DEPARTMENT_COORDINATOR', 'STUDENT']);
+    if (actor instanceof Response) return actor;
+    const queryDepartmentId = toText(url.searchParams.get('departmentId'));
+    const departmentId = actor.role === 'DEPARTMENT_COORDINATOR'
+      ? actor.id
+      : queryDepartmentId;
     if (!departmentId) return badRequest('departmentId is required');
+
+    if (actor.role === 'COLLEGE_COORDINATOR') {
+      const ownsDepartment = await env.DB.prepare('SELECT id FROM departments WHERE id = ? AND college_id = ?')
+        .bind(departmentId, actor.id)
+        .first<{ id: string }>();
+      if (!ownsDepartment) return forbidden('Department does not belong to your college');
+    }
+    if (actor.role === 'STUDENT') {
+      const student = await env.DB.prepare('SELECT department_id FROM students WHERE id = ?').bind(actor.id).first<{ department_id: string | null }>();
+      if (!student?.department_id || student.department_id !== departmentId) return forbidden('Access denied for department');
+    }
 
     const rows = await env.DB.prepare('SELECT id, name, department_id FROM programs WHERE department_id = ? ORDER BY name ASC')
       .bind(departmentId)
@@ -463,8 +481,24 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/programs') {
-    const departmentId = toText(url.searchParams.get('departmentId'));
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN', 'COLLEGE', 'DEPARTMENT_COORDINATOR', 'STUDENT']);
+    if (actor instanceof Response) return actor;
+    const queryDepartmentId = toText(url.searchParams.get('departmentId'));
+    const departmentId = actor.role === 'DEPARTMENT_COORDINATOR'
+      ? actor.id
+      : queryDepartmentId;
     if (!departmentId) return badRequest('departmentId is required');
+
+    if (actor.role === 'COLLEGE_COORDINATOR') {
+      const ownsDepartment = await env.DB.prepare('SELECT id FROM departments WHERE id = ? AND college_id = ?')
+        .bind(departmentId, actor.id)
+        .first<{ id: string }>();
+      if (!ownsDepartment) return forbidden('Department does not belong to your college');
+    }
+    if (actor.role === 'STUDENT') {
+      const student = await env.DB.prepare('SELECT department_id FROM students WHERE id = ?').bind(actor.id).first<{ department_id: string | null }>();
+      if (!student?.department_id || student.department_id !== departmentId) return forbidden('Access denied for department');
+    }
 
     const rows = await env.DB.prepare('SELECT id, name, department_id FROM programs WHERE department_id = ? ORDER BY name ASC')
       .bind(departmentId)
@@ -2389,7 +2423,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
                  LEFT JOIN external_students es ON es.id = ia.external_student_id
                  LEFT JOIN colleges c ON c.id = i.college_id
                  LEFT JOIN departments d ON d.id = i.department_id
-                 WHERE i.industry_id = ?`;
+                 WHERE i.industry_id = ?
+                   AND EXISTS (
+                     SELECT 1
+                     FROM college_industry_links cil
+                     WHERE cil.industry_id = i.industry_id
+                       AND cil.college_id = i.college_id
+                       AND cil.status IN ('approved', 'active')
+                   )`;
     const binds: Array<string> = [actor.id];
     if (statusFilter) {
       query += ' AND lower(ia.status) = ?';
@@ -3805,19 +3846,40 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
   if (request.method === 'GET' && pathname === '/api/internships') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN', 'COLLEGE', 'DEPARTMENT_COORDINATOR', 'INDUSTRY', 'STUDENT', 'EXTERNAL_STUDENT']);
+    if (actor instanceof Response) return actor;
     const externalOnly = toText(url.searchParams.get('external')).toLowerCase() === 'true';
-    const query = externalOnly
-      ? `SELECT i.id, i.title, i.description, i.department_id, i.is_paid, i.fee, i.is_external, i.status, i.created_at, d.name AS department_name
+    const filters: string[] = [];
+    const params: Array<string> = [];
+
+    if (externalOnly) filters.push('COALESCE(i.is_external, 0) = 1');
+
+    if (actor.role === 'COLLEGE_COORDINATOR') {
+      filters.push('i.college_id = ?');
+      params.push(actor.id);
+    } else if (actor.role === 'DEPARTMENT_COORDINATOR') {
+      filters.push('i.department_id = ?');
+      params.push(actor.id);
+    } else if (actor.role === 'IPO') {
+      filters.push('COALESCE(i.industry_id, i.ipo_id) = ?');
+      params.push(actor.id);
+    } else if (actor.role === 'STUDENT') {
+      filters.push("(COALESCE(i.target_type, 'INTERNAL') = 'EXTERNAL' OR (COALESCE(i.target_type, 'INTERNAL') = 'INTERNAL' AND i.college_id = ?))");
+      params.push(actor.collegeId ?? '');
+    } else if (actor.role === 'SUPER_ADMIN' || actor.role === 'ADMIN') {
+      // no additional filter
+    } else {
+      filters.push("COALESCE(i.target_type, 'EXTERNAL') = 'EXTERNAL'");
+    }
+
+    const query = `SELECT i.id, i.title, i.description, i.department_id, i.is_paid, i.fee, i.is_external, i.status, i.created_at, d.name AS department_name
          FROM internships i
          INNER JOIN departments d ON d.id = i.department_id
-         WHERE i.is_external = 1 AND i.status = 'OPEN'
-         ORDER BY i.created_at DESC`
-      : `SELECT i.id, i.title, i.description, i.department_id, i.is_paid, i.fee, i.is_external, i.status, i.created_at, d.name AS department_name
-         FROM internships i
-         INNER JOIN departments d ON d.id = i.department_id
+         ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
          ORDER BY i.created_at DESC`;
 
-    const rows = await env.DB.prepare(query).all();
+    console.log('FILTER:', { actor, query, params });
+    const rows = await env.DB.prepare(query).bind(...params).all();
     return ok('Internships fetched', rows.results ?? []);
   }
 
@@ -3834,6 +3896,15 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       : null;
     if (payload.department_id && !department) return badRequest('department_id is invalid');
     if (department?.college_id && department.college_id !== payload.college_id) return badRequest('department_id does not belong to college_id');
+    const approvedCollegeLink = await env.DB.prepare(
+      `SELECT id
+       FROM college_industry_links
+       WHERE industry_id = ?
+         AND college_id = ?
+         AND status IN ('approved', 'active')
+       LIMIT 1`,
+    ).bind(actor.id, payload.college_id).first<{ id: string }>();
+    if (!approvedCollegeLink) return forbidden('College approval required before creating internship');
 
     const id = crypto.randomUUID();
     await env.DB.prepare(
@@ -3880,6 +3951,15 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        INNER JOIN departments d ON d.id = ?
        WHERE i.college_id = d.college_id
          AND (i.department_id IS NULL OR i.department_id = ?)
+         AND (
+              UPPER(COALESCE(i.created_by, i.source_type, 'DEPARTMENT')) != 'INDUSTRY'
+              OR EXISTS (
+                SELECT 1 FROM college_industry_links cil
+                WHERE cil.industry_id = COALESCE(i.industry_id, i.ipo_id)
+                  AND cil.college_id = d.college_id
+                  AND cil.status IN ('approved', 'active')
+              )
+         )
        ORDER BY i.created_at DESC`,
     ).bind(actor.id, actor.id).all();
 
@@ -6585,6 +6665,7 @@ function isPasswordMatch(inputPassword: string, storedPassword: string): boolean
 }
 
 async function passwordLogin(request: Request, env: EnvBindings, entity: 'college' | 'industry' | 'student') {
+  await ensureUsersApprovalSchema(env);
   const body = await readBody(request);
   console.log('BODY:', body);
 
@@ -6804,6 +6885,7 @@ function maskEmail(email: string): string {
 }
 
 async function unifiedLogin(request: Request, env: EnvBindings) {
+  await ensureUsersApprovalSchema(env);
   const body = await readBody(request);
 
   const email = normalizeEmail(required(body, ['email']));
@@ -6898,9 +6980,9 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     return ok('Login successful', createSession({ id: externalStudent.id, email: externalStudent.email, role: 'EXTERNAL_STUDENT' }));
   }
 
-  const user = await env.DB.prepare('SELECT id, email, password_hash, role, is_active FROM users WHERE lower(email) = lower(?)')
+  const user = await env.DB.prepare('SELECT id, email, password_hash, role, is_active, is_approved FROM users WHERE lower(email) = lower(?)')
     .bind(email)
-    .first<{ id: string; email: string; password_hash: string; role: string; is_active: number }>();
+    .first<{ id: string; email: string; password_hash: string; role: string; is_active: number; is_approved: number }>();
   console.log('[AUTH] Prisma-compatible users row exists:', Boolean(user));
 
   if (!user) {
@@ -6912,6 +6994,7 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
   }
 
   if (Number(user.is_active) !== 1) return forbidden('Account inactive');
+  if (Number(user.is_approved ?? 0) !== 1) return forbidden('Your account is not approved yet');
 
   return ok('Login successful', createSession({ id: user.id, email: user.email, role: String(user.role || 'STUDENT').toUpperCase() as AuthSession['user']['role'] }));
 }
@@ -7679,6 +7762,9 @@ async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
       email TEXT NOT NULL UNIQUE,
       role TEXT NOT NULL CHECK (role IN ('ADMIN', 'DEPARTMENT', 'IPO', 'STUDENT')),
       linked_entity_id TEXT,
+      password_hash TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      is_approved INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
   ).run();
@@ -7691,6 +7777,21 @@ async function ensureInternshipWorkflowSchema(env: EnvBindings): Promise<void> {
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_perf_feedback_industry ON internship_performance_feedback(industry_id, feedback_date)').run(),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_perf_feedback_internship ON internship_performance_feedback(internship_id)').run(),
   ]);
+}
+
+async function ensureUsersApprovalSchema(env: EnvBindings): Promise<void> {
+  const columns = await getTableColumns(env, 'users');
+  const names = new Set(columns.map((column) => column.name));
+
+  if (!names.has('password_hash')) {
+    await env.DB.prepare('ALTER TABLE users ADD COLUMN password_hash TEXT').run();
+  }
+  if (!names.has('is_active')) {
+    await env.DB.prepare('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1').run();
+  }
+  if (!names.has('is_approved')) {
+    await env.DB.prepare('ALTER TABLE users ADD COLUMN is_approved INTEGER NOT NULL DEFAULT 0').run();
+  }
 }
 
 async function ensureInternshipLettersSchema(env: EnvBindings): Promise<void> {
