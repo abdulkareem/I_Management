@@ -366,12 +366,28 @@ export default function IPODashboardPage() {
     await load();
   }
 
+  const buildInternshipFormPayload = useCallback((item: IPOInternship) => ({
+    title: item.internship_title ?? '',
+    description: item.description ?? '',
+    vacancy: String(item.vacancy ?? 1),
+    internshipCategory: item.category ?? 'FREE' as InternshipCategory,
+    fee: item.fee ? String(item.fee) : '',
+    stipendAmount: item.stipend_amount ? String(item.stipend_amount) : '',
+    stipendDuration: item.stipend_duration ?? 'MONTH' as StipendDuration,
+    minimumDays: String(item.minimum_days ?? 60),
+    maximumDays: String(item.maximum_days ?? 90),
+    genderPreference: item.gender_preference ?? 'BOTH' as 'BOTH' | 'BOYS' | 'GIRLS',
+  }), []);
+
   async function publishInternship(internshipId: string) {
     setError(null);
     setSuccessMessage(null);
     setIdeaActionSubmitting(internshipId);
     try {
-      const payload = internshipForms[internshipId];
+      const internship = ipoInternships.find((entry) => entry.id === internshipId);
+      if (!internship) return;
+      const payload = internshipForms[internshipId] ?? buildInternshipFormPayload(internship);
+      await saveDepartmentSuggestedInternship(internshipId, { reload: false });
       const response = await fetchWithSession('/api/ipo/publish', {
         method: 'POST',
         body: JSON.stringify({
@@ -395,8 +411,9 @@ export default function IPODashboardPage() {
   }
 
   async function saveDepartmentSuggestedInternship(internshipId: string, options?: { reload?: boolean }) {
-    const payload = internshipForms[internshipId];
-    if (!payload) return;
+    const internship = ipoInternships.find((entry) => entry.id === internshipId);
+    if (!internship) return;
+    const payload = internshipForms[internshipId] ?? buildInternshipFormPayload(internship);
     setError(null);
     setSuccessMessage(null);
     setIdeaActionSubmitting(internshipId);
@@ -614,18 +631,7 @@ export default function IPODashboardPage() {
               {departmentSuggestedInternships.length ? (
                 <div className="space-y-3">
                   {departmentSuggestedInternships.map((item) => {
-                    const form = internshipForms[item.id] ?? {
-                      title: item.internship_title ?? '',
-                      description: item.description ?? '',
-                      vacancy: String(item.vacancy ?? 1),
-                      internshipCategory: item.category ?? 'FREE',
-                      fee: item.fee ? String(item.fee) : '',
-                      stipendAmount: item.stipend_amount ? String(item.stipend_amount) : '',
-                      stipendDuration: item.stipend_duration ?? 'MONTH',
-                      minimumDays: String(item.minimum_days ?? 60),
-                      maximumDays: String(item.maximum_days ?? 90),
-                      genderPreference: item.gender_preference ?? 'BOTH',
-                    };
+                    const form = internshipForms[item.id] ?? buildInternshipFormPayload(item);
                     return (
                       <div key={item.id} className="rounded-[24px] border border-indigo-200 bg-indigo-50/40 p-4">
                         <p className="text-sm font-semibold text-indigo-700">Sent from department for ipo publish</p>
@@ -757,18 +763,7 @@ export default function IPODashboardPage() {
                 </thead>
                 <tbody>
                   {paginatedInternships.rows.length ? paginatedInternships.rows.map((item) => {
-                    const form = internshipForms[item.id] ?? {
-                      title: item.internship_title ?? '',
-                      description: item.description ?? '',
-                      vacancy: String(item.vacancy ?? 1),
-                      internshipCategory: item.category ?? 'FREE',
-                      fee: item.fee ? String(item.fee) : '',
-                      stipendAmount: item.stipend_amount ? String(item.stipend_amount) : '',
-                      stipendDuration: item.stipend_duration ?? 'MONTH',
-                      minimumDays: String(item.minimum_days ?? 60),
-                      maximumDays: String(item.maximum_days ?? 90),
-                      genderPreference: item.gender_preference ?? 'BOTH',
-                    };
+                    const form = internshipForms[item.id] ?? buildInternshipFormPayload(item);
                     return (
                     <tr key={item.id} className="border-b border-slate-200">
                       <td className="py-3 pr-2">{item.internship_title || '-'}</td>
@@ -780,7 +775,7 @@ export default function IPODashboardPage() {
                       <td className="py-3 pr-2">
                         <Badge className={item.status === 'DRAFT' ? 'bg-slate-600' : item.status === 'SENT_TO_DEPARTMENT' ? 'bg-blue-600' : item.status === 'PUBLISHED' ? 'bg-purple-600' : item.status === 'ACCEPTED' ? (item.student_visibility ? 'bg-purple-600' : 'bg-green-600') : 'bg-slate-600'}>{item.status}</Badge>
                       </td>
-                      <td className="py-3">{item.student_visibility ? 'Visible in student dashboard' : 'Not published yet'}</td>
+                      <td className="py-3">{item.status === 'CLOSED' ? 'Closed in student dashboard' : item.student_visibility ? 'Visible in student dashboard' : 'Not published yet'}</td>
                       <td className="py-3 pr-2">{item.created_at ? new Date(item.created_at).toLocaleDateString() : '-'}</td>
                       <td className="py-3">
                         <div className="flex flex-wrap gap-2">
@@ -797,7 +792,7 @@ export default function IPODashboardPage() {
                             disabled={ideaActionSubmitting === item.id}
                             onClick={() => (item.status === 'CLOSED' ? void republishInternship(item.id) : void closeInternship(item.id))}
                           >
-                            {ideaActionSubmitting === item.id ? (item.status === 'CLOSED' ? 'Publishing...' : 'Closing...') : (item.status === 'CLOSED' ? 'Publish Again' : 'Close')}
+                            {ideaActionSubmitting === item.id ? (item.status === 'CLOSED' ? 'Publishing...' : 'Closing...') : (item.status === 'CLOSED' ? 'Publish Again' : 'Stop Receiving Applications')}
                           </Button>
                           <Button variant="secondary" disabled={ideaActionSubmitting === item.id} onClick={() => void removeInternship(item.id)}>{ideaActionSubmitting === item.id ? 'Removing...' : 'Remove'}</Button>
                         </div>
