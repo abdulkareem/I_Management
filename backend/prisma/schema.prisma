@@ -35,6 +35,7 @@ enum Gender {
 
 enum InternshipStatus {
   DRAFT
+  SENT_IPO
   IPO_SENT
   PUBLISHED
 }
@@ -153,6 +154,10 @@ model Ipo {
   activity        String?
   ipoType         String?
   ipoSubCategory  String?
+  contactNumber   String?
+  registrationNumber String?
+  registrationYear Int?
+  supervisorName  String?
 
   userId          String   @unique
 
