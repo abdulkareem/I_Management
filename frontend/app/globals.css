@@ -42,6 +42,11 @@ textarea {
   padding: 0.9rem 1rem;
 }
 
+option {
+  color: #0f172a;
+  background: #ffffff;
+}
+
 input:focus,
 select:focus,
 textarea:focus {

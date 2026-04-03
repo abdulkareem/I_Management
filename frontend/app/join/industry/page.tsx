@@ -54,10 +54,10 @@ export default function IPOJoinPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl items-center px-4 py-10">
       <Card className="w-full rounded-[32px] p-6 sm:p-8">
-        <Link href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-cyan-200 hover:text-cyan-100">
+        <Link href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-cyan-700 hover:text-cyan-800">
           <ArrowLeft className="h-4 w-4" /> Back
         </Link>
-        <h1 className="text-3xl font-semibold text-white">Join as IPO (IPO)</h1>
+        <h1 className="text-3xl font-semibold text-slate-900">Join as IPO (IPO)</h1>
         <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
           <div className="space-y-2"><label htmlFor="companyName">Company Name</label><input id="companyName" name="companyName" required /></div>
           <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
@@ -69,8 +69,8 @@ export default function IPOJoinPage() {
               {types.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
             </select>
           </div>
-          <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>
-          <div className="space-y-2"><label htmlFor="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" required /></div>
+          <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" minLength={8} required /></div>
+          <div className="space-y-2"><label htmlFor="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" minLength={8} required /></div>
           {error ? <p className="md:col-span-2 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
           <Button className="md:col-span-2" disabled={loading}>{loading ? 'Creating profile...' : 'Create IPO profile'}</Button>
         </form>

@@ -77,7 +77,7 @@ export default function ExternalStudentApplyPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl items-center px-4 py-10">
       <Card className="w-full rounded-[32px] p-6 sm:p-8">
-        <h1 className="text-3xl font-semibold text-white">External Student Application</h1>
+        <h1 className="text-3xl font-semibold text-slate-900">External Student Application</h1>
         <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
           <div className="space-y-2"><label htmlFor="fullName">Full Name</label><input id="fullName" name="fullName" required /></div>
           <div className="space-y-2"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required /></div>
@@ -100,9 +100,9 @@ export default function ExternalStudentApplyPage() {
               ))}
             </select>
           </div>
-          <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required /></div>
-          <div className="space-y-2"><label htmlFor="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" required /></div>
-          {selectedInternship ? <p className="md:col-span-2 text-sm text-slate-300">{selectedInternship.description}</p> : null}
+          <div className="space-y-2"><label htmlFor="password">Password</label><input id="password" name="password" type="password" minLength={8} required /></div>
+          <div className="space-y-2"><label htmlFor="confirmPassword">Confirm Password</label><input id="confirmPassword" name="confirmPassword" type="password" minLength={8} required /></div>
+          {selectedInternship ? <p className="md:col-span-2 text-sm text-slate-600">{selectedInternship.description}</p> : null}
           {submitted ? <p className="md:col-span-2 rounded-[18px] bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">Application submitted successfully.</p> : null}
           {error ? <p className="md:col-span-2 rounded-[18px] bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
           <Button className="md:col-span-2">Submit application</Button>
