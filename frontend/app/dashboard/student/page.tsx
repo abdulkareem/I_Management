@@ -179,7 +179,7 @@ export default function StudentDashboardPage() {
               <Badge className="bg-cyan-100 text-cyan-800">Max active applications: {dashboard?.maxSelectableApplications ?? 3}</Badge>
               <Badge className="bg-amber-100 text-amber-800">Available slots now: {availableSlots}</Badge>
               <Badge className={dashboard?.activeApplicationLock ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}>
-                {dashboard?.activeApplicationLock ? 'Locked until department marks completion' : 'Eligible to apply'}
+                {dashboard?.activeApplicationLock ? 'Locked until department marks completion' : 'Eligible to apply based on the logic.'}
               </Badge>
             </div>
           </Card>

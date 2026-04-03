@@ -464,10 +464,30 @@ app.get('/api/colleges', async (_req, res) => {
     apiOk(res, 'Colleges fetched', colleges.map((college) => ({
       id: college.id,
       name: college.name,
+      collegeName: college.name,
       coordinator: college.coordinatorName ?? '-',
       email: college.coordinatorEmail ?? '-',
       status: college.status,
     })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/public/stats', async (_req, res) => {
+  try {
+    const [students, ipos, internshipAgg, applications] = await Promise.all([
+      prisma.student.count(),
+      prisma.ipo.count(),
+      prisma.internship.aggregate({ _sum: { vacancy: true } }),
+      prisma.internshipApplication.count(),
+    ]);
+    apiOk(res, 'Public stats fetched', {
+      students,
+      ipos,
+      vacancies: internshipAgg._sum.vacancy ?? 0,
+      applications,
+    });
   } catch (error) {
     apiError(res, 500, toMessage(error));
   }
@@ -2349,8 +2369,14 @@ app.put('/api/ipo/internships/:id', async (req, res) => {
     const minimumDays = req.body?.minimumDays == null ? undefined : Number(req.body?.minimumDays);
     const genderPreference = String(req.body?.genderPreference ?? '').trim().toUpperCase();
     const existing = await prisma.internship.findFirst({
-      where: { id: req.params.id, ipoId: ipo.id },
-      select: { id: true },
+      where: {
+        id: req.params.id,
+        OR: [
+          { ipoId: ipo.id },
+          { status: { in: [InternshipStatus.SENT_IPO, InternshipStatus.IPO_SENT] } },
+        ],
+      },
+      select: { id: true, ipoId: true },
     });
     if (!existing) {
       apiError(res, 404, 'Internship not found');
@@ -2367,6 +2393,7 @@ app.put('/api/ipo/internships/:id', async (req, res) => {
         stipend: stipendAmount == null || Number.isNaN(stipendAmount) ? undefined : stipendAmount,
         duration: minimumDays == null || Number.isNaN(minimumDays) ? undefined : Math.max(60, Math.floor(minimumDays)),
         gender: genderPreference ? genderPreference as Gender : undefined,
+        ipoId: existing.ipoId ?? ipo.id,
       },
     });
     apiOk(res, 'Internship updated', { id: internship.id });
@@ -2393,8 +2420,14 @@ app.post('/api/ipo/publish', async (req, res) => {
       return;
     }
     const existing = await prisma.internship.findFirst({
-      where: { id: internshipId, ipoId: ipo.id },
-      select: { id: true },
+      where: {
+        id: internshipId,
+        OR: [
+          { ipoId: ipo.id },
+          { status: { in: [InternshipStatus.SENT_IPO, InternshipStatus.IPO_SENT] } },
+        ],
+      },
+      select: { id: true, ipoId: true },
     });
     if (!existing) {
       apiError(res, 404, 'Internship not found');
@@ -2407,6 +2440,7 @@ app.post('/api/ipo/publish', async (req, res) => {
         visibility: 'GLOBAL',
         targetType: TargetType.EXTERNAL,
         isExternal: true,
+        ipoId: existing.ipoId ?? ipo.id,
       },
     });
     apiOk(res, 'Published for students', { id: updated.id, status: updated.status });
