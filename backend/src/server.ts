@@ -70,6 +70,7 @@ const internshipCreateSchema = z.object({
   duration: z.coerce.number().int().min(60).optional(),
   vacancy: z.coerce.number().int().min(1).optional(),
   outcomeIds: z.array(z.string().trim().min(1)).optional(),
+  status: z.enum(['DRAFT', 'IPO_SENT', 'PUBLISHED']).optional(),
 });
 
 const programmeCreateSchema = z.object({
@@ -91,6 +92,10 @@ const outcomeCreateSchema = z.object({
     description: z.string().trim().min(2),
   })).optional(),
   departmentId: z.string().trim().optional().nullable(),
+});
+
+const applicationStatusSchema = z.object({
+  status: z.enum(['APPLIED', 'APPROVED', 'REJECTED']),
 });
 
 function toMessage(error: unknown): string {
@@ -1114,10 +1119,13 @@ app.get('/api/applications/internal', async (req, res) => {
 
     const applications = await prisma.internshipApplication.findMany({
       where: {
-        internship: { targets: { some: { collegeId: context.department.collegeId } } },
-        studentId: { not: null },
+        internship: { departmentId: context.department.id },
+        OR: [
+          { isInternal: true },
+          { isInternal: null, studentId: { not: null } },
+        ],
       },
-      include: { internship: true, student: { include: { user: true } } },
+      include: { internship: { include: { programme: true } }, student: { include: { user: true } } },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -1128,8 +1136,9 @@ app.get('/api/applications/internal', async (req, res) => {
       student_id: item.studentId,
       student_name: item.student?.user?.name ?? 'Student',
       student_email: item.student?.user?.email ?? null,
+      programme: item.internship?.programme?.name ?? item.student?.programme ?? null,
       status: item.status,
-      created_at: item.createdAt.toISOString(),
+      applied_at: (item.appliedAt ?? item.createdAt).toISOString(),
       completed_at: item.status.toUpperCase() === 'COMPLETED' ? item.updatedAt.toISOString() : null,
     })));
   } catch (error) {
@@ -1147,10 +1156,13 @@ app.get('/api/applications/external', async (req, res) => {
 
     const applications = await prisma.internshipApplication.findMany({
       where: {
-        internship: { targets: { some: { collegeId: context.department.collegeId } } },
-        studentId: null,
+        internship: { departmentId: context.department.id },
+        OR: [
+          { isInternal: false },
+          { isInternal: null, studentId: null },
+        ],
       },
-      include: { internship: true, user: true },
+      include: { internship: { include: { programme: true } }, user: true },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -1161,12 +1173,26 @@ app.get('/api/applications/external', async (req, res) => {
       external_student_id: item.userId,
       student_name: item.user?.name ?? 'External Student',
       student_email: item.user?.email ?? null,
+      programme: item.internship?.programme?.name ?? null,
       status: item.status,
-      created_at: item.createdAt.toISOString(),
+      applied_at: (item.appliedAt ?? item.createdAt).toISOString(),
       completed_at: item.status.toUpperCase() === 'COMPLETED' ? item.updatedAt.toISOString() : null,
     })));
   } catch (error) {
     apiError(res, 500, toMessage(error));
+  }
+});
+
+app.put('/api/applications/update-status/:id', async (req, res) => {
+  try {
+    const payload = applicationStatusSchema.parse(req.body ?? {});
+    const updated = await prisma.internshipApplication.update({
+      where: { id: req.params.id },
+      data: { status: payload.status },
+    });
+    apiOk(res, 'Application status updated', { id: updated.id, status: updated.status });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
   }
 });
 
@@ -2046,7 +2072,7 @@ app.post('/api/internship/create', async (req, res) => {
         visibility,
         departmentId: scopedDepartmentId,
         createdById,
-        status: 'IPO_SENT',
+        status: payload.status ?? 'IPO_SENT',
         isExternal: internshipType === 'EXTERNAL',
       },
     });
@@ -2141,6 +2167,18 @@ app.get('/api/internship/list', async (req, res) => {
   }
 });
 
+app.get('/api/industry/list', async (_req, res) => {
+  try {
+    const industries = await prisma.ipo.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    apiOk(res, 'Industries fetched', industries);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
 app.post('/api/programme/create', async (req, res) => {
   try {
     const payload = programmeCreateSchema.parse(req.body ?? {});
@@ -2151,6 +2189,32 @@ app.post('/api/programme/create', async (req, res) => {
       },
     });
     apiOk(res, 'Programme created', programme, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.put('/api/programme/update/:id', async (req, res) => {
+  try {
+    const name = String(req.body?.name ?? '').trim();
+    if (!name) {
+      apiError(res, 400, 'name is required');
+      return;
+    }
+    const programme = await prisma.program.update({
+      where: { id: req.params.id },
+      data: { name },
+    });
+    apiOk(res, 'Programme updated', programme);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/programme/delete/:id', async (req, res) => {
+  try {
+    await prisma.program.delete({ where: { id: req.params.id } });
+    apiOk(res, 'Programme deleted', { id: req.params.id });
   } catch (error) {
     apiError(res, 400, toMessage(error));
   }
@@ -2191,6 +2255,45 @@ app.post('/api/programme-outcome/create', async (req, res) => {
       })),
     });
     apiOk(res, 'Programme outcomes created', { count: result.count }, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.get('/api/programme-outcome/list', async (req, res) => {
+  try {
+    const programmeId = String(req.query.programmeId ?? '').trim();
+    const outcomes = await prisma.programmeOutcome.findMany({
+      where: programmeId ? { programmeId } : undefined,
+      orderBy: { createdAt: 'desc' },
+    });
+    apiOk(res, 'Programme outcomes fetched', outcomes);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.put('/api/programme-outcome/update/:id', async (req, res) => {
+  try {
+    const description = String(req.body?.description ?? '').trim();
+    if (!description) {
+      apiError(res, 400, 'description is required');
+      return;
+    }
+    const updated = await prisma.programmeOutcome.update({
+      where: { id: req.params.id },
+      data: { description },
+    });
+    apiOk(res, 'Programme outcome updated', updated);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/programme-outcome/delete/:id', async (req, res) => {
+  try {
+    await prisma.programmeOutcome.delete({ where: { id: req.params.id } });
+    apiOk(res, 'Programme outcome deleted', { id: req.params.id });
   } catch (error) {
     apiError(res, 400, toMessage(error));
   }
@@ -2257,6 +2360,53 @@ app.post('/api/internship-outcome/create', async (req, res) => {
   }
 });
 
+app.get('/api/internship-outcome/list', async (req, res) => {
+  try {
+    const departmentId = String(req.query.departmentId ?? '').trim();
+    const type = String(req.query.type ?? '').trim();
+    const outcomes = await prisma.internshipOutcome.findMany({
+      where: {
+        ...(departmentId ? { departmentId } : {}),
+        ...(type ? { type } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    apiOk(res, 'Internship outcomes fetched', outcomes);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.put('/api/internship-outcome/update/:id', async (req, res) => {
+  try {
+    const description = String(req.body?.description ?? '').trim();
+    const type = String(req.body?.type ?? '').trim();
+    if (!description) {
+      apiError(res, 400, 'description is required');
+      return;
+    }
+    const updated = await prisma.internshipOutcome.update({
+      where: { id: req.params.id },
+      data: {
+        description,
+        type: type || undefined,
+      },
+    });
+    apiOk(res, 'Internship outcome updated', updated);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/internship-outcome/delete/:id', async (req, res) => {
+  try {
+    await prisma.internshipOutcome.delete({ where: { id: req.params.id } });
+    apiOk(res, 'Internship outcome deleted', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
 app.get('/api/outcome/list', async (req, res) => {
   try {
     const type = String(req.query.type ?? '').trim();
@@ -2309,6 +2459,39 @@ app.put('/api/internship/update', async (req, res) => {
       },
     });
     apiOk(res, 'Internship updated', internship);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.put('/api/internship/update/:id', async (req, res) => {
+  try {
+    const internship = await prisma.internship.update({
+      where: { id: req.params.id },
+      data: {
+        title: req.body?.title ?? undefined,
+        description: req.body?.description ?? undefined,
+        industryName: req.body?.industryName ?? undefined,
+        programmeId: req.body?.programmeId ?? undefined,
+        isFree: typeof req.body?.isFree === 'boolean' ? req.body.isFree : undefined,
+        isInternal: typeof req.body?.isInternal === 'boolean' ? req.body.isInternal : undefined,
+        gender: req.body?.gender ?? undefined,
+        duration: typeof req.body?.duration === 'number' ? req.body.duration : undefined,
+        vacancy: typeof req.body?.vacancy === 'number' ? req.body.vacancy : undefined,
+        status: req.body?.status ?? undefined,
+      },
+    });
+    apiOk(res, 'Internship updated', internship);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.delete('/api/internship/delete/:id', async (req, res) => {
+  try {
+    await prisma.internshipOutcomeMapping.deleteMany({ where: { internshipId: req.params.id } });
+    await prisma.internship.delete({ where: { id: req.params.id } });
+    apiOk(res, 'Internship deleted', { id: req.params.id });
   } catch (error) {
     apiError(res, 400, toMessage(error));
   }
