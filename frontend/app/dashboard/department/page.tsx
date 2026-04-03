@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { RoleDashboardShell } from '@/components/role-dashboard-shell';
+import { DepartmentDashboardSystem } from '@/components/department-dashboard-system';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Modal } from '@/components/ui/modal';
@@ -474,6 +475,8 @@ export default function DepartmentDashboardPage() {
             <Button variant="secondary" onClick={downloadFullDepartmentReport}>Download Full Department Report</Button>
             <Link href="/forgot-password" className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-900">Reset Password</Link>
           </div>
+
+          <DepartmentDashboardSystem departmentId={departmentProfile?.id} />
 
           <section className="grid gap-4 md:grid-cols-4">
             <Card className="rounded-[20px] p-4">

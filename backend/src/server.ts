@@ -55,6 +55,32 @@ const ipoRegistrationSchema = z.object({
   ipoSubCategory: z.string().trim().optional().nullable(),
 });
 
+const internshipCreateSchema = z.object({
+  title: z.string().trim().min(2),
+  description: z.string().trim().min(10),
+  type: z.enum(['INTERNAL', 'EXTERNAL']),
+  visibility: z.enum(['DEPARTMENT', 'COLLEGE', 'GLOBAL']).optional(),
+  departmentId: z.string().trim().optional(),
+  createdById: z.string().trim().optional(),
+  outcomeIds: z.array(z.string().trim().min(1)).optional(),
+});
+
+const programmeCreateSchema = z.object({
+  name: z.string().trim().min(2),
+  departmentId: z.string().trim().min(1),
+});
+
+const programmeOutcomeCreateSchema = z.object({
+  programmeId: z.string().trim().min(1),
+  description: z.string().trim().min(2),
+});
+
+const outcomeCreateSchema = z.object({
+  description: z.string().trim().min(2),
+  type: z.enum(['PROGRAM_OUTCOME', 'COURSE_OUTCOME']),
+  departmentId: z.string().trim().optional().nullable(),
+});
+
 function toMessage(error: unknown): string {
   if (error instanceof z.ZodError) return error.errors.map((item) => item.message).join(', ');
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -257,6 +283,16 @@ async function getCollegeIdForCoordinator(user: AuthUser): Promise<string | null
     orderBy: { createdAt: 'desc' },
   });
   return college?.id ?? null;
+}
+
+async function getDepartmentIdForCoordinator(user: AuthUser): Promise<string | null> {
+  if (user.role !== Role.DEPARTMENT_COORDINATOR) return null;
+  const department = await prisma.department.findFirst({
+    where: { coordinatorEmail: user.email },
+    select: { id: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  return department?.id ?? null;
 }
 
 async function upsertDepartmentCoordinatorUser(params: {
@@ -1963,6 +1999,285 @@ app.get('/api/documents/my', async (_req, res) => {
 app.get('/api/documents/:id/download', async (_req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.send(Buffer.from('%PDF-1.4\n%EOF'));
+});
+
+app.post('/api/internship/create', async (req, res) => {
+  try {
+    const payload = internshipCreateSchema.parse(req.body ?? {});
+    const authUser = await getAuthUser(req);
+    const scopedDepartmentId = payload.departmentId
+      || (authUser ? await getDepartmentIdForCoordinator(authUser) : null);
+    const createdById = payload.createdById || authUser?.id || null;
+
+    if (!scopedDepartmentId) {
+      apiError(res, 400, 'departmentId is required');
+      return;
+    }
+
+    const visibility = payload.type === 'EXTERNAL'
+      ? 'GLOBAL'
+      : (payload.visibility ?? 'DEPARTMENT');
+
+    const internship = await prisma.internship.create({
+      data: {
+        title: payload.title,
+        description: payload.description,
+        type: payload.type,
+        visibility,
+        departmentId: scopedDepartmentId,
+        createdById,
+        status: 'DRAFT',
+        isExternal: payload.type === 'EXTERNAL',
+      },
+    });
+
+    if (payload.outcomeIds?.length) {
+      await prisma.internshipOutcomeMapping.createMany({
+        data: payload.outcomeIds.map((outcomeId) => ({ internshipId: internship.id, outcomeId })),
+        skipDuplicates: true,
+      });
+    }
+
+    apiOk(res, 'Internship created', internship, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/internship/send-to-ipo', async (req, res) => {
+  try {
+    const internshipId = String(req.body?.internshipId ?? '').trim();
+    if (!internshipId) {
+      apiError(res, 400, 'internshipId is required');
+      return;
+    }
+
+    const internship = await prisma.internship.update({
+      where: { id: internshipId },
+      data: { status: 'IPO_SENT' },
+    });
+
+    const ipoRequest = await prisma.iPORequest.create({
+      data: {
+        internshipId: internship.id,
+        status: 'PENDING',
+      },
+    });
+
+    apiOk(res, 'Internship sent to IPO and Industry dashboards', {
+      internshipId: internship.id,
+      ipoRequestId: ipoRequest.id,
+      notifications: {
+        ipoDashboard: true,
+        industryDashboard: true,
+      },
+    });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/internship/publish', async (req, res) => {
+  try {
+    const internshipId = String(req.body?.internshipId ?? '').trim();
+    if (!internshipId) {
+      apiError(res, 400, 'internshipId is required');
+      return;
+    }
+
+    const internship = await prisma.internship.update({
+      where: { id: internshipId },
+      data: {
+        status: 'PUBLISHED_EXTERNAL',
+        isExternal: true,
+        visibility: 'GLOBAL',
+      },
+    });
+
+    apiOk(res, 'Internship published to global feed', internship);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.get('/api/internship/list', async (req, res) => {
+  try {
+    const type = String(req.query.type ?? '').trim();
+    const departmentId = String(req.query.departmentId ?? '').trim();
+    const internships = await prisma.internship.findMany({
+      where: {
+        ...(type ? { type } : {}),
+        ...(departmentId ? { departmentId } : {}),
+      },
+      include: {
+        outcomeMappings: { include: { outcome: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    apiOk(res, 'Internships fetched', internships);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.post('/api/programme/create', async (req, res) => {
+  try {
+    const payload = programmeCreateSchema.parse(req.body ?? {});
+    const programme = await prisma.program.create({
+      data: {
+        name: payload.name,
+        departmentId: payload.departmentId,
+      },
+    });
+    apiOk(res, 'Programme created', programme, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/programme/add-outcome', async (req, res) => {
+  try {
+    const payload = programmeOutcomeCreateSchema.parse(req.body ?? {});
+    const outcome = await prisma.programmeOutcome.create({
+      data: {
+        programmeId: payload.programmeId,
+        description: payload.description,
+      },
+    });
+    apiOk(res, 'Programme outcome added', outcome, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.get('/api/programme/list', async (req, res) => {
+  try {
+    const departmentId = String(req.query.departmentId ?? '').trim();
+    const programmes = await prisma.program.findMany({
+      where: departmentId ? { departmentId } : undefined,
+      include: { outcomes: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    apiOk(res, 'Programmes fetched', programmes);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.post('/api/outcome/add', async (req, res) => {
+  try {
+    const payload = outcomeCreateSchema.parse(req.body ?? {});
+    const outcome = await prisma.internshipOutcome.create({
+      data: {
+        description: payload.description,
+        type: payload.type,
+        departmentId: payload.departmentId || null,
+      },
+    });
+    apiOk(res, 'Outcome created', outcome, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.get('/api/outcome/list', async (req, res) => {
+  try {
+    const type = String(req.query.type ?? '').trim();
+    const departmentId = String(req.query.departmentId ?? '').trim();
+    const outcomes = await prisma.internshipOutcome.findMany({
+      where: {
+        ...(type ? { type } : {}),
+        ...(departmentId ? { departmentId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    apiOk(res, 'Outcomes fetched', outcomes);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/ipo/requests', async (_req, res) => {
+  try {
+    const requests = await prisma.iPORequest.findMany({
+      include: { internship: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    apiOk(res, 'IPO requests fetched', requests);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.post('/api/ipo/approve', async (req, res) => {
+  try {
+    const ipoRequestId = String(req.body?.ipoRequestId ?? '').trim();
+    if (!ipoRequestId) {
+      apiError(res, 400, 'ipoRequestId is required');
+      return;
+    }
+    const request = await prisma.iPORequest.update({
+      where: { id: ipoRequestId },
+      data: { status: 'APPROVED' },
+    });
+    await prisma.internship.update({
+      where: { id: request.internshipId },
+      data: { status: 'PUBLISHED' },
+    });
+    apiOk(res, 'IPO request approved', request);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/ai/outcome-suggest', async (req, res) => {
+  const title = String(req.body?.title ?? '').trim();
+  const description = String(req.body?.description ?? '').trim();
+  const seed = `${title} ${description}`.toLowerCase();
+  const suggestions = [
+    `Apply ethical standards in ${seed.includes('health') ? 'healthcare' : 'domain'} practice`,
+    'Demonstrate problem solving with measurable business impact',
+    'Communicate project outcomes to multidisciplinary stakeholders',
+  ];
+  apiOk(res, 'Outcome suggestions generated', suggestions);
+});
+
+app.post('/api/ai/recommend-internships', async (req, res) => {
+  try {
+    const departmentId = String(req.body?.departmentId ?? '').trim();
+    const skills = Array.isArray(req.body?.skills) ? req.body.skills.map((item: unknown) => String(item).toLowerCase()) : [];
+    const internships = await prisma.internship.findMany({
+      where: {
+        OR: [
+          { departmentId: departmentId || undefined },
+          { visibility: 'COLLEGE' },
+          { visibility: 'GLOBAL' },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    const ranked = internships
+      .map((item) => ({
+        ...item,
+        score: skills.reduce((acc: number, skill: string) => {
+          const haystack = `${item.title} ${item.description ?? ''}`.toLowerCase();
+          return acc + (haystack.includes(skill) ? 1 : 0);
+        }, 0),
+      }))
+      .sort((a, b) => b.score - a.score);
+    apiOk(res, 'Internship recommendations ready', ranked);
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.post('/api/ai/generate-description', async (req, res) => {
+  const title = String(req.body?.title ?? 'Internship').trim();
+  const department = String(req.body?.department ?? 'department').trim();
+  apiOk(res, 'Generated internship description', {
+    description: `${title} is an industry-aligned opportunity designed for ${department} students to build applied skills, deliver measurable outcomes, and collaborate with mentors through a structured internship lifecycle.`,
+  });
 });
 
 app.use((req, res) => {
