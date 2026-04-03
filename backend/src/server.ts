@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import bcrypt from 'bcrypt';
-import { Prisma, PrismaClient, Role } from '@prisma/client';
+import { Gender, InternshipStatus, InternshipType, Prisma, PrismaClient, Role, TargetType } from '@prisma/client';
 import { z } from 'zod';
 import { randomInt, randomUUID } from 'crypto';
 
@@ -58,21 +58,21 @@ const ipoRegistrationSchema = z.object({
 const internshipCreateSchema = z.object({
   title: z.string().trim().min(2),
   description: z.string().trim().min(2),
-  targetType: z.enum(['INTERNAL', 'EXTERNAL']).optional(),
+  targetType: z.nativeEnum(TargetType).optional(),
   visibility: z.enum(['DEPARTMENT', 'COLLEGE', 'GLOBAL']).optional(),
   departmentId: z.string().trim().optional().nullable(),
   createdById: z.string().trim().optional().nullable(),
-  industryName: z.string().trim().min(1),
+  industryName: z.string().trim().min(1).optional().nullable(),
   isRegistered: z.boolean().optional(),
   programmeId: z.string().trim().optional().nullable(),
-  gender: z.enum(['BOYS', 'GIRLS', 'BOTH']).optional(),
-  type: z.enum(['FREE', 'PAID', 'STIPEND']).optional(),
+  gender: z.nativeEnum(Gender).optional().nullable(),
+  type: z.nativeEnum(InternshipType).optional().nullable(),
   fee: z.coerce.number().min(0).optional().nullable(),
   stipend: z.coerce.number().min(0).optional().nullable(),
   duration: z.coerce.number().int().min(60).optional(),
   vacancy: z.coerce.number().int().min(1).optional(),
   outcomeIds: z.array(z.string().trim().min(1)).optional(),
-  status: z.enum(['DRAFT', 'IPO_SENT', 'PUBLISHED_INTERNAL', 'PUBLISHED_EXTERNAL']).optional(),
+  status: z.nativeEnum(InternshipStatus).optional(),
 });
 
 const programmeCreateSchema = z.object({
@@ -1100,7 +1100,7 @@ app.get('/api/department/internships', async (req, res) => {
       description: item.description ?? '',
       ipo_id: item.ipoId ?? null,
       ipo_name: item.ipo?.name ?? '-',
-      status: 'PUBLISHED',
+      status: item.status,
       vacancy: null,
       applications_count: item.applications.length,
       created_at: item.createdAt.toISOString(),
@@ -1122,10 +1122,7 @@ app.get('/api/applications/internal', async (req, res) => {
     const applications = await prisma.internshipApplication.findMany({
       where: {
         internship: { departmentId: context.department.id },
-        OR: [
-          { isInternal: true },
-          { isInternal: null, studentId: { not: null } },
-        ],
+        isInternal: true,
       },
       include: { internship: { include: { programme: true } }, student: { include: { user: true } } },
       orderBy: { createdAt: 'desc' },
@@ -1159,10 +1156,7 @@ app.get('/api/applications/external', async (req, res) => {
     const applications = await prisma.internshipApplication.findMany({
       where: {
         internship: { departmentId: context.department.id },
-        OR: [
-          { isInternal: false },
-          { isInternal: null, studentId: null },
-        ],
+        isInternal: false,
       },
       include: { internship: { include: { programme: true } }, user: true },
       orderBy: { createdAt: 'desc' },
@@ -2054,10 +2048,11 @@ app.post('/api/internship/create', async (req, res) => {
       return;
     }
 
-    const targetType = payload.targetType ?? 'INTERNAL';
+    const targetType = payload.targetType ?? TargetType.INTERNAL;
     const visibility = targetType === 'EXTERNAL'
       ? 'GLOBAL'
       : (payload.visibility ?? 'DEPARTMENT');
+    const industryName = targetType === TargetType.EXTERNAL ? null : (payload.industryName ?? null);
 
     const internship = await prisma.internship.create({
       data: {
@@ -2065,11 +2060,11 @@ app.post('/api/internship/create', async (req, res) => {
         description: payload.description,
         targetType,
         isInternal: targetType === 'INTERNAL',
-        industryName: payload.industryName,
+        industryName,
         isRegistered: payload.isRegistered ?? false,
         programmeId: payload.programmeId ?? null,
-        gender: payload.gender ?? (targetType === 'EXTERNAL' ? 'BOTH' : null),
-        type: payload.type ?? 'FREE',
+        gender: payload.gender ?? (targetType === TargetType.EXTERNAL ? Gender.BOTH : null),
+        type: payload.type ?? InternshipType.FREE,
         fee: payload.fee ?? null,
         stipend: payload.stipend ?? null,
         duration: payload.duration ?? 60,
@@ -2077,8 +2072,8 @@ app.post('/api/internship/create', async (req, res) => {
         visibility,
         departmentId: scopedDepartmentId,
         createdById,
-        status: payload.status ?? 'DRAFT',
-        isExternal: targetType === 'EXTERNAL',
+        status: payload.status ?? InternshipStatus.DRAFT,
+        isExternal: targetType === TargetType.EXTERNAL,
       },
     });
 
@@ -2105,7 +2100,7 @@ app.post('/api/internship/send-to-ipo', async (req, res) => {
 
     const internship = await prisma.internship.update({
       where: { id: internshipId },
-      data: { status: 'IPO_SENT', targetType: 'INTERNAL', isExternal: false, isInternal: true },
+      data: { status: InternshipStatus.IPO_SENT, targetType: TargetType.INTERNAL, isExternal: false, isInternal: true },
     });
 
     const ipoRequest = await prisma.iPORequest.create({
@@ -2131,20 +2126,21 @@ app.post('/api/internship/send-to-ipo', async (req, res) => {
 app.post('/api/internship/publish', async (req, res) => {
   try {
     const internshipId = String(req.body?.internshipId ?? '').trim();
-    const targetType = String(req.body?.targetType ?? '').trim().toUpperCase();
+    const targetType = String(req.body?.targetType ?? '').trim().toUpperCase() === TargetType.INTERNAL
+      ? TargetType.INTERNAL
+      : TargetType.EXTERNAL;
     if (!internshipId) {
       apiError(res, 400, 'internshipId is required');
       return;
     }
 
-    const status = targetType === 'INTERNAL' ? 'PUBLISHED_INTERNAL' : 'PUBLISHED_EXTERNAL';
     const internship = await prisma.internship.update({
       where: { id: internshipId },
       data: {
-        status,
-        isExternal: targetType !== 'INTERNAL',
-        targetType: targetType === 'INTERNAL' ? 'INTERNAL' : 'EXTERNAL',
-        visibility: targetType === 'INTERNAL' ? 'DEPARTMENT' : 'GLOBAL',
+        status: InternshipStatus.PUBLISHED,
+        isExternal: targetType !== TargetType.INTERNAL,
+        targetType,
+        visibility: targetType === TargetType.INTERNAL ? 'DEPARTMENT' : 'GLOBAL',
       },
     });
 
@@ -2156,7 +2152,10 @@ app.post('/api/internship/publish', async (req, res) => {
 
 app.get('/api/internship/list', async (req, res) => {
   try {
-    const targetType = String(req.query.targetType ?? '').trim();
+    const rawTargetType = String(req.query.targetType ?? '').trim().toUpperCase();
+    const targetType: TargetType | null = rawTargetType === TargetType.INTERNAL || rawTargetType === TargetType.EXTERNAL
+      ? rawTargetType as TargetType
+      : null;
     const departmentId = String(req.query.departmentId ?? '').trim();
     const internships = await prisma.internship.findMany({
       where: {
@@ -2526,7 +2525,7 @@ app.post('/api/ipo/approve', async (req, res) => {
     });
     await prisma.internship.update({
       where: { id: request.internshipId },
-      data: { status: 'PUBLISHED' },
+      data: { status: InternshipStatus.PUBLISHED },
     });
     apiOk(res, 'IPO request approved', request);
   } catch (error) {

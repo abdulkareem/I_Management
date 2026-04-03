@@ -32,7 +32,8 @@ type Application = {
   status: 'APPLIED' | 'APPROVED' | 'REJECTED' | string;
 };
 
-type InternshipAction = 'SEND_TO_IPO' | 'PUBLISH_INTERNAL' | 'SAVE_DRAFT' | 'PUBLISH_EXTERNAL';
+type InternshipAction = 'SEND_TO_IPO' | 'PUBLISH' | 'SAVE_DRAFT';
+type ActiveCard = 'programmes' | 'pos' | 'internship-outcomes' | null;
 
 export function DepartmentDashboardSystem({ departmentId }: { departmentId?: string }) {
   const [programmes, setProgrammes] = useState<Programme[]>([]);
@@ -52,6 +53,7 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
   const [selectedIndustry, setSelectedIndustry] = useState('');
   const [customIndustry, setCustomIndustry] = useState('');
   const [internshipType, setInternshipType] = useState<'FREE' | 'PAID' | 'STIPEND'>('FREE');
+  const [activeCard, setActiveCard] = useState<ActiveCard>(null);
 
   const [editingInternshipId, setEditingInternshipId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<Internship>>({});
@@ -188,16 +190,15 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
 
     const action = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') as InternshipAction | null;
     const resolvedIndustry = industryMode === 'REGISTERED' ? selectedIndustry : customIndustry.trim();
-    if (!resolvedIndustry) {
+    if (targetType === 'INTERNAL' && !resolvedIndustry) {
       setError('Please choose or enter an industry.');
       return;
     }
 
     const statusMap: Record<InternshipAction, string> = {
       SEND_TO_IPO: 'IPO_SENT',
-      PUBLISH_INTERNAL: 'PUBLISHED_INTERNAL',
+      PUBLISH: 'PUBLISHED',
       SAVE_DRAFT: 'DRAFT',
-      PUBLISH_EXTERNAL: 'PUBLISHED_EXTERNAL',
     };
 
     const status = action ? statusMap[action] : 'DRAFT';
@@ -210,10 +211,10 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
           description: String(form.get('description') ?? ''),
           targetType,
           programmeId: targetType === 'INTERNAL' ? selectedProgramme : null,
-          industryName: resolvedIndustry,
+          industryName: targetType === 'INTERNAL' ? resolvedIndustry : null,
           isRegistered: industryMode === 'REGISTERED',
-          gender: targetType === 'EXTERNAL' ? String(form.get('gender') ?? 'BOTH') : null,
-          type: targetType === 'EXTERNAL' ? internshipType : 'FREE',
+          gender: targetType === 'EXTERNAL' ? String(form.get('gender') ?? 'BOTH') : 'BOTH',
+          type: internshipType,
           fee: targetType === 'EXTERNAL' && internshipType === 'PAID' ? Number(form.get('fee') ?? 0) : null,
           stipend: targetType === 'EXTERNAL' && internshipType === 'STIPEND' ? Number(form.get('stipend') ?? 0) : null,
           duration,
@@ -231,13 +232,6 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
         });
       }
 
-      if (action === 'PUBLISH_EXTERNAL') {
-        await fetchWithSession('/api/internship/publish', {
-          method: 'POST',
-          body: JSON.stringify({ internshipId: createRes.data?.id, targetType: 'EXTERNAL' }),
-        });
-      }
-
       resetInternshipForm();
     }, 'Internship workflow completed successfully.');
   }
@@ -249,13 +243,19 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
       <Card className="p-4 space-y-3">
         <h2 className="font-semibold">Department Actions</h2>
         <div className="grid gap-2 md:grid-cols-3 text-sm">
-          <div className="rounded border p-3"><p className="font-medium">Edit Programmes</p><p className="text-xs text-slate-600">Manage programme records and naming.</p></div>
-          <div className="rounded border p-3"><p className="font-medium">Edit POs</p><p className="text-xs text-slate-600">Maintain programme outcomes for each programme.</p></div>
-          <div className="rounded border p-3"><p className="font-medium">Edit Internship CO / IPO</p><p className="text-xs text-slate-600">Define internship outcome libraries.</p></div>
+          <button type="button" className="rounded border p-3 text-left" onClick={() => setActiveCard(activeCard === 'programmes' ? null : 'programmes')}>
+            <p className="font-medium">Edit Programmes</p><p className="text-xs text-slate-600">Manage programme records and naming.</p>
+          </button>
+          <button type="button" className="rounded border p-3 text-left" onClick={() => setActiveCard(activeCard === 'pos' ? null : 'pos')}>
+            <p className="font-medium">Edit POs</p><p className="text-xs text-slate-600">Maintain programme outcomes for each programme.</p>
+          </button>
+          <button type="button" className="rounded border p-3 text-left" onClick={() => setActiveCard(activeCard === 'internship-outcomes' ? null : 'internship-outcomes')}>
+            <p className="font-medium">Edit Internship CO / IPO</p><p className="text-xs text-slate-600">Define internship outcome libraries.</p>
+          </button>
         </div>
       </Card>
 
-      <Card className="p-4 space-y-3">
+      {activeCard === 'programmes' ? <Card className="p-4 space-y-3">
         <h2 className="font-semibold">Edit Programmes</h2>
         <form className="space-y-2" onSubmit={addProgramme}>
           <input name="name" className="w-full rounded border px-3 py-2" placeholder="Programme Name" required />
@@ -276,9 +276,9 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
             </div>
           ))}
         </div>
-      </Card>
+      </Card> : null}
 
-      <Card className="p-4 space-y-3">
+      {activeCard === 'pos' ? <Card className="p-4 space-y-3">
         <h2 className="font-semibold">Edit POs</h2>
         <form className="space-y-2" onSubmit={saveProgrammeOutcomes}>
           <select className="w-full rounded border px-3 py-2" value={selectedProgramme} onChange={(e) => setSelectedProgramme(e.target.value)} required>
@@ -293,9 +293,9 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
             <Button type="submit">Save</Button>
           </div>
         </form>
-      </Card>
+      </Card> : null}
 
-      <Card className="p-4 space-y-3">
+      {activeCard === 'internship-outcomes' ? <Card className="p-4 space-y-3">
         <h2 className="font-semibold">Edit Internship CO / IPO</h2>
         <form className="space-y-2" onSubmit={saveInternshipOutcomes}>
           {internshipOutcomeDrafts.map((draft, index) => (
@@ -312,7 +312,7 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
             <Button type="submit">Save Outcome</Button>
           </div>
         </form>
-      </Card>
+      </Card> : null}
 
       <Card className="p-4 space-y-3">
         <h2 className="font-semibold">Create Internship</h2>
@@ -355,7 +355,6 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
             </>
           ) : (
             <>
-              <input className="rounded border px-3 py-2" placeholder="Industry name" value={customIndustry} onChange={(e) => setCustomIndustry(e.target.value)} required />
               <select name="gender" className="rounded border px-3 py-2" defaultValue="BOTH">
                 <option value="BOYS">Boys</option>
                 <option value="GIRLS">Girls</option>
@@ -379,16 +378,17 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
           <input name="vacancy" type="number" min={1} defaultValue={1} className="rounded border px-3 py-2" placeholder="Vacancy" required />
 
           <div className="md:col-span-2 flex flex-wrap gap-2">
-            {targetType === 'INTERNAL' ? (
-              industryMode === 'REGISTERED'
-                ? <Button type="submit" value="SEND_TO_IPO">Send to IPO</Button>
-                : <Button type="submit" value="PUBLISH_INTERNAL">Publish</Button>
+            <Button type="submit" value="SAVE_DRAFT" variant="secondary">Save Draft</Button>
+            {targetType === 'INTERNAL' && industryMode === 'REGISTERED' ? (
+              <Button type="submit" value="SEND_TO_IPO">Send to IPO</Button>
             ) : (
-              <>
-                <Button type="submit" value="SAVE_DRAFT" variant="secondary">Save Draft</Button>
-                <Button type="submit" value="PUBLISH_EXTERNAL">Publish</Button>
-              </>
+              <Button type="submit" value="PUBLISH">Publish</Button>
             )}
+            {/* 
+              Internal: Registered -> Send to IPO
+              Internal: Manual/Not Registered -> Publish
+              External -> Publish 
+            */}
           </div>
         </form>
       </Card>
@@ -411,8 +411,7 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
                     <select value={String(draft.status ?? item.status)} onChange={(e) => setEditDraft((prev) => ({ ...prev, status: e.target.value }))} className="rounded border px-2 py-1">
                       <option value="DRAFT">DRAFT</option>
                       <option value="IPO_SENT">IPO_SENT</option>
-                      <option value="PUBLISHED_INTERNAL">PUBLISHED_INTERNAL</option>
-                      <option value="PUBLISHED_EXTERNAL">PUBLISHED_EXTERNAL</option>
+                      <option value="PUBLISHED">PUBLISHED</option>
                     </select>
                   ) : null}
                   <Button variant="secondary" onClick={() => { setEditingInternshipId(item.id); setEditDraft(item); }}>Edit</Button>
