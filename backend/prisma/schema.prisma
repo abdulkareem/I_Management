@@ -96,6 +96,9 @@ model Department {
 
   college  College   @relation(fields: [collegeId], references: [id], onDelete: Cascade)
   students Student[]
+  programmes Program[]
+  internships Internship[]
+  internshipOutcomes InternshipOutcome[]
 }
 
 model Student {
@@ -162,14 +165,22 @@ model Internship {
   description String?
   ipoId       String?
   createdById String?
+  type        String   @default("INTERNAL")
+  visibility  String   @default("DEPARTMENT")
+  departmentId String?
+  status      String   @default("DRAFT")
+  isExternal  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   ipo       Ipo?  @relation(fields: [ipoId], references: [id], onDelete: SetNull)
   createdBy User? @relation("CreatedInternships", fields: [createdById], references: [id], onDelete: SetNull)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   applications InternshipApplication[]
   targets      InternshipTarget[]
+  outcomeMappings InternshipOutcomeMapping[]
+  ipoRequests IPORequest[]
 }
 
 model InternshipTarget {
@@ -220,4 +231,59 @@ model Result {
   application InternshipApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   student     User                  @relation("StudentResults", fields: [studentId], references: [id], onDelete: Cascade)
   college     College?              @relation(fields: [collegeId], references: [id], onDelete: SetNull)
+}
+
+model Program {
+  id           String   @id @default(uuid())
+  name         String
+  departmentId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  outcomes   ProgrammeOutcome[]
+}
+
+model ProgrammeOutcome {
+  id          String   @id @default(uuid())
+  programmeId String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  programme Program @relation(fields: [programmeId], references: [id], onDelete: Cascade)
+}
+
+model InternshipOutcome {
+  id           String   @id @default(uuid())
+  description  String
+  type         String
+  departmentId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  mappings InternshipOutcomeMapping[]
+}
+
+model InternshipOutcomeMapping {
+  id           String   @id @default(uuid())
+  internshipId String
+  outcomeId    String
+  createdAt    DateTime @default(now())
+
+  internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  outcome InternshipOutcome @relation(fields: [outcomeId], references: [id], onDelete: Cascade)
+
+  @@unique([internshipId, outcomeId])
+}
+
+model IPORequest {
+  id           String   @id @default(uuid())
+  internshipId String
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
 }
