@@ -32,11 +32,13 @@ export function RoleDashboardShell({
   title,
   subtitle,
   allowedRoles,
+  spaceLabel,
   children,
 }: {
   title: string;
   subtitle: string;
   allowedRoles: Role[];
+  spaceLabel?: string;
   children: (session: SessionProfile) => ReactNode;
 }) {
   const router = useRouter();
@@ -63,6 +65,7 @@ export function RoleDashboardShell({
   }
 
   const Icon = roleIcon[session.user.role];
+  const headerSpaceLabel = spaceLabel?.trim() || roleLabel[session.user.role];
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -71,7 +74,7 @@ export function RoleDashboardShell({
           <div className="flex items-start gap-4">
             <div className="rounded-[22px] bg-indigo-100 p-3 text-indigo-700"><Icon className="h-6 w-6" /></div>
             <div>
-              <p className="text-sm uppercase tracking-[0.24em] text-indigo-700">{roleLabel[session.user.role]}</p>
+              <p className="text-sm uppercase tracking-[0.24em] text-indigo-700">{headerSpaceLabel}</p>
               <h1 className="mt-2 text-3xl font-semibold text-slate-900">{title}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">{subtitle}</p>
             </div>

@@ -726,9 +726,34 @@ app.delete('/api/departments/:id', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/college/control-center', async (_req, res) => {
+app.get('/api/dashboard/college/control-center', async (req, res) => {
   try {
+    const authUser = await getAuthUser(req);
+    if (!authUser) {
+      apiError(res, 401, 'Unauthorized');
+      return;
+    }
+
+    const scopedCollegeId = authUser.role === Role.COLLEGE_COORDINATOR
+      ? await getCollegeIdForCoordinator(authUser)
+      : null;
+
+    if (authUser.role === Role.COLLEGE_COORDINATOR && !scopedCollegeId) {
+      apiError(res, 404, 'College not found for this coordinator');
+      return;
+    }
+
+    const internshipScope: Prisma.InternshipWhereInput = scopedCollegeId
+      ? {
+        OR: [
+          { targets: { some: { collegeId: scopedCollegeId } } },
+          { department: { collegeId: scopedCollegeId } },
+        ],
+      }
+      : {};
+
     const [
+      college,
       totalInternships,
       totalApplications,
       selectedApplications,
@@ -737,20 +762,32 @@ app.get('/api/dashboard/college/control-center', async (_req, res) => {
       internships,
       applications,
     ] = await Promise.all([
-      prisma.internship.count(),
-      prisma.internshipApplication.count(),
-      prisma.internshipApplication.count({ where: { status: 'SELECTED' } }),
+      scopedCollegeId
+        ? prisma.college.findUnique({ where: { id: scopedCollegeId }, select: { id: true, name: true } })
+        : Promise.resolve(null),
+      prisma.internship.count({ where: internshipScope }),
+      prisma.internshipApplication.count({ where: { internship: internshipScope } }),
+      prisma.internshipApplication.count({ where: { internship: internshipScope, status: 'SELECTED' } }),
       prisma.department.findMany({
+        where: scopedCollegeId ? { collegeId: scopedCollegeId } : undefined,
         include: {
           students: { select: { id: true } },
         },
         orderBy: { name: 'asc' },
       }),
       prisma.ipo.findMany({
-        include: { internships: { select: { id: true } } },
+        where: scopedCollegeId
+          ? {
+            internships: {
+              some: internshipScope,
+            },
+          }
+          : undefined,
+        include: { internships: { where: internshipScope, select: { id: true } } },
         orderBy: { name: 'asc' },
       }),
       prisma.internship.findMany({
+        where: internshipScope,
         include: {
           ipo: { select: { name: true } },
           applications: { select: { id: true } },
@@ -760,6 +797,9 @@ app.get('/api/dashboard/college/control-center', async (_req, res) => {
         take: 100,
       }),
       prisma.internshipApplication.findMany({
+        where: {
+          internship: internshipScope,
+        },
         include: {
           internship: { select: { title: true } },
           student: {
@@ -795,6 +835,7 @@ app.get('/api/dashboard/college/control-center', async (_req, res) => {
     }));
 
     const payload = {
+      college,
       summary: {
         totalInternships,
         activeInternships: totalInternships,
