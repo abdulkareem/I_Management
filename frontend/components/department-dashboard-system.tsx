@@ -1,240 +1,322 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { fetchWithSession } from '@/lib/auth';
 
+type Programme = { id: string; name: string; outcomes: Array<{ id: string; description: string }> };
+type InternshipOutcome = { id: string; description: string; type: 'PO' | 'IPO' | 'CO' };
 type Internship = {
   id: string;
   title: string;
-  type: 'INTERNAL' | 'EXTERNAL';
-  visibility: 'DEPARTMENT' | 'COLLEGE' | 'GLOBAL';
+  description: string | null;
+  industryName: string | null;
+  programmeId: string | null;
+  programme?: { id: string; name: string } | null;
+  isInternal: boolean;
+  isFree: boolean;
+  gender: string | null;
+  duration: number | null;
+  vacancy: number | null;
   status: string;
+  outcomeMappings: Array<{ id: string; outcome: InternshipOutcome }>;
 };
 
-type Programme = { id: string; name: string; outcomes: Array<{ id: string; description: string }> };
-type Outcome = { id: string; description: string; type: 'PROGRAM_OUTCOME' | 'COURSE_OUTCOME' };
-
-type Props = { departmentId?: string; createdById?: string };
-
-export function DepartmentDashboardSystem({ departmentId, createdById }: Props) {
-  const [internships, setInternships] = useState<Internship[]>([]);
+export function DepartmentDashboardSystem({ departmentId }: { departmentId?: string }) {
   const [programmes, setProgrammes] = useState<Programme[]>([]);
-  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
-  const [type, setType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
-  const [visibility, setVisibility] = useState<'DEPARTMENT' | 'COLLEGE'>('DEPARTMENT');
-  const [selectedOutcomes, setSelectedOutcomes] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>('');
+  const [internshipOutcomes, setInternshipOutcomes] = useState<InternshipOutcome[]>([]);
+  const [internships, setInternships] = useState<Internship[]>([]);
+  const [programmeOutcomeDrafts, setProgrammeOutcomeDrafts] = useState<string[]>(['']);
+  const [internshipOutcomeDrafts, setInternshipOutcomeDrafts] = useState<Array<{ type: 'PO' | 'IPO' | 'CO'; description: string }>>([{ type: 'PO', description: '' }]);
+  const [selectedProgramme, setSelectedProgramme] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<Partial<Internship>>({});
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
-  async function loadAll() {
-    const [internshipRes, programmeRes, outcomeRes] = await Promise.all([
-      fetchWithSession<Internship[]>('/api/internship/list'),
+  const load = async () => {
+    const [programmeRes, outcomeRes, internshipRes] = await Promise.all([
       fetchWithSession<Programme[]>(`/api/programme/list${departmentId ? `?departmentId=${departmentId}` : ''}`),
-      fetchWithSession<Outcome[]>(`/api/outcome/list${departmentId ? `?departmentId=${departmentId}` : ''}`),
+      fetchWithSession<InternshipOutcome[]>(`/api/outcome/list${departmentId ? `?departmentId=${departmentId}` : ''}`),
+      fetchWithSession<Internship[]>(`/api/internship/list${departmentId ? `?departmentId=${departmentId}` : ''}`),
     ]);
-    setInternships(internshipRes.data ?? []);
     setProgrammes(programmeRes.data ?? []);
-    setOutcomes(outcomeRes.data ?? []);
-  }
+    setInternshipOutcomes(outcomeRes.data ?? []);
+    setInternships(internshipRes.data ?? []);
+  };
 
   useEffect(() => {
-    void loadAll();
-  }, []);
+    void load();
+  }, [departmentId]);
 
-  const isInternal = type === 'INTERNAL';
-  const isExternal = type === 'EXTERNAL';
+  const groupedInternshipOutcomes = useMemo(() => ({
+    PO: internshipOutcomes.filter((item) => item.type === 'PO'),
+    IPO: internshipOutcomes.filter((item) => item.type === 'IPO'),
+    CO: internshipOutcomes.filter((item) => item.type === 'CO'),
+  }), [internshipOutcomes]);
 
-  const mappableOutcomes = useMemo(
-    () => outcomes.filter((item) => item.type === 'PROGRAM_OUTCOME' || item.type === 'COURSE_OUTCOME'),
-    [outcomes],
-  );
+  const programmeOutcomesByProgramme = useMemo(() => Object.fromEntries(programmes.map((programme) => [programme.id, programme.outcomes ?? []])), [programmes]);
 
-  async function handleCreateInternship(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
+  const resetNotice = () => {
+    setError('');
     setMessage('');
-    const form = new FormData(event.currentTarget);
+  };
 
+  async function addProgramme(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    resetNotice();
+    const form = new FormData(event.currentTarget);
+    try {
+      await fetchWithSession('/api/programme/create', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: String(form.get('name') ?? ''),
+          departmentId,
+        }),
+      });
+      event.currentTarget.reset();
+      setMessage('Programme saved.');
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to save programme');
+    }
+  }
+
+  async function saveProgrammeOutcomes(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    resetNotice();
+    try {
+      await fetchWithSession('/api/programme-outcome/create', {
+        method: 'POST',
+        body: JSON.stringify({
+          programmeId: selectedProgramme,
+          outcomes: programmeOutcomeDrafts.map((item) => item.trim()).filter(Boolean),
+        }),
+      });
+      setProgrammeOutcomeDrafts(['']);
+      setMessage('Programme outcomes saved.');
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to save programme outcomes');
+    }
+  }
+
+  async function saveInternshipOutcomes(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    resetNotice();
+    try {
+      await fetchWithSession('/api/internship-outcome/create', {
+        method: 'POST',
+        body: JSON.stringify({
+          departmentId,
+          outcomes: internshipOutcomeDrafts.filter((item) => item.description.trim()).map((item) => ({ ...item, description: item.description.trim() })),
+        }),
+      });
+      setInternshipOutcomeDrafts([{ type: 'PO', description: '' }]);
+      setMessage('Internship outcomes saved.');
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to save internship outcomes');
+    }
+  }
+
+  async function createInternship(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    resetNotice();
+    const form = new FormData(event.currentTarget);
+    const duration = Number(form.get('duration') ?? 0);
+    if (duration < 60) {
+      setError('Duration must be at least 60 hours.');
+      return;
+    }
+
+    const outcomeIds = form.getAll('outcomeIds').map((entry) => String(entry));
     try {
       await fetchWithSession('/api/internship/create', {
         method: 'POST',
         body: JSON.stringify({
           title: String(form.get('title') ?? ''),
           description: String(form.get('description') ?? ''),
-          type,
-          visibility: isInternal ? visibility : 'GLOBAL',
+          isInternal: Boolean(form.get('isInternal')),
+          industryName: String(form.get('industryName') ?? ''),
+          programmeId: String(form.get('programmeId') ?? ''),
+          isFree: Boolean(form.get('isFree')),
+          gender: String(form.get('gender') ?? 'BOTH'),
+          duration,
+          vacancy: Number(form.get('vacancy') ?? 1),
           departmentId,
-          createdById,
-          outcomeIds: selectedOutcomes,
+          outcomeIds,
         }),
       });
-      setSelectedOutcomes([]);
-      setMessage('Internship saved successfully.');
       event.currentTarget.reset();
-      await loadAll();
+      setMessage('Internship sent to IPO.');
+      await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Failed to create internship');
     }
   }
 
+  async function saveInternshipChanges(id: string) {
+    resetNotice();
+    try {
+      await fetchWithSession('/api/internship/update', {
+        method: 'PUT',
+        body: JSON.stringify({
+          id,
+          title: editDraft.title,
+          description: editDraft.description,
+          industryName: editDraft.industryName,
+          programmeId: editDraft.programmeId,
+          status: editDraft.status,
+          vacancy: editDraft.vacancy ? Number(editDraft.vacancy) : undefined,
+          duration: editDraft.duration ? Number(editDraft.duration) : undefined,
+        }),
+      });
+      setEditingId(null);
+      setEditDraft({});
+      setMessage('Internship updated.');
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to update internship');
+    }
+  }
+
   return (
-    <Card className="mb-6 p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Department Dashboard System</h2>
-        {message ? <span className="text-sm text-emerald-600">{message}</span> : null}
-      </div>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+    <div className="space-y-4">
+      {(message || error) ? <p className={`text-sm ${error ? 'text-red-600' : 'text-emerald-700'}`}>{error || message}</p> : null}
 
-      <form onSubmit={handleCreateInternship} className="grid gap-3 md:grid-cols-2">
-        <input name="title" placeholder="Internship title" className="rounded border px-3 py-2" required />
-        <select value={type} onChange={(e) => setType(e.target.value as 'INTERNAL' | 'EXTERNAL')} className="rounded border px-3 py-2">
-          <option value="INTERNAL">INTERNAL</option>
-          <option value="EXTERNAL">EXTERNAL</option>
-        </select>
-        <textarea name="description" placeholder="Description" className="rounded border px-3 py-2 md:col-span-2" required />
-
-        {isInternal ? (
-          <select value={visibility} onChange={(e) => setVisibility(e.target.value as 'DEPARTMENT' | 'COLLEGE')} className="rounded border px-3 py-2">
-            <option value="DEPARTMENT">Department visibility</option>
-            <option value="COLLEGE">College visibility</option>
-          </select>
-        ) : null}
-
-        <div className="md:col-span-2 space-y-2">
-          <p className="text-sm font-medium">Outcome mapping</p>
-          <div className="grid gap-2 md:grid-cols-2">
-            {mappableOutcomes.map((item) => (
-              <label key={item.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={selectedOutcomes.includes(item.id)}
-                  onChange={(e) => {
-                    setSelectedOutcomes((prev) => (e.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id)));
-                  }}
-                />
-                {item.description}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div className="md:col-span-2 flex gap-2">
-          <Button type="submit">Create Internship</Button>
-        </div>
-      </form>
-
-      <div className="grid gap-2 md:grid-cols-3">
-        {internships.slice(0, 6).map((item) => (
-          <Card key={item.id} className="p-3 space-y-2">
-            <h3 className="font-medium">{item.title}</h3>
-            <p className="text-xs text-slate-600">{item.type} · {item.visibility} · {item.status}</p>
-            <div className="flex gap-2">
-              <Button
-               
-                onClick={async () => {
-                  await fetchWithSession('/api/internship/send-to-ipo', {
-                    method: 'POST',
-                    body: JSON.stringify({ internshipId: item.id }),
-                  });
-                  await loadAll();
-                }}
-              >
-                Send to IPO
-              </Button>
-              {isExternal || item.type === 'EXTERNAL' ? (
-                <Button
-                 
-                  variant="secondary"
-                  onClick={async () => {
-                    await fetchWithSession('/api/internship/publish', {
-                      method: 'POST',
-                      body: JSON.stringify({ internshipId: item.id }),
-                    });
-                    await loadAll();
-                  }}
-                >
-                  Publish
-                </Button>
-              ) : null}
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <form
-          className="space-y-2"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const form = new FormData(e.currentTarget);
-            await fetchWithSession('/api/programme/create', {
-              method: 'POST',
-              body: JSON.stringify({ name: String(form.get('name') ?? ''), departmentId }),
-            });
-            e.currentTarget.reset();
-            await loadAll();
-          }}
-        >
-          <p className="font-medium">Add Programme</p>
-          <input name="name" className="w-full rounded border px-3 py-2" placeholder="Programme name" required />
+      <Card className="p-4 space-y-3">
+        <h2 className="font-semibold">Add Programme</h2>
+        <form className="space-y-2" onSubmit={addProgramme}>
+          <input name="name" className="w-full rounded border px-3 py-2" placeholder="Programme Name (e.g., BSc Physics)" required />
           <Button type="submit">Save Programme</Button>
         </form>
+        <div>
+          <p className="text-sm font-medium">Programs Conducted by this Department</p>
+          <ul className="list-disc pl-5 text-sm">
+            {programmes.map((item) => <li key={item.id}>{item.name}</li>)}
+          </ul>
+        </div>
+      </Card>
 
-        <form
-          className="space-y-2"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const form = new FormData(e.currentTarget);
-            await fetchWithSession('/api/programme/add-outcome', {
-              method: 'POST',
-              body: JSON.stringify({
-                programmeId: String(form.get('programmeId') ?? ''),
-                description: String(form.get('description') ?? ''),
-              }),
-            });
-            e.currentTarget.reset();
-            await loadAll();
-          }}
-        >
-          <p className="font-medium">Add Programme Outcome</p>
-          <select name="programmeId" className="w-full rounded border px-3 py-2" required>
-            <option value="">Select programme</option>
+      <Card className="p-4 space-y-3">
+        <h2 className="font-semibold">Add Programme Outcome</h2>
+        <form className="space-y-2" onSubmit={saveProgrammeOutcomes}>
+          <select className="w-full rounded border px-3 py-2" value={selectedProgramme} onChange={(e) => setSelectedProgramme(e.target.value)} required>
+            <option value="">Select Programme</option>
             {programmes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <input name="description" className="w-full rounded border px-3 py-2" placeholder="Outcome description" required />
-          <Button type="submit">Add More / Save</Button>
+          {programmeOutcomeDrafts.map((value, index) => (
+            <input key={index} className="w-full rounded border px-3 py-2" placeholder="Outcome Description" value={value} onChange={(e) => setProgrammeOutcomeDrafts((prev) => prev.map((entry, idx) => idx === index ? e.target.value : entry))} required />
+          ))}
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={() => setProgrammeOutcomeDrafts((prev) => [...prev, ''])}>Add More</Button>
+            <Button type="submit">Save</Button>
+          </div>
         </form>
-      </div>
-
-      <form
-        className="space-y-2"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const form = new FormData(e.currentTarget);
-          await fetchWithSession('/api/outcome/add', {
-            method: 'POST',
-            body: JSON.stringify({
-              description: String(form.get('description') ?? ''),
-              type: String(form.get('type') ?? 'PROGRAM_OUTCOME'),
-              departmentId,
-            }),
-          });
-          e.currentTarget.reset();
-          await loadAll();
-        }}
-      >
-        <p className="font-medium">Internship Outcome Setup</p>
-        <div className="grid gap-2 md:grid-cols-2">
-          <select name="type" className="rounded border px-3 py-2">
-            <option value="PROGRAM_OUTCOME">Programme Outcome</option>
-            <option value="COURSE_OUTCOME">Course Outcome</option>
-          </select>
-          <input name="description" className="rounded border px-3 py-2" placeholder="Outcome description" required />
+        <div>
+          <p className="text-sm font-medium">Programme Outcomes (PO)</p>
+          <ul className="list-disc pl-5 text-sm">
+            {(selectedProgramme ? programmeOutcomesByProgramme[selectedProgramme] ?? [] : programmes.flatMap((item) => item.outcomes ?? []) ).map((item) => (
+              <li key={item.id}>{item.description}</li>
+            ))}
+          </ul>
         </div>
-        <Button type="submit">Add More / Save Outcome</Button>
-      </form>
-    </Card>
+      </Card>
+
+      <Card className="p-4 space-y-3">
+        <h2 className="font-semibold">Internship Outcome Setup</h2>
+        <form className="space-y-2" onSubmit={saveInternshipOutcomes}>
+          {internshipOutcomeDrafts.map((draft, index) => (
+            <div key={index} className="grid gap-2 md:grid-cols-2">
+              <select className="rounded border px-3 py-2" value={draft.type} onChange={(e) => setInternshipOutcomeDrafts((prev) => prev.map((entry, idx) => idx === index ? { ...entry, type: e.target.value as 'PO' | 'IPO' | 'CO' } : entry))}>
+                <option value="PO">Programme Outcome (PO)</option>
+                <option value="IPO">Internship Program Outcome (IPO)</option>
+                <option value="CO">Internship Course Outcome (CO)</option>
+              </select>
+              <input className="rounded border px-3 py-2" placeholder="Description" value={draft.description} onChange={(e) => setInternshipOutcomeDrafts((prev) => prev.map((entry, idx) => idx === index ? { ...entry, description: e.target.value } : entry))} required />
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={() => setInternshipOutcomeDrafts((prev) => [...prev, { type: 'PO', description: '' }])}>Add More</Button>
+            <Button type="submit">Save Outcome</Button>
+          </div>
+        </form>
+        <div className="grid gap-2 md:grid-cols-3 text-sm">
+          <div><p className="font-medium">Programme Outcomes</p>{groupedInternshipOutcomes.PO.map((item) => <p key={item.id}>{item.description}</p>)}</div>
+          <div><p className="font-medium">Internship Program Outcomes</p>{groupedInternshipOutcomes.IPO.map((item) => <p key={item.id}>{item.description}</p>)}</div>
+          <div><p className="font-medium">Internship Course Outcomes</p>{groupedInternshipOutcomes.CO.map((item) => <p key={item.id}>{item.description}</p>)}</div>
+        </div>
+      </Card>
+
+      <Card className="p-4 space-y-3">
+        <h2 className="font-semibold">Create Internship</h2>
+        <form className="grid gap-2 md:grid-cols-2" onSubmit={createInternship}>
+          <input name="title" className="rounded border px-3 py-2" placeholder="Internship Title" required />
+          <input name="industryName" className="rounded border px-3 py-2" placeholder="Industry Name" required />
+          <textarea name="description" className="rounded border px-3 py-2 md:col-span-2" placeholder="Description" required />
+          <label className="text-sm"><input type="checkbox" name="isInternal" className="mr-2" />Internal Students</label>
+          <label className="text-sm"><input type="checkbox" name="isFree" defaultChecked className="mr-2" />Free Internship</label>
+          <select name="programmeId" className="rounded border px-3 py-2" required>
+            <option value="">Select Programme</option>
+            {programmes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <select name="gender" className="rounded border px-3 py-2" defaultValue="BOTH">
+            <option value="BOYS">Boys</option>
+            <option value="GIRLS">Girls</option>
+            <option value="BOTH">Both</option>
+          </select>
+          <input name="duration" type="number" min={60} defaultValue={60} className="rounded border px-3 py-2" placeholder="Duration (hours)" required />
+          <input name="vacancy" type="number" min={1} defaultValue={1} className="rounded border px-3 py-2" placeholder="Vacancy" required />
+
+          <div className="md:col-span-2 grid gap-2 md:grid-cols-2 text-sm">
+            <div>
+              <p className="font-medium">Program Outcomes (PO)</p>
+              {groupedInternshipOutcomes.PO.map((item) => <label key={item.id} className="block"><input type="checkbox" name="outcomeIds" value={item.id} className="mr-2" />{item.description}</label>)}
+            </div>
+            <div>
+              <p className="font-medium">Program Specific Outcomes (PSO)</p>
+              {groupedInternshipOutcomes.PO.map((item) => <label key={`pso-${item.id}`} className="block"><input type="checkbox" name="outcomeIds" value={item.id} className="mr-2" />{item.description}</label>)}
+            </div>
+            <div>
+              <p className="font-medium">Internship Program Outcomes (IPO)</p>
+              {groupedInternshipOutcomes.IPO.map((item) => <label key={item.id} className="block"><input type="checkbox" name="outcomeIds" value={item.id} className="mr-2" />{item.description}</label>)}
+            </div>
+            <div>
+              <p className="font-medium">Internship Course Outcomes (CO)</p>
+              {groupedInternshipOutcomes.CO.map((item) => <label key={item.id} className="block"><input type="checkbox" name="outcomeIds" value={item.id} className="mr-2" />{item.description}</label>)}
+            </div>
+          </div>
+
+          <Button type="submit" className="md:col-span-2">Send to IPO</Button>
+        </form>
+      </Card>
+
+      <Card className="p-4 space-y-3">
+        <h2 className="font-semibold">Internship Listings</h2>
+        <div className="space-y-2">
+          {internships.map((item) => {
+            const draft = editingId === item.id ? (editDraft as Internship) : item;
+            return (
+              <div key={item.id} className="rounded border p-3 text-sm space-y-2">
+                <p><strong>Internship Title:</strong> {item.title}</p>
+                <p><strong>Programme:</strong> {item.programme?.name ?? '-'}</p>
+                {editingId === item.id ? (
+                  <select value={String(draft.status ?? item.status)} onChange={(e) => setEditDraft((prev) => ({ ...prev, status: e.target.value }))} className="rounded border px-2 py-1">
+                    <option value="IPO_SENT">IPO_SENT</option>
+                    <option value="PUBLISHED">PUBLISHED</option>
+                  </select>
+                ) : <p><strong>Status:</strong> {item.status}</p>}
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={() => { setEditingId(item.id); setEditDraft(item); }}>Edit</Button>
+                  {editingId === item.id ? <Button onClick={() => saveInternshipChanges(item.id)}>Save Changes</Button> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
   );
 }

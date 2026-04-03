@@ -163,6 +163,13 @@ model Internship {
   id          String   @id @default(uuid())
   title       String
   description String?
+  isInternal  Boolean  @default(true)
+  industryName String?
+  programmeId String?
+  isFree      Boolean  @default(true)
+  gender      String?
+  duration    Int?
+  vacancy     Int?
   ipoId       String?
   createdById String?
   type        String   @default("INTERNAL")
@@ -176,6 +183,7 @@ model Internship {
   ipo       Ipo?  @relation(fields: [ipoId], references: [id], onDelete: SetNull)
   createdBy User? @relation("CreatedInternships", fields: [createdById], references: [id], onDelete: SetNull)
   department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  programme Program? @relation(fields: [programmeId], references: [id], onDelete: SetNull)
 
   applications InternshipApplication[]
   targets      InternshipTarget[]
@@ -242,6 +250,7 @@ model Program {
 
   department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   outcomes   ProgrammeOutcome[]
+  internships Internship[]
 }
 
 model ProgrammeOutcome {

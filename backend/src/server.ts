@@ -57,11 +57,18 @@ const ipoRegistrationSchema = z.object({
 
 const internshipCreateSchema = z.object({
   title: z.string().trim().min(2),
-  description: z.string().trim().min(10),
-  type: z.enum(['INTERNAL', 'EXTERNAL']),
+  description: z.string().trim().min(2),
+  type: z.enum(['INTERNAL', 'EXTERNAL']).optional(),
   visibility: z.enum(['DEPARTMENT', 'COLLEGE', 'GLOBAL']).optional(),
-  departmentId: z.string().trim().optional(),
-  createdById: z.string().trim().optional(),
+  departmentId: z.string().trim().optional().nullable(),
+  createdById: z.string().trim().optional().nullable(),
+  isInternal: z.boolean().optional(),
+  industryName: z.string().trim().optional().nullable(),
+  programmeId: z.string().trim().optional().nullable(),
+  isFree: z.boolean().optional(),
+  gender: z.enum(['BOYS', 'GIRLS', 'BOTH']).optional(),
+  duration: z.coerce.number().int().min(60).optional(),
+  vacancy: z.coerce.number().int().min(1).optional(),
   outcomeIds: z.array(z.string().trim().min(1)).optional(),
 });
 
@@ -72,12 +79,17 @@ const programmeCreateSchema = z.object({
 
 const programmeOutcomeCreateSchema = z.object({
   programmeId: z.string().trim().min(1),
-  description: z.string().trim().min(2),
+  description: z.string().trim().min(2).optional(),
+  outcomes: z.array(z.string().trim().min(2)).optional(),
 });
 
 const outcomeCreateSchema = z.object({
-  description: z.string().trim().min(2),
-  type: z.enum(['PROGRAM_OUTCOME', 'COURSE_OUTCOME']),
+  description: z.string().trim().min(2).optional(),
+  type: z.enum(['PO', 'IPO', 'CO']).optional(),
+  outcomes: z.array(z.object({
+    type: z.enum(['PO', 'IPO', 'CO']),
+    description: z.string().trim().min(2),
+  })).optional(),
   departmentId: z.string().trim().optional().nullable(),
 });
 
@@ -2014,7 +2026,8 @@ app.post('/api/internship/create', async (req, res) => {
       return;
     }
 
-    const visibility = payload.type === 'EXTERNAL'
+    const internshipType = payload.type ?? (payload.isInternal === false ? 'EXTERNAL' : 'INTERNAL');
+    const visibility = internshipType === 'EXTERNAL'
       ? 'GLOBAL'
       : (payload.visibility ?? 'DEPARTMENT');
 
@@ -2022,12 +2035,19 @@ app.post('/api/internship/create', async (req, res) => {
       data: {
         title: payload.title,
         description: payload.description,
-        type: payload.type,
+        isInternal: payload.isInternal ?? internshipType === 'INTERNAL',
+        industryName: payload.industryName ?? null,
+        programmeId: payload.programmeId ?? null,
+        isFree: payload.isFree ?? true,
+        gender: payload.gender ?? 'BOTH',
+        duration: payload.duration ?? 60,
+        vacancy: payload.vacancy ?? 1,
+        type: internshipType,
         visibility,
         departmentId: scopedDepartmentId,
         createdById,
-        status: 'DRAFT',
-        isExternal: payload.type === 'EXTERNAL',
+        status: 'IPO_SENT',
+        isExternal: internshipType === 'EXTERNAL',
       },
     });
 
@@ -2110,6 +2130,7 @@ app.get('/api/internship/list', async (req, res) => {
         ...(departmentId ? { departmentId } : {}),
       },
       include: {
+        programme: { select: { id: true, name: true } },
         outcomeMappings: { include: { outcome: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -2138,6 +2159,10 @@ app.post('/api/programme/create', async (req, res) => {
 app.post('/api/programme/add-outcome', async (req, res) => {
   try {
     const payload = programmeOutcomeCreateSchema.parse(req.body ?? {});
+    if (!payload.description) {
+      apiError(res, 400, 'description is required');
+      return;
+    }
     const outcome = await prisma.programmeOutcome.create({
       data: {
         programmeId: payload.programmeId,
@@ -2145,6 +2170,27 @@ app.post('/api/programme/add-outcome', async (req, res) => {
       },
     });
     apiOk(res, 'Programme outcome added', outcome, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/programme-outcome/create', async (req, res) => {
+  try {
+    const payload = programmeOutcomeCreateSchema.parse(req.body ?? {});
+    const descriptions = payload.outcomes?.length ? payload.outcomes : [payload.description ?? ''];
+    const cleaned = descriptions.map((item) => item.trim()).filter(Boolean);
+    if (!cleaned.length) {
+      apiError(res, 400, 'At least one outcome description is required');
+      return;
+    }
+    const result = await prisma.programmeOutcome.createMany({
+      data: cleaned.map((description) => ({
+        programmeId: payload.programmeId,
+        description,
+      })),
+    });
+    apiOk(res, 'Programme outcomes created', { count: result.count }, 201);
   } catch (error) {
     apiError(res, 400, toMessage(error));
   }
@@ -2167,6 +2213,10 @@ app.get('/api/programme/list', async (req, res) => {
 app.post('/api/outcome/add', async (req, res) => {
   try {
     const payload = outcomeCreateSchema.parse(req.body ?? {});
+    if (!payload.description || !payload.type) {
+      apiError(res, 400, 'description and type are required');
+      return;
+    }
     const outcome = await prisma.internshipOutcome.create({
       data: {
         description: payload.description,
@@ -2175,6 +2225,33 @@ app.post('/api/outcome/add', async (req, res) => {
       },
     });
     apiOk(res, 'Outcome created', outcome, 201);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/internship-outcome/create', async (req, res) => {
+  try {
+    const payload = outcomeCreateSchema.parse(req.body ?? {});
+    const entries = payload.outcomes?.length
+      ? payload.outcomes
+      : [{ type: payload.type ?? 'PO', description: payload.description ?? '' }];
+    const cleaned = entries
+      .map((item) => ({ type: item.type, description: item.description.trim() }))
+      .filter((item) => item.description.length > 0);
+    if (!cleaned.length) {
+      apiError(res, 400, 'At least one internship outcome is required');
+      return;
+    }
+
+    const result = await prisma.internshipOutcome.createMany({
+      data: cleaned.map((item) => ({
+        type: item.type,
+        description: item.description,
+        departmentId: payload.departmentId || null,
+      })),
+    });
+    apiOk(res, 'Internship outcomes created', { count: result.count }, 201);
   } catch (error) {
     apiError(res, 400, toMessage(error));
   }
@@ -2206,6 +2283,34 @@ app.get('/api/ipo/requests', async (_req, res) => {
     apiOk(res, 'IPO requests fetched', requests);
   } catch (error) {
     apiError(res, 500, toMessage(error));
+  }
+});
+
+app.put('/api/internship/update', async (req, res) => {
+  try {
+    const internshipId = String(req.body?.id ?? '').trim();
+    if (!internshipId) {
+      apiError(res, 400, 'id is required');
+      return;
+    }
+    const internship = await prisma.internship.update({
+      where: { id: internshipId },
+      data: {
+        title: req.body?.title ?? undefined,
+        description: req.body?.description ?? undefined,
+        industryName: req.body?.industryName ?? undefined,
+        programmeId: req.body?.programmeId ?? undefined,
+        isFree: typeof req.body?.isFree === 'boolean' ? req.body.isFree : undefined,
+        isInternal: typeof req.body?.isInternal === 'boolean' ? req.body.isInternal : undefined,
+        gender: req.body?.gender ?? undefined,
+        duration: typeof req.body?.duration === 'number' ? req.body.duration : undefined,
+        vacancy: typeof req.body?.vacancy === 'number' ? req.body.vacancy : undefined,
+        status: req.body?.status ?? undefined,
+      },
+    });
+    apiOk(res, 'Internship updated', internship);
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
   }
 });
 
