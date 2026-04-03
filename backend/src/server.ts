@@ -100,6 +100,9 @@ const applicationStatusSchema = z.object({
   status: z.enum(['APPLIED', 'APPROVED', 'REJECTED']),
 });
 
+const allowedTargetTypes = new Set<TargetType>([TargetType.INTERNAL, TargetType.EXTERNAL]);
+const allowedInternshipTypes = new Set<InternshipType>([InternshipType.FREE, InternshipType.PAID, InternshipType.STIPEND]);
+
 function toMessage(error: unknown): string {
   if (error instanceof z.ZodError) return error.errors.map((item) => item.message).join(', ');
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -2049,6 +2052,15 @@ app.post('/api/internship/create', async (req, res) => {
     }
 
     const targetType = payload.targetType ?? TargetType.INTERNAL;
+    if (!allowedTargetTypes.has(targetType)) {
+      apiError(res, 400, 'Invalid targetType. Expected INTERNAL or EXTERNAL.');
+      return;
+    }
+    const internshipType = payload.type ?? InternshipType.FREE;
+    if (!allowedInternshipTypes.has(internshipType)) {
+      apiError(res, 400, 'Invalid type. Expected FREE, PAID, or STIPEND.');
+      return;
+    }
     const visibility = targetType === 'EXTERNAL'
       ? 'GLOBAL'
       : (payload.visibility ?? 'DEPARTMENT');
@@ -2064,7 +2076,7 @@ app.post('/api/internship/create', async (req, res) => {
         isRegistered: payload.isRegistered ?? false,
         programmeId: payload.programmeId ?? null,
         gender: payload.gender ?? (targetType === TargetType.EXTERNAL ? Gender.BOTH : null),
-        type: payload.type ?? InternshipType.FREE,
+        type: internshipType,
         fee: payload.fee ?? null,
         stipend: payload.stipend ?? null,
         duration: payload.duration ?? 60,
@@ -2450,6 +2462,17 @@ app.put('/api/internship/update', async (req, res) => {
       apiError(res, 400, 'id is required');
       return;
     }
+    const rawTargetType = req.body?.targetType;
+    if (rawTargetType !== undefined && !allowedTargetTypes.has(rawTargetType)) {
+      apiError(res, 400, 'Invalid targetType. Expected INTERNAL or EXTERNAL.');
+      return;
+    }
+    const rawInternshipType = req.body?.type;
+    if (rawInternshipType !== undefined && !allowedInternshipTypes.has(rawInternshipType)) {
+      apiError(res, 400, 'Invalid type. Expected FREE, PAID, or STIPEND.');
+      return;
+    }
+
     const internship = await prisma.internship.update({
       where: { id: internshipId },
       data: {
@@ -2458,10 +2481,10 @@ app.put('/api/internship/update', async (req, res) => {
         industryName: req.body?.industryName ?? undefined,
         isRegistered: typeof req.body?.isRegistered === 'boolean' ? req.body.isRegistered : undefined,
         programmeId: req.body?.programmeId ?? undefined,
-        targetType: req.body?.targetType ?? undefined,
+        targetType: rawTargetType ?? undefined,
         isInternal: typeof req.body?.isInternal === 'boolean' ? req.body.isInternal : undefined,
         gender: req.body?.gender ?? undefined,
-        type: req.body?.type ?? undefined,
+        type: rawInternshipType ?? undefined,
         fee: typeof req.body?.fee === 'number' ? req.body.fee : undefined,
         stipend: typeof req.body?.stipend === 'number' ? req.body.stipend : undefined,
         duration: typeof req.body?.duration === 'number' ? req.body.duration : undefined,
@@ -2477,6 +2500,17 @@ app.put('/api/internship/update', async (req, res) => {
 
 app.put('/api/internship/update/:id', async (req, res) => {
   try {
+    const rawTargetType = req.body?.targetType;
+    if (rawTargetType !== undefined && !allowedTargetTypes.has(rawTargetType)) {
+      apiError(res, 400, 'Invalid targetType. Expected INTERNAL or EXTERNAL.');
+      return;
+    }
+    const rawInternshipType = req.body?.type;
+    if (rawInternshipType !== undefined && !allowedInternshipTypes.has(rawInternshipType)) {
+      apiError(res, 400, 'Invalid type. Expected FREE, PAID, or STIPEND.');
+      return;
+    }
+
     const internship = await prisma.internship.update({
       where: { id: req.params.id },
       data: {
@@ -2485,10 +2519,10 @@ app.put('/api/internship/update/:id', async (req, res) => {
         industryName: req.body?.industryName ?? undefined,
         isRegistered: typeof req.body?.isRegistered === 'boolean' ? req.body.isRegistered : undefined,
         programmeId: req.body?.programmeId ?? undefined,
-        targetType: req.body?.targetType ?? undefined,
+        targetType: rawTargetType ?? undefined,
         isInternal: typeof req.body?.isInternal === 'boolean' ? req.body.isInternal : undefined,
         gender: req.body?.gender ?? undefined,
-        type: req.body?.type ?? undefined,
+        type: rawInternshipType ?? undefined,
         fee: typeof req.body?.fee === 'number' ? req.body.fee : undefined,
         stipend: typeof req.body?.stipend === 'number' ? req.body.stipend : undefined,
         duration: typeof req.body?.duration === 'number' ? req.body.duration : undefined,
