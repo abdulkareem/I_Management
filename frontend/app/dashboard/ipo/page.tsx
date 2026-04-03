@@ -507,8 +507,12 @@ export default function IPODashboardPage() {
     [ipoInternships],
   );
   const ideaPageSize = 5;
+  const publishedInternships = useMemo(
+    () => ipoInternships.filter((item) => item.status === 'PUBLISHED' || item.status === 'CLOSED'),
+    [ipoInternships],
+  );
   const sortedInternships = useMemo(() => {
-    const rows = [...ipoInternships];
+    const rows = [...publishedInternships];
     const sign = internshipsSort.direction === 'asc' ? 1 : -1;
     rows.sort((a, b) => {
       const av = a[internshipsSort.key];
@@ -517,7 +521,7 @@ export default function IPODashboardPage() {
       return String(av ?? '').localeCompare(String(bv ?? ''), undefined, { numeric: true, sensitivity: 'base' }) * sign;
     });
     return rows;
-  }, [ipoInternships, internshipsSort]);
+  }, [publishedInternships, internshipsSort]);
   const internshipPageSize = 10;
   const paginatedInternships = useMemo(() => {
     const totalPages = Math.max(1, Math.ceil(sortedInternships.length / internshipPageSize));

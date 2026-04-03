@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
 import { loginWithPassword } from '@/lib/auth';
 
-type College = { id: string; collegeName: string };
+type College = { id: string; collegeName?: string; name?: string };
 type Department = { id: string; name: string; collegeId: string };
 type Program = { id: string; name: string; departmentId: string };
 const OTHER_COLLEGE_VALUE = '__college_not_in_list__';
@@ -149,7 +149,7 @@ export default function StudentJoinPage() {
             <label htmlFor="collegeId">Your College</label>
             <select id="collegeId" name="collegeId" required value={collegeId} onChange={(event) => setCollegeId(event.target.value)}>
               <option value="" disabled>Select college</option>
-              {colleges.map((college) => <option key={college.id} value={college.id}>{college.collegeName}</option>)}
+              {colleges.map((college) => <option key={college.id} value={college.id}>{college.collegeName ?? college.name ?? 'Unnamed college'}</option>)}
               <option value={OTHER_COLLEGE_VALUE}>My college is not in the list</option>
             </select>
           </div>
