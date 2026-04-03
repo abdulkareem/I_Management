@@ -378,9 +378,19 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const generatedPassword = generatePassword(10);
     const departmentId = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO departments (id, name, coordinator_name, coordinator_email, college_id, password, is_first_login, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, 1, 1)`,
-    ).bind(departmentId, name, coordinatorName, coordinatorEmail, collegeId, generatedPassword).run();
+      `INSERT INTO departments (
+        id,
+        name,
+        coordinator_name,
+        coordinator_email,
+        college_id,
+        password,
+        temporary_password,
+        is_first_login,
+        is_active
+      )
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+    ).bind(departmentId, name, coordinatorName, coordinatorEmail, collegeId, generatedPassword, generatedPassword).run();
 
     await upsertIdentity(env, { role: 'department', entityId: departmentId, email: coordinatorEmail, isActive: 1 });
     await sendCredentialEmail(env, coordinatorEmail, name, generatedPassword);
@@ -2041,7 +2051,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(email).first<{ id: string; coordinator_email: string; password: string; temporary_password: string | null; is_first_login: number; is_active: number }>();
 
     const effectivePassword = Number(dept?.is_first_login ?? 0) === 1
-      ? String(dept?.temporary_password ?? dept?.password ?? '')
+      ? String((dept?.temporary_password && dept.temporary_password.trim()) || dept?.password || '')
       : String(dept?.password ?? '');
 
     if (!dept || effectivePassword !== password) return unauthorized('Invalid credentials');
@@ -2069,7 +2079,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(actor.id).first<{ id: string; password: string; temporary_password: string | null; is_first_login: number }>();
 
     const effectiveCurrentPassword = Number(row?.is_first_login ?? 0) === 1
-      ? String(row?.temporary_password ?? row?.password ?? '')
+      ? String((row?.temporary_password && row.temporary_password.trim()) || row?.password || '')
       : String(row?.password ?? '');
 
     if (!row || effectiveCurrentPassword !== currentPassword) return unauthorized('Current password is incorrect');
@@ -6635,7 +6645,7 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
   if (department) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
     const effectivePassword = Number(department.is_first_login) === 1
-      ? String(department.temporary_password ?? department.password ?? '')
+      ? String((department.temporary_password && department.temporary_password.trim()) || department.password || '')
       : String(department.password ?? '');
     const isMatch = isPasswordMatch(password, effectivePassword);
     console.log('[AUTH] Department password match:', isMatch);
