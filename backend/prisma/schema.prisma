@@ -29,6 +29,8 @@ model User {
   phone     String?  @unique
   password  String
   role      Role     @default(STUDENT)
+  isTempPassword Boolean @default(false)
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
