@@ -49,6 +49,8 @@ type AuthSession = {
       | 'DEPARTMENT_COORDINATOR'
       | 'IPO'
       | 'STUDENT';
+    collegeId?: string | null;
+    departmentId?: string | null;
   };
 };
 
@@ -1610,6 +1612,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   if (request.method === 'GET' && (pathname === '/api/dashboard/industry' || pathname === '/api/dashboard/ipo' || pathname === '/industry/dashboard' || pathname === '/ipo/dashboard')) {
     const actor = requireRole(request, ['INDUSTRY']);
     if (actor instanceof Response) return actor;
+    const ipoOnly = pathname === '/api/dashboard/ipo' || pathname === '/ipo/dashboard';
+    const internshipStatusFilter = ipoOnly ? 'IPO_SENT' : null;
+    console.log('QUERY FILTER:', { industryId: actor.id, status: internshipStatusFilter });
 
     const [industry, internships, applications] = await Promise.all([
       env.DB.prepare('SELECT id, name, business_activity FROM industries WHERE id = ?').bind(actor.id).first(),
@@ -1617,8 +1622,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
         `SELECT id, title, description
          FROM internships
          WHERE COALESCE(industry_id, ipo_id) = ?
+           AND (? IS NULL OR status = ?)
          ORDER BY created_at DESC`,
-      ).bind(actor.id).all(),
+      ).bind(actor.id, internshipStatusFilter, internshipStatusFilter).all(),
       env.DB.prepare(
         `SELECT ia.id,
                 ia.status,
@@ -1645,8 +1651,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
          LEFT JOIN external_students es ON es.id = ia.external_student_id
          LEFT JOIN colleges c ON c.id = s.college_id
          WHERE COALESCE(i.industry_id, i.ipo_id) = ?
+           AND (? IS NULL OR i.status = ?)
          ORDER BY ia.created_at DESC`,
-      ).bind(actor.id).all(),
+      ).bind(actor.id, internshipStatusFilter, internshipStatusFilter).all(),
     ]);
 
     const appRows = applications.results ?? [];
@@ -1697,8 +1704,11 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (actor instanceof Response) return actor;
 
     if (actor.role === 'STUDENT') {
+      console.log('QUERY FILTER:', { studentId: actor.id, collegeId: actor.collegeId, departmentId: actor.departmentId });
       return loadStudentDashboard(env, actor.id);
     }
+
+    console.log('QUERY FILTER:', { externalStudentId: actor.id, targetType: 'EXTERNAL' });
 
     const [internships, applications] = await Promise.all([
       env.DB.prepare(
@@ -1708,6 +1718,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
          LEFT JOIN industry_internships ii ON ii.title = i.title
          LEFT JOIN industries ind ON ind.id = ii.industry_id
          LEFT JOIN internship_applications ia ON ia.internship_id = i.id AND ia.external_student_id = ?
+         WHERE COALESCE(i.is_external, 0) = 1
+            OR UPPER(COALESCE(i.created_by, i.source_type, 'INDUSTRY')) = 'INDUSTRY'
          ORDER BY i.created_at DESC`,
       ).bind(actor.id).all(),
       env.DB.prepare(
@@ -1934,14 +1946,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const body = await readBody(request);
     console.log('BODY:', body);
 
-    const collegeId = required(body, ['college_id', 'collegeId']) || actor.id;
+    const collegeId = actor.id;
     const name = required(body, ['name']);
     const coordinatorName = required(body, ['coordinator_name', 'coordinatorName']);
     const coordinatorEmail = normalizeEmail(required(body, ['coordinator_email', 'coordinatorEmail', 'email']));
     const coordinatorMobile = optional(body, ['coordinator_mobile', 'coordinatorMobile']);
 
-    if (!collegeId || !name || !coordinatorName || !coordinatorEmail) {
-      return badRequest('college_id, name, coordinator_name, coordinator_email are required');
+    if (!name || !coordinatorName || !coordinatorEmail) {
+      return badRequest('name, coordinator_name, coordinator_email are required');
     }
 
     const password = generatePassword(10);
@@ -1983,7 +1995,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['COLLEGE', 'SUPER_ADMIN', 'ADMIN']);
     if (actor instanceof Response) return actor;
 
-    const collegeId = toText(url.searchParams.get('college_id')) || toText(url.searchParams.get('collegeId')) || actor.id;
+    const collegeId = actor.role === 'COLLEGE_COORDINATOR'
+      ? actor.id
+      : (toText(url.searchParams.get('college_id')) || toText(url.searchParams.get('collegeId')) || actor.collegeId || actor.id);
     if (!collegeId) return badRequest('college_id is required');
 
     const rows = await env.DB.prepare(
@@ -2004,6 +2018,13 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
 
     const id = required(body, ['id']);
     if (!id) return badRequest('id is required');
+
+    if (actor.role === 'COLLEGE_COORDINATOR') {
+      const owned = await env.DB.prepare('SELECT id FROM departments WHERE id = ? AND college_id = ?')
+        .bind(id, actor.id)
+        .first<{ id: string }>();
+      if (!owned) return forbidden('You can update only your college departments');
+    }
 
     const result = await env.DB.prepare(
       `UPDATE departments
@@ -2029,6 +2050,13 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const departmentId = toText(url.searchParams.get('id'));
     if (!departmentId) return badRequest('id is required');
 
+    if (actor.role === 'COLLEGE_COORDINATOR') {
+      const owned = await env.DB.prepare('SELECT id FROM departments WHERE id = ? AND college_id = ?')
+        .bind(departmentId, actor.id)
+        .first<{ id: string }>();
+      if (!owned) return forbidden('You can delete only your college departments');
+    }
+
     const result = await env.DB.prepare("UPDATE departments SET is_active = 0, updated_at = datetime('now') WHERE id = ?")
       .bind(departmentId)
       .run();
@@ -2046,9 +2074,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!email || !password) return badRequest('email and password are required');
 
     const dept = await env.DB.prepare(
-      `SELECT id, coordinator_email, password, temporary_password, is_first_login, is_active
+      `SELECT id, college_id, coordinator_email, password, temporary_password, is_first_login, is_active
        FROM departments WHERE lower(coordinator_email) = lower(?)`,
-    ).bind(email).first<{ id: string; coordinator_email: string; password: string; temporary_password: string | null; is_first_login: number; is_active: number }>();
+    ).bind(email).first<{ id: string; college_id: string | null; coordinator_email: string; password: string; temporary_password: string | null; is_first_login: number; is_active: number }>();
 
     const effectivePassword = Number(dept?.is_first_login ?? 0) === 1
       ? String((dept?.temporary_password && dept.temporary_password.trim()) || dept?.password || '')
@@ -2058,7 +2086,13 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (Number(dept.is_active) !== 1) return forbidden('Department account inactive');
 
     return ok('Department login successful', {
-      ...createSession({ id: dept.id, email: dept.coordinator_email, role: 'DEPARTMENT_COORDINATOR' }),
+      ...createSession({
+        id: dept.id,
+        email: dept.coordinator_email,
+        role: 'DEPARTMENT_COORDINATOR',
+        collegeId: dept.college_id ?? null,
+        departmentId: dept.id,
+      }),
       mustChangePassword: Number(dept.is_first_login) === 1,
     });
   }
@@ -5829,6 +5863,16 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['DEPARTMENT_COORDINATOR', 'COORDINATOR', 'STUDENT', 'EXTERNAL_STUDENT', 'ADMIN', 'SUPER_ADMIN']);
     if (actor instanceof Response) return actor;
     const studentId = outcomeReportMatch[1];
+    if (actor.role === 'STUDENT' && actor.id !== studentId) return forbidden('You can only view your own outcome report');
+    if (actor.role === 'DEPARTMENT_COORDINATOR') {
+      const belongsToDept = await env.DB.prepare(
+        `SELECT id
+         FROM students
+         WHERE id = ? AND department_id = ?`,
+      ).bind(studentId, actor.id).first<{ id: string }>();
+      if (!belongsToDept) return forbidden('Student does not belong to your department');
+    }
+    console.log('QUERY FILTER:', { actorRole: actor.role, actorId: actor.id, studentId });
 
     const rawRows = await env.DB.prepare(
       `SELECT outcome_id, outcome_type, student_score, supervisor_score, coordinator_score, weighted_score, percentage, calculation_steps
@@ -6446,7 +6490,7 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
     if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
     if (row.status !== 'approved' || Number(row.is_active) !== 1) return forbidden('Waiting for approval');
 
-    return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'COLLEGE' }));
+    return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'COLLEGE', collegeId: row.id }));
   }
 
   if (entity === 'industry') {
@@ -6460,14 +6504,20 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
     return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'INDUSTRY' }));
   }
 
-  const row = await env.DB.prepare('SELECT id, email, password, is_active FROM students WHERE lower(email) = lower(?)')
+  const row = await env.DB.prepare('SELECT id, email, password, is_active, college_id, department_id FROM students WHERE lower(email) = lower(?)')
     .bind(email)
-    .first<{ id: string; email: string; password: string; is_active: number }>();
+    .first<{ id: string; email: string; password: string; is_active: number; college_id: string | null; department_id: string | null }>();
 
   if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
   if (Number(row.is_active) !== 1) return forbidden('Account inactive');
 
-  return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'STUDENT' }));
+  return ok('Login successful', createSession({
+    id: row.id,
+    email: row.email,
+    role: 'STUDENT',
+    collegeId: row.college_id ?? null,
+    departmentId: row.department_id ?? null,
+  }));
 }
 
 async function handleCollegeRegistration(body: JsonMap, env: EnvBindings): Promise<Response> {
@@ -6649,10 +6699,10 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
   if (!email || !password) return badRequest('email and password are required');
 
   const department = await env.DB.prepare(
-    'SELECT id, coordinator_email, password, temporary_password, is_active, is_first_login FROM departments WHERE lower(coordinator_email) = lower(?)',
+    'SELECT id, college_id, coordinator_email, password, temporary_password, is_active, is_first_login FROM departments WHERE lower(coordinator_email) = lower(?)',
   )
     .bind(email)
-    .first<{ id: string; coordinator_email: string; password: string; temporary_password: string | null; is_active: number; is_first_login: number }>();
+    .first<{ id: string; college_id: string | null; coordinator_email: string; password: string; temporary_password: string | null; is_active: number; is_first_login: number }>();
   console.log('[AUTH] Department user exists:', Boolean(department));
   if (department) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
@@ -6664,7 +6714,13 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     if (!isMatch) return unauthorized('Invalid email or password');
     if (Number(department.is_active) !== 1) return forbidden('Department account inactive');
     return ok('Login successful', {
-      ...createSession({ id: department.id, email: department.coordinator_email, role: 'DEPARTMENT_COORDINATOR' }),
+      ...createSession({
+        id: department.id,
+        email: department.coordinator_email,
+        role: 'DEPARTMENT_COORDINATOR',
+        collegeId: department.college_id ?? null,
+        departmentId: department.id,
+      }),
       mustChangePassword: Number(department.is_first_login) === 1,
     });
   }
@@ -6680,7 +6736,7 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     if (!isMatch) return unauthorized('Invalid email or password');
     const status = { status: college.status, is_active: college.is_active };
     if (status?.status !== 'approved' || Number(status?.is_active) !== 1) return forbidden('Waiting for approval');
-    return ok('Login successful', createSession({ id: college.id, email: college.email, role: 'COLLEGE' }));
+    return ok('Login successful', createSession({ id: college.id, email: college.email, role: 'COLLEGE', collegeId: college.id }));
   }
 
   const industry = await env.DB.prepare('SELECT id, email, password, status, is_active FROM industries WHERE lower(email) = lower(?)')
@@ -6696,9 +6752,9 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     return ok('Login successful', createSession({ id: industry.id, email: industry.email, role: 'INDUSTRY' }));
   }
 
-  const student = await env.DB.prepare('SELECT id, email, password, is_active FROM students WHERE lower(email) = lower(?)')
+  const student = await env.DB.prepare('SELECT id, email, password, is_active, college_id, department_id FROM students WHERE lower(email) = lower(?)')
     .bind(email)
-    .first<{ id: string; email: string; password: string; is_active: number }>();
+    .first<{ id: string; email: string; password: string; is_active: number; college_id: string | null; department_id: string | null }>();
   console.log('[AUTH] Student user exists:', Boolean(student));
   if (student) {
     // TODO(security): migrate all stored passwords to bcrypt hashes and compare with bcrypt.compare.
@@ -6706,7 +6762,13 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     console.log('[AUTH] Student password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
     if (Number(student.is_active) !== 1) return forbidden('Account inactive');
-    return ok('Login successful', createSession({ id: student.id, email: student.email, role: 'STUDENT' }));
+    return ok('Login successful', createSession({
+      id: student.id,
+      email: student.email,
+      role: 'STUDENT',
+      collegeId: student.college_id ?? null,
+      departmentId: student.department_id ?? null,
+    }));
   }
 
   const externalStudent = await env.DB.prepare('SELECT id, email, password, is_active FROM external_students WHERE lower(email) = lower(?)')
@@ -8155,11 +8217,19 @@ function requireRole(request: Request, allowedRoles: string[]) {
   const normalizedAllowedRoles = allowedRoles.map((role) => normalizeSessionRole(role)).filter(Boolean);
   if (!normalizedAllowedRoles.includes(parsed.role)) return forbidden('Insufficient role permissions');
 
+  console.log('USER:', parsed);
   return parsed;
 }
 
 function createSession(user: AuthSession['user']): AuthSession {
-  const tokenPayload = JSON.stringify({ id: user.id, email: user.email, role: user.role, t: Date.now() });
+  const tokenPayload = JSON.stringify({
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    collegeId: user.collegeId ?? null,
+    departmentId: user.departmentId ?? null,
+    t: Date.now(),
+  });
   const token = `session.${btoa(tokenPayload)}`;
 
   return {
@@ -8168,7 +8238,7 @@ function createSession(user: AuthSession['user']): AuthSession {
   };
 }
 
-function parseSessionToken(token: string): { id: string; email: string; role: AuthSession['user']['role'] } | null {
+function parseSessionToken(token: string): { id: string; email: string; role: AuthSession['user']['role']; collegeId: string | null; departmentId: string | null } | null {
   if (!token.startsWith('session.')) return null;
 
   try {
@@ -8182,6 +8252,8 @@ function parseSessionToken(token: string): { id: string; email: string; role: Au
       id: String(payload.id),
       email: String(payload.email),
       role: normalizedRole,
+      collegeId: payload.collegeId ? String(payload.collegeId) : null,
+      departmentId: payload.departmentId ? String(payload.departmentId) : null,
     };
   } catch {
     return null;
