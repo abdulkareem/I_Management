@@ -169,6 +169,39 @@ async function sendAdminOtpEmail(email: string, otp: string): Promise<void> {
   }
 }
 
+function generateTemporaryPassword(length = 10): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%';
+  return Array.from({ length }, () => alphabet[randomInt(0, alphabet.length)]).join('');
+}
+
+async function sendDepartmentTemporaryPasswordEmail(email: string, password: string, departmentName: string): Promise<void> {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (!resendApiKey) {
+    throw new Error('RESEND_API_KEY is not configured');
+  }
+
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'no-reply@aureliv.in';
+  const response = await fetch(RESEND_API_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: [email],
+      subject: 'Department coordinator temporary password',
+      html: `<p>Your department coordinator account for <strong>${departmentName}</strong> is ready.</p><p>Temporary password: <strong>${password}</strong></p><p>Please reset it on first login.</p>`,
+      text: `Your department coordinator account for ${departmentName} is ready. Temporary password: ${password}. Please reset it on first login.`,
+    }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Failed to send department temporary password email: ${response.status} ${details}`);
+  }
+}
+
 function buildSessionData(user: { id: string; email: string; role: Role; name: string | null }) {
   return {
     token: `dev.${Buffer.from(`${user.id}:${Date.now()}`).toString('base64url')}`,
@@ -357,6 +390,8 @@ app.get('/api/departments', async (req, res) => {
       college_name: department.college.name,
       coordinator_name: department.coordinatorName ?? '-',
       coordinator_email: department.coordinatorEmail ?? '-',
+      is_first_login: department.isFirstLogin,
+      login_status: department.isFirstLogin ? 'Not Logged In' : 'Logged In',
       coordinator: department.coordinatorName ?? '-',
       email: department.coordinatorEmail ?? '-',
     })));
@@ -382,15 +417,22 @@ app.post('/api/departments', async (req, res) => {
       return;
     }
 
+    const temporaryPassword = generateTemporaryPassword();
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 12);
+
     const department = await prisma.department.create({
       data: {
         collegeId: scopedCollegeId,
         name,
         coordinatorName,
         coordinatorEmail,
+        password: hashedPassword,
+        isFirstLogin: true,
       },
       include: { college: true },
     });
+
+    await sendDepartmentTemporaryPasswordEmail(coordinatorEmail, temporaryPassword, name);
 
     apiOk(res, 'Department created', {
       id: department.id,
@@ -399,6 +441,8 @@ app.post('/api/departments', async (req, res) => {
       college_name: department.college.name,
       coordinator_name: department.coordinatorName ?? '-',
       coordinator_email: department.coordinatorEmail ?? '-',
+      is_first_login: department.isFirstLogin,
+      login_status: department.isFirstLogin ? 'Not Logged In' : 'Logged In',
     }, 201);
   } catch (error) {
     apiError(res, 400, toMessage(error));
@@ -427,17 +471,28 @@ app.patch('/api/departments/:id', async (req, res) => {
 
     const name = String(req.body?.name ?? '').trim();
     const coordinatorName = String(req.body?.coordinator_name ?? req.body?.coordinatorName ?? '').trim();
-    const coordinatorEmail = String(req.body?.coordinator_email ?? req.body?.coordinatorEmail ?? '').trim().toLowerCase();
+
+    const incomingEmail = String(req.body?.coordinator_email ?? req.body?.coordinatorEmail ?? '').trim().toLowerCase();
+    const emailChanged = Boolean(incomingEmail) && incomingEmail !== (existing.coordinatorEmail ?? '').toLowerCase();
+    const shouldRotatePassword = emailChanged || Boolean(name) || Boolean(coordinatorName);
+    const temporaryPassword = shouldRotatePassword ? generateTemporaryPassword() : null;
+    const hashedPassword = temporaryPassword ? await bcrypt.hash(temporaryPassword, 12) : null;
 
     const department = await prisma.department.update({
       where: { id: req.params.id },
       data: {
         name: name || undefined,
         coordinatorName: coordinatorName || undefined,
-        coordinatorEmail: coordinatorEmail || undefined,
+        coordinatorEmail: incomingEmail || undefined,
+        password: hashedPassword ?? undefined,
+        isFirstLogin: temporaryPassword ? true : undefined,
       },
       include: { college: true },
     });
+
+    if (temporaryPassword && department.coordinatorEmail) {
+      await sendDepartmentTemporaryPasswordEmail(department.coordinatorEmail, temporaryPassword, department.name);
+    }
 
     apiOk(res, 'Department updated', {
       id: department.id,
@@ -446,6 +501,8 @@ app.patch('/api/departments/:id', async (req, res) => {
       college_name: department.college.name,
       coordinator_name: department.coordinatorName ?? '-',
       coordinator_email: department.coordinatorEmail ?? '-',
+      is_first_login: department.isFirstLogin,
+      login_status: department.isFirstLogin ? 'Not Logged In' : 'Logged In',
     });
   } catch (error) {
     apiError(res, 400, toMessage(error));

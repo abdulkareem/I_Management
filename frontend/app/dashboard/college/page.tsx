@@ -20,7 +20,7 @@ type ApplicationItem = { id: string; student_name: string; student_email: string
 type EvaluationItem = { department: string; students_evaluated: number; pending_evaluations: number; submission_status: string };
 type ChartPoint = { label: string; value: number };
 type IpoSummaryItem = { ipo_id: string; ipo_name: string; internship_count: number; active_engagements: number };
-type Department = { id: string; name: string; coordinator_name: string; coordinator_email: string; college_id: string };
+type Department = { id: string; name: string; coordinator_name: string; coordinator_email: string; college_id: string; login_status?: string; is_first_login?: boolean };
 
 type DashboardData = {
   summary: Summary;
@@ -117,7 +117,7 @@ export default function CollegeDashboardPage() {
 
     <Card className="rounded-[24px] p-4"><h3 className="mb-3 text-lg font-semibold">Department Management Panel</h3>
       <div className="grid gap-2 md:grid-cols-4"><Input placeholder="Department" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} /><Input placeholder="Coordinator" value={form.coordinator_name} onChange={(e) => setForm((p) => ({ ...p, coordinator_name: e.target.value }))} /><Input placeholder="Coordinator Email" value={form.coordinator_email} onChange={(e) => setForm((p) => ({ ...p, coordinator_email: e.target.value }))} /><Button onClick={saveDepartment}>{form.id ? 'Update Department' : 'Add Department'}</Button></div>
-      <DataTable title="Departments" rows={departments as any} columns={[{ key: 'name', label: 'Name' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Coordinator Email' }]} actions={(row: any) => <div className="flex gap-2"><Button variant="secondary" onClick={() => setForm(row)}>Edit</Button><Button variant="secondary" onClick={() => deleteDepartment(row.id)}>Delete</Button></div>} />
+      <DataTable title="Departments" rows={departments as any} columns={[{ key: 'name', label: 'Name' }, { key: 'coordinator_name', label: 'Coordinator' }, { key: 'coordinator_email', label: 'Coordinator Email' }, { key: 'login_status', label: 'Login Status' }]} actions={(row: any) => <div className="flex gap-2"><Button variant="secondary" onClick={() => setForm(row)}>Edit</Button><Button variant="secondary" onClick={() => deleteDepartment(row.id)}>Delete</Button></div>} />
     </Card>
 
     {data && <>
