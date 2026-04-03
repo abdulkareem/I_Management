@@ -122,11 +122,13 @@ export default function IPODashboardPage() {
     setIdeas(ideasRes.data);
     setColleges(collegeRes.data ?? []);
     const profile = profileRes.data as (IpoProfile & { address?: string | null }) | null;
-    setIpoProfile(profile ? { ...profile, company_address: profile.company_address ?? profile.address ?? null } : null);
+    if (!profileOpen) {
+      setIpoProfile(profile ? { ...profile, company_address: profile.company_address ?? profile.address ?? null } : null);
+    }
     setIpoTypes(ipoTypesRes.data ?? []);
     setIPOInternships(internshipsRes.data ?? []);
     setDocuments(docRes.data ?? []);
-  }, []);
+  }, [profileOpen]);
 
   useEffect(() => {
     if (!ipoProfile?.ipo_type_id) {
@@ -484,7 +486,7 @@ export default function IPODashboardPage() {
   const pendingApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'PENDING') ?? [], [dashboard]);
   const acceptedApplications = useMemo(() => dashboard?.applications?.filter((application) => application.status === 'ACCEPTED') ?? [], [dashboard]);
   const departmentSuggestedInternships = useMemo(
-    () => ipoInternships.filter((item) => item.status === 'SENT_TO_INDUSTRY'),
+    () => ipoInternships.filter((item) => item.status === 'SENT_IPO' || item.status === 'IPO_SENT'),
     [ipoInternships],
   );
   const ideaPageSize = 5;

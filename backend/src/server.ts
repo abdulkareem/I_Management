@@ -1894,7 +1894,34 @@ app.get('/api/dashboard/ipo', async (req, res) => {
 });
 
 app.get('/api/ipo/ideas', async (_req, res) => {
-  apiOk(res, 'IPO ideas fetched', []);
+  try {
+    const ideas = await prisma.internship.findMany({
+      where: { status: InternshipStatus.SENT_IPO },
+      include: {
+        targets: { include: { college: true } },
+        department: { select: { id: true, name: true } },
+        programme: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    apiOk(res, 'IPO ideas fetched', ideas.map((item) => ({
+      id: item.id,
+      internship_title: item.title,
+      description: item.description ?? '',
+      status: item.status,
+      department_name: item.department?.name ?? '-',
+      college_name: item.targets[0]?.college?.name ?? '-',
+      program_name: item.programme?.name ?? '-',
+      suggested_vacancy: item.vacancy ?? null,
+      suggested_internship_category: item.type ?? 'FREE',
+      suggested_fee: item.fee ?? null,
+      suggested_stipend_amount: item.stipend ?? null,
+      suggested_minimum_days: item.duration ?? null,
+      suggested_maximum_days: item.duration ?? null,
+    })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
 });
 
 app.put('/api/ipo-requests/:id/update', async (_req, res) => {
@@ -1966,10 +1993,10 @@ app.get('/api/ipo/profile', async (req, res) => {
       name: ipo.name,
       email: ipo.email ?? authUser.email,
       company_address: ipo.activity ?? null,
-      contact_number: null,
-      registration_number: null,
-      registration_year: null,
-      supervisor_name: null,
+      contact_number: ipo.contactNumber ?? null,
+      registration_number: ipo.registrationNumber ?? null,
+      registration_year: ipo.registrationYear ?? null,
+      supervisor_name: ipo.supervisorName ?? null,
       ipo_type_id: ipo.ipoType ?? null,
       ipo_subtype_id: ipo.ipoSubCategory ?? null,
     });
@@ -1992,8 +2019,17 @@ app.put('/api/ipo/profile', async (req, res) => {
     }
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const companyAddress = String(req.body?.companyAddress ?? '').trim();
+    const contactNumber = String(req.body?.contactNumber ?? '').trim();
+    const registrationNumber = String(req.body?.registrationNumber ?? '').trim();
+    const registrationYearRaw = req.body?.registrationYear == null ? '' : String(req.body.registrationYear).trim();
+    const registrationYear = registrationYearRaw ? Number(registrationYearRaw) : null;
+    const supervisorName = String(req.body?.supervisorName ?? '').trim();
     const ipoTypeId = String(req.body?.ipoTypeId ?? '').trim() || null;
     const ipoSubtypeId = String(req.body?.ipoSubtypeId ?? '').trim() || null;
+    if (registrationYear != null && (!Number.isInteger(registrationYear) || registrationYear < 1900 || registrationYear > 9999)) {
+      apiError(res, 400, 'registrationYear must be a valid year');
+      return;
+    }
 
     if (ipoSubtypeId && !ipoTypeId) {
       apiError(res, 400, 'ipoTypeId is required when ipoSubtypeId is provided');
@@ -2019,6 +2055,10 @@ app.put('/api/ipo/profile', async (req, res) => {
       data: {
         email: email || undefined,
         activity: companyAddress || undefined,
+        contactNumber: contactNumber || null,
+        registrationNumber: registrationNumber || null,
+        registrationYear,
+        supervisorName: supervisorName || null,
         ipoType: ipoTypeId,
         ipoSubCategory: ipoSubtypeId,
       },
@@ -2134,7 +2174,12 @@ app.get('/api/ipo/internships', async (req, res) => {
       return;
     }
     const internships = await prisma.internship.findMany({
-      where: { ipoId: ipo.id },
+      where: {
+        OR: [
+          { ipoId: ipo.id },
+          { status: InternshipStatus.SENT_IPO },
+        ],
+      },
       include: {
         targets: { include: { college: true } },
         department: { select: { id: true, name: true } },
@@ -2448,7 +2493,7 @@ app.post('/api/internship/send-to-ipo', async (req, res) => {
 
     const internship = await prisma.internship.update({
       where: { id: internshipId },
-      data: { status: InternshipStatus.IPO_SENT, targetType: TargetType.INTERNAL, isExternal: false, isInternal: true },
+      data: { status: InternshipStatus.SENT_IPO, targetType: TargetType.INTERNAL, isExternal: false, isInternal: true },
     });
 
     const ipoRequest = await prisma.iPORequest.create({
@@ -2809,6 +2854,13 @@ app.put('/api/internship/update', async (req, res) => {
       return;
     }
 
+    const nextStatus = typeof req.body?.status === 'string' && req.body.status.trim().toUpperCase() === 'IPO_SENT'
+      ? InternshipStatus.SENT_IPO
+      : req.body?.status;
+    const outcomeIds = Array.isArray(req.body?.outcomeIds)
+      ? req.body.outcomeIds.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
+      : null;
+
     const internship = await prisma.internship.update({
       where: { id: internshipId },
       data: {
@@ -2825,9 +2877,18 @@ app.put('/api/internship/update', async (req, res) => {
         stipend: typeof req.body?.stipend === 'number' ? req.body.stipend : undefined,
         duration: typeof req.body?.duration === 'number' ? req.body.duration : undefined,
         vacancy: typeof req.body?.vacancy === 'number' ? req.body.vacancy : undefined,
-        status: req.body?.status ?? undefined,
+        status: nextStatus ?? undefined,
       },
     });
+    if (outcomeIds) {
+      await prisma.internshipOutcomeMapping.deleteMany({ where: { internshipId } });
+      if (outcomeIds.length) {
+        await prisma.internshipOutcomeMapping.createMany({
+          data: outcomeIds.map((outcomeId: string) => ({ internshipId, outcomeId })),
+          skipDuplicates: true,
+        });
+      }
+    }
     apiOk(res, 'Internship updated', internship);
   } catch (error) {
     apiError(res, 400, toMessage(error));
@@ -2847,6 +2908,13 @@ app.put('/api/internship/update/:id', async (req, res) => {
       return;
     }
 
+    const nextStatus = typeof req.body?.status === 'string' && req.body.status.trim().toUpperCase() === 'IPO_SENT'
+      ? InternshipStatus.SENT_IPO
+      : req.body?.status;
+    const outcomeIds = Array.isArray(req.body?.outcomeIds)
+      ? req.body.outcomeIds.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
+      : null;
+
     const internship = await prisma.internship.update({
       where: { id: req.params.id },
       data: {
@@ -2863,9 +2931,18 @@ app.put('/api/internship/update/:id', async (req, res) => {
         stipend: typeof req.body?.stipend === 'number' ? req.body.stipend : undefined,
         duration: typeof req.body?.duration === 'number' ? req.body.duration : undefined,
         vacancy: typeof req.body?.vacancy === 'number' ? req.body.vacancy : undefined,
-        status: req.body?.status ?? undefined,
+        status: nextStatus ?? undefined,
       },
     });
+    if (outcomeIds) {
+      await prisma.internshipOutcomeMapping.deleteMany({ where: { internshipId: req.params.id } });
+      if (outcomeIds.length) {
+        await prisma.internshipOutcomeMapping.createMany({
+          data: outcomeIds.map((outcomeId: string) => ({ internshipId: req.params.id, outcomeId })),
+          skipDuplicates: true,
+        });
+      }
+    }
     apiOk(res, 'Internship updated', internship);
   } catch (error) {
     apiError(res, 400, toMessage(error));

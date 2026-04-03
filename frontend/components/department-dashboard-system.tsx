@@ -23,6 +23,7 @@ type Internship = {
   duration: number;
   vacancy: number;
   status: string;
+  outcomeMappings?: Array<{ outcomeId: string; outcome?: InternshipOutcome }>;
 };
 type Industry = { id: string; name: string };
 type Application = {
@@ -90,7 +91,7 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
   const [editingInternshipOutcomeType, setEditingInternshipOutcomeType] = useState<'IPO' | 'CO'>('IPO');
 
   const [editingInternshipId, setEditingInternshipId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<Partial<Internship>>({});
+  const [editDraft, setEditDraft] = useState<Partial<Internship> & { selectedOutcomeIds?: string[] }>({});
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -241,7 +242,7 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
     }
 
     const statusMap: Record<InternshipAction, string> = {
-      SEND_TO_IPO: 'IPO_SENT',
+      SEND_TO_IPO: 'SENT_IPO',
       PUBLISH: 'PUBLISHED',
       SAVE_DRAFT: 'DRAFT',
     };
@@ -624,27 +625,82 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
         <div className="space-y-2 text-sm">
           {internships.map((item) => {
             const draft = editingInternshipId === item.id ? (editDraft as Internship) : item;
+            const selectedOutcomeIds = editDraft.selectedOutcomeIds ?? item.outcomeMappings?.map((mapping) => mapping.outcomeId) ?? [];
             return (
               <div key={item.id} className="rounded border p-3 space-y-2">
-                <p><strong>Title:</strong> {item.title}</p>
-                <p><strong>Type:</strong> {item.targetType}</p>
-                <p><strong>Industry:</strong> {item.industryName || '-'}</p>
-                <p><strong>Status:</strong> {item.status}</p>
-                <p><strong>Duration:</strong> {item.duration} hours</p>
-                <p><strong>Vacancy:</strong> {item.vacancy}</p>
+                {editingInternshipId === item.id ? (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <input className="rounded border px-2 py-1" value={String(draft.title ?? '')} onChange={(e) => setEditDraft((prev) => ({ ...prev, title: e.target.value }))} placeholder="Title" />
+                    <input className="rounded border px-2 py-1" value={String(draft.industryName ?? '')} onChange={(e) => setEditDraft((prev) => ({ ...prev, industryName: e.target.value }))} placeholder="Industry" />
+                    <textarea className="rounded border px-2 py-1 md:col-span-2" value={String(draft.description ?? '')} onChange={(e) => setEditDraft((prev) => ({ ...prev, description: e.target.value }))} placeholder="Description" />
+                    <select className="rounded border px-2 py-1" value={String(draft.programmeId ?? '')} onChange={(e) => setEditDraft((prev) => ({ ...prev, programmeId: e.target.value || null }))}>
+                      <option value="">Select Programme</option>
+                      {programmes.map((programme) => <option key={programme.id} value={programme.id}>{programme.name}</option>)}
+                    </select>
+                    <select className="rounded border px-2 py-1" value={String(draft.targetType ?? item.targetType)} onChange={(e) => setEditDraft((prev) => ({ ...prev, targetType: e.target.value as 'INTERNAL' | 'EXTERNAL' }))}>
+                      <option value="INTERNAL">INTERNAL</option>
+                      <option value="EXTERNAL">EXTERNAL</option>
+                    </select>
+                    <select className="rounded border px-2 py-1" value={String(draft.type ?? item.type)} onChange={(e) => setEditDraft((prev) => ({ ...prev, type: e.target.value as 'FREE' | 'PAID' | 'STIPEND' }))}>
+                      <option value="FREE">FREE</option>
+                      <option value="PAID">PAID</option>
+                      <option value="STIPEND">STIPEND</option>
+                    </select>
+                    <select className="rounded border px-2 py-1" value={String(draft.gender ?? item.gender ?? 'BOTH')} onChange={(e) => setEditDraft((prev) => ({ ...prev, gender: e.target.value }))}>
+                      <option value="BOTH">BOTH</option>
+                      <option value="BOYS">BOYS</option>
+                      <option value="GIRLS">GIRLS</option>
+                    </select>
+                    <input type="number" min={60} className="rounded border px-2 py-1" value={String(draft.duration ?? item.duration)} onChange={(e) => setEditDraft((prev) => ({ ...prev, duration: Number(e.target.value) || 60 }))} placeholder="Duration (hours)" />
+                    <input type="number" min={1} className="rounded border px-2 py-1" value={String(draft.vacancy ?? item.vacancy)} onChange={(e) => setEditDraft((prev) => ({ ...prev, vacancy: Number(e.target.value) || 1 }))} placeholder="Vacancy" />
+                    {(draft.type ?? item.type) === 'PAID' ? <input type="number" min={0} className="rounded border px-2 py-1" value={String(draft.fee ?? item.fee ?? 0)} onChange={(e) => setEditDraft((prev) => ({ ...prev, fee: Number(e.target.value) || 0, stipend: null }))} placeholder="Fee" /> : null}
+                    {(draft.type ?? item.type) === 'STIPEND' ? <input type="number" min={0} className="rounded border px-2 py-1" value={String(draft.stipend ?? item.stipend ?? 0)} onChange={(e) => setEditDraft((prev) => ({ ...prev, stipend: Number(e.target.value) || 0, fee: null }))} placeholder="Stipend" /> : null}
+                    <div className="rounded border p-2 text-xs md:col-span-2">
+                      <p className="mb-1 font-medium">Internship Outcomes (PO/IPO/CO)</p>
+                      <div className="grid gap-1 md:grid-cols-2">
+                        {internshipOutcomes.map((outcome) => (
+                          <label key={outcome.id} className="block">
+                            <input
+                              type="checkbox"
+                              className="mr-2"
+                              checked={selectedOutcomeIds.includes(outcome.id)}
+                              onChange={() => {
+                                const nextIds = selectedOutcomeIds.includes(outcome.id)
+                                  ? selectedOutcomeIds.filter((id) => id !== outcome.id)
+                                  : [...selectedOutcomeIds, outcome.id];
+                                setEditDraft((prev) => ({ ...prev, selectedOutcomeIds: nextIds }));
+                              }}
+                            />
+                            {outcome.type}: {outcome.description}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p><strong>Title:</strong> {item.title}</p>
+                    <p><strong>Type:</strong> {item.targetType}</p>
+                    <p><strong>Industry:</strong> {item.industryName || '-'}</p>
+                    <p><strong>Status:</strong> {item.status}</p>
+                    <p><strong>Duration:</strong> {item.duration} hours</p>
+                    <p><strong>Vacancy:</strong> {item.vacancy}</p>
+                  </>
+                )}
                 <div className="flex gap-2 items-center">
                   {editingInternshipId === item.id ? (
                     <select value={String(draft.status ?? item.status)} onChange={(e) => setEditDraft((prev) => ({ ...prev, status: e.target.value }))} className="rounded border px-2 py-1">
                       <option value="DRAFT">DRAFT</option>
+                      <option value="SENT_IPO">SENT_IPO</option>
                       <option value="IPO_SENT">IPO_SENT</option>
                       <option value="PUBLISHED">PUBLISHED</option>
                     </select>
                   ) : null}
-                  <Button variant="secondary" onClick={() => { setEditingInternshipId(item.id); setEditDraft(item); }}>Edit</Button>
+                  <Button variant="secondary" onClick={() => { setEditingInternshipId(item.id); setEditDraft({ ...item, selectedOutcomeIds: item.outcomeMappings?.map((mapping) => mapping.outcomeId) ?? [] }); }}>Edit</Button>
                   {editingInternshipId === item.id ? (
                     <Button onClick={() => void runAction(() => fetchWithSession(`/api/internship/update/${item.id}`, {
                       method: 'PUT',
-                      body: JSON.stringify({ ...editDraft }),
+                      body: JSON.stringify({ ...editDraft, outcomeIds: selectedOutcomeIds }),
                     }).then(() => { setEditingInternshipId(null); setEditDraft({}); }), 'Internship updated.')}>Update Status</Button>
                   ) : null}
                   <Button variant="secondary" onClick={() => void runAction(() => fetchWithSession(`/api/internship/delete/${item.id}`, { method: 'DELETE' }).then(() => undefined), 'Internship deleted.')}>Delete</Button>
