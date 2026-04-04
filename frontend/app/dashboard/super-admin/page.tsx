@@ -25,7 +25,7 @@ type Department = { id: string; name: string; coordinator: string; email: string
 type IPOType = { id: string; name: string };
 type IPOSubtype = { id: string; name: string; ipo_type_id: string };
 type LogEntry = { id: string; action: string; entity: string; entity_id: string; performed_by: string; timestamp: string };
-type AdminUser = { id: string; email: string; role: string; display_name: string; is_active: number; created_at: string };
+type AdminUser = { id: string; email: string; role: string; display_name: string; status?: string; is_active: number; created_at: string };
 
 export default function SuperAdminDashboardPage() {
   const [metrics, setMetrics] = useState<KPI | null>(null);
@@ -143,6 +143,14 @@ export default function SuperAdminDashboardPage() {
 
   const deleteUser = async (id: string) => {
     await fetchWithSession(`/api/admin/user/${id}/delete`, { method: 'POST' });
+    await loadDashboard();
+  };
+
+  const updateUserStatus = async (user: AdminUser, action: 'approve' | 'reject') => {
+    await fetchWithSession(`/api/admin/user/${user.id}/edit`, {
+      method: 'POST',
+      body: JSON.stringify({ email: user.email, is_active: action === 'approve' ? '1' : '0' }),
+    });
     await loadDashboard();
   };
 
@@ -269,6 +277,8 @@ export default function SuperAdminDashboardPage() {
           <EntityTable title="Department Management" rows={visibleDepartments} onExport={() => exportRows('departments', visibleDepartments)} />
           <EntityTable title="User Management" rows={visibleUsers} onExport={() => exportRows('users', visibleUsers)} renderActions={(row) => (
             <div className="flex gap-2">
+              <Button variant="secondary" disabled={Number(row.is_active ?? 0) === 1} onClick={() => updateUserStatus(row, 'approve')}>Approve</Button>
+              <Button variant="secondary" disabled={Number(row.is_active ?? 0) === 0} onClick={() => updateUserStatus(row, 'reject')}>Reject</Button>
               <Button variant="secondary" onClick={() => openEditUser(row)}>Edit</Button>
               <Button variant="secondary" onClick={() => deleteUser(row.id)}>Delete</Button>
             </div>
