@@ -60,7 +60,11 @@ export default function CollegeDashboardPage() {
   }, [lastUpdatedAt]);
 
   const updateInternship = async (id: string, action: 'approve' | 'reject' | 'force-close') => { await fetchWithSession(`/api/college/internships/${id}/${action}`, { method: 'PUT' }); await loadDashboard(); };
-  const bulkAction = async (ids: string[], action: 'accept' | 'reject') => { if (!ids.length) return; await fetchWithSession('/api/college/applications/bulk-status', { method: 'PUT', body: JSON.stringify({ application_ids: ids, action }) }); await loadDashboard(); };
+  const bulkAction = async (ids: string[], action: 'accept' | 'reject') => {
+    if (!ids.length) return;
+    await fetchWithSession('/api/college/applications/bulk-status', { method: 'PUT', body: JSON.stringify({ application_ids: ids, action }) });
+    await loadDashboard();
+  };
   const saveDepartment = async () => {
     if (form.id) {
       await fetchWithSession(`/api/departments/${form.id}`, { method: 'PATCH', body: JSON.stringify(form) });
@@ -129,8 +133,126 @@ export default function CollegeDashboardPage() {
     {data && <>
       <DataTable title="Internship Approval Queue" rows={data.approvalQueue as any} columns={[{ key: 'title', label: 'Internship' }, { key: 'industry_name', label: 'IPO' }, { key: 'assigned_department', label: 'Assigned Dept' }, { key: 'status', label: 'Status' }]} actions={(row: any) => <div className="flex gap-2"><Button variant="secondary" onClick={() => updateInternship(row.id, 'approve')}>Approve</Button><Button variant="secondary" onClick={() => updateInternship(row.id, 'reject')}>Reject</Button></div>} />
       <DataTable title="All Internships (College View)" rows={data.internships as any} columns={[{ key: 'title', label: 'Internship' }, { key: 'target_department', label: 'Department' }, { key: 'vacancy', label: 'Vacancy' }, { key: 'applications_count', label: 'Applications' }, { key: 'status', label: 'Status' }, { key: 'alert', label: 'Alert' }]} actions={(row: any) => <div className="flex gap-2"><StatusBadge status={row.status} /><Button variant="secondary" onClick={() => updateInternship(row.id, 'force-close')}>Force Close</Button></div>} />
-      <Card className="rounded-[24px] p-4"><h3 className="mb-2 font-semibold">Internal Applications</h3><div className="mb-2 flex gap-2"><Button variant="secondary" onClick={() => bulkAction(selectedInternal, 'accept')}>Approve Selected</Button><Button variant="secondary" onClick={() => bulkAction(selectedInternal, 'reject')}>Reject Selected</Button></div>{data.applications.internal.map((item) => <label key={item.id} className="mb-2 flex items-center justify-between rounded border p-2"><span>{item.student_name} • {item.internship_title}</span><input type="checkbox" checked={selectedInternal.includes(item.id)} onChange={(e) => setSelectedInternal((prev) => e.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id))} /></label>)}</Card>
-      <Card className="rounded-[24px] p-4"><h3 className="mb-2 font-semibold">External Applications</h3><div className="mb-2 flex gap-2"><Button variant="secondary" onClick={() => bulkAction(selectedExternal, 'accept')}>Approve Selected</Button><Button variant="secondary" onClick={() => bulkAction(selectedExternal, 'reject')}>Reject Selected</Button></div>{data.applications.external.map((item) => <label key={item.id} className="mb-2 flex items-center justify-between rounded border p-2"><span>{item.student_name} • {item.internship_title}</span><input type="checkbox" checked={selectedExternal.includes(item.id)} onChange={(e) => setSelectedExternal((prev) => e.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id))} /></label>)}</Card>
+      <Card className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/80 p-0 shadow-[0_12px_50px_-28px_rgba(15,23,42,0.45)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <h3 className="font-semibold">Internal Applications</h3>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              disabled={!selectedInternal.length}
+              onClick={async () => {
+                await bulkAction(selectedInternal, 'accept');
+                setSelectedInternal([]);
+              }}
+            >
+              Approve Selected
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!selectedInternal.length}
+              onClick={async () => {
+                await bulkAction(selectedInternal, 'reject');
+                setSelectedInternal([]);
+              }}
+            >
+              Reject Selected
+            </Button>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-100/80 text-left text-xs uppercase tracking-wide text-slate-600">
+              <tr>
+                <th className="px-4 py-3">Select</th>
+                <th className="px-4 py-3">Application</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Controls</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.applications.internal.map((item) => (
+                <tr key={item.id} className="border-t border-slate-100 hover:bg-indigo-50/40">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedInternal.includes(item.id)}
+                      onChange={(e) => setSelectedInternal((prev) => e.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id))}
+                    />
+                  </td>
+                  <td className="px-4 py-3">{item.student_name} • {item.internship_title}</td>
+                  <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="secondary" onClick={() => void bulkAction([item.id], 'accept')}>Approve</Button>
+                      <Button variant="secondary" onClick={() => void bulkAction([item.id], 'reject')}>Reject</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Card className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/80 p-0 shadow-[0_12px_50px_-28px_rgba(15,23,42,0.45)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <h3 className="font-semibold">External Applications</h3>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              disabled={!selectedExternal.length}
+              onClick={async () => {
+                await bulkAction(selectedExternal, 'accept');
+                setSelectedExternal([]);
+              }}
+            >
+              Approve Selected
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!selectedExternal.length}
+              onClick={async () => {
+                await bulkAction(selectedExternal, 'reject');
+                setSelectedExternal([]);
+              }}
+            >
+              Reject Selected
+            </Button>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-100/80 text-left text-xs uppercase tracking-wide text-slate-600">
+              <tr>
+                <th className="px-4 py-3">Select</th>
+                <th className="px-4 py-3">Application</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Controls</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.applications.external.map((item) => (
+                <tr key={item.id} className="border-t border-slate-100 hover:bg-indigo-50/40">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedExternal.includes(item.id)}
+                      onChange={(e) => setSelectedExternal((prev) => e.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id))}
+                    />
+                  </td>
+                  <td className="px-4 py-3">{item.student_name} • {item.internship_title}</td>
+                  <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="secondary" onClick={() => void bulkAction([item.id], 'accept')}>Approve</Button>
+                      <Button variant="secondary" onClick={() => void bulkAction([item.id], 'reject')}>Reject</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </>}
   </>}</RoleDashboardShell>;
 }

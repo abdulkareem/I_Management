@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Fragment, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { fetchWithSession } from '@/lib/auth';
@@ -852,84 +852,74 @@ export function DepartmentDashboardSystem({ departmentId }: { departmentId?: str
         </div>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="p-4 space-y-3">
-          <h2 className="font-semibold">Internal Applications</h2>
-          {internalApplications.map((app) => (
-            <div key={app.id} className="rounded border p-2 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <p>{app.student_name} | {app.student_college ?? '-'} | {app.internship_title ?? '-'} </p>
-                <Button type="button" variant="secondary" onClick={() => void toggleApplicationDetails(app.id)}>
-                  {expandedApplications[app.id] ? 'Less' : 'More'}
-                </Button>
-              </div>
-              {expandedApplications[app.id] ? (
-                <div className="mt-2 space-y-1">
-                  <p><strong>Student Name:</strong> {applicationDetails[app.id]?.student_name ?? app.student_name}</p>
-                  <p><strong>Internship:</strong> {applicationDetails[app.id]?.internship_title ?? app.internship_title ?? '-'}</p>
-                  <p><strong>College:</strong> {applicationDetails[app.id]?.student_college ?? app.student_college ?? '-'}</p>
-                  <p><strong>Department:</strong> {applicationDetails[app.id]?.student_department ?? '-'}</p>
-                  <p><strong>Programme:</strong> {applicationDetails[app.id]?.programme ?? app.programme ?? '-'}</p>
-                  <p><strong>Email:</strong> {applicationDetails[app.id]?.student_email ?? app.student_email ?? '-'}</p>
-                  <p><strong>Mobile:</strong> {applicationDetails[app.id]?.student_mobile ?? app.student_mobile ?? '-'}</p>
-                  <div className="mt-2 rounded border bg-slate-50 p-2">
-                    <p><strong>Status:</strong> {app.status}</p>
-                    <p><strong>Feedback Status:</strong> {applicationLoading[app.id] ? 'Loading...' : (applicationInsights[app.id]?.feedbackSubmitted ? 'Submitted' : 'Pending')}</p>
-                    <p><strong>First Evaluation:</strong> {applicationInsights[app.id]?.firstEvaluation ?? 'Pending'}</p>
-                    <p><strong>Second Evaluation:</strong> {applicationInsights[app.id]?.secondEvaluation ?? 'Pending'}</p>
-                    <p><strong>Total Marks:</strong> {applicationInsights[app.id]?.totalMarks ?? 'Pending'}</p>
-                    <p><strong>Outcome Evaluation:</strong> {applicationInsights[app.id]?.outcomeEvaluation ?? 'Pending'}</p>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button type="button" variant="secondary" onClick={() => void approveApplication(app)}>Approve</Button>
-                    <Button type="button" variant="secondary" onClick={() => void rejectApplication(app)}>Reject</Button>
-                    <Button type="button" variant="secondary" onClick={() => void downloadLetters(app.id)}>Download Letters</Button>
-                    <Button type="button" variant="secondary" onClick={() => void downloadMarkStatement(app.id)}>Download Mark Statement</Button>
-                  </div>
-                </div>
-              ) : null}
+      <div className="grid gap-4 xl:grid-cols-2">
+        {[
+          { title: 'Internal Applications', items: internalApplications },
+          { title: 'External Applications', items: externalApplications },
+        ].map(({ title, items }) => (
+          <Card key={title} className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/90 p-0 shadow-[0_14px_54px_-28px_rgba(15,23,42,0.45)]">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h2 className="font-semibold">{title}</h2>
             </div>
-          ))}
-        </Card>
-
-        <Card className="p-4 space-y-3">
-          <h2 className="font-semibold">External Applications</h2>
-          {externalApplications.map((app) => (
-            <div key={app.id} className="rounded border p-2 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <p>{app.student_name} | {app.student_college ?? '-'} | {app.internship_title ?? '-'} </p>
-                <Button type="button" variant="secondary" onClick={() => void toggleApplicationDetails(app.id)}>
-                  {expandedApplications[app.id] ? 'Less' : 'More'}
-                </Button>
-              </div>
-              {expandedApplications[app.id] ? (
-                <div className="mt-2 space-y-1">
-                  <p><strong>Student Name:</strong> {applicationDetails[app.id]?.student_name ?? app.student_name}</p>
-                  <p><strong>Internship:</strong> {applicationDetails[app.id]?.internship_title ?? app.internship_title ?? '-'}</p>
-                  <p><strong>College:</strong> {applicationDetails[app.id]?.student_college ?? app.student_college ?? '-'}</p>
-                  <p><strong>Department:</strong> {applicationDetails[app.id]?.student_department ?? app.student_department ?? '-'}</p>
-                  <p><strong>Programme:</strong> {applicationDetails[app.id]?.programme ?? app.programme ?? '-'}</p>
-                  <p><strong>Email:</strong> {applicationDetails[app.id]?.student_email ?? app.student_email ?? '-'}</p>
-                  <p><strong>Mobile:</strong> {applicationDetails[app.id]?.student_mobile ?? app.student_mobile ?? '-'}</p>
-                  <div className="mt-2 rounded border bg-slate-50 p-2">
-                    <p><strong>Status:</strong> {app.status}</p>
-                    <p><strong>Feedback Status:</strong> {applicationLoading[app.id] ? 'Loading...' : (applicationInsights[app.id]?.feedbackSubmitted ? 'Submitted' : 'Pending')}</p>
-                    <p><strong>First Evaluation:</strong> {applicationInsights[app.id]?.firstEvaluation ?? 'Pending'}</p>
-                    <p><strong>Second Evaluation:</strong> {applicationInsights[app.id]?.secondEvaluation ?? 'Pending'}</p>
-                    <p><strong>Total Marks:</strong> {applicationInsights[app.id]?.totalMarks ?? 'Pending'}</p>
-                    <p><strong>Outcome Evaluation:</strong> {applicationInsights[app.id]?.outcomeEvaluation ?? 'Pending'}</p>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button type="button" variant="secondary" onClick={() => void approveApplication(app)}>Approve</Button>
-                    <Button type="button" variant="secondary" onClick={() => void rejectApplication(app)}>Reject</Button>
-                    <Button type="button" variant="secondary" onClick={() => void downloadLetters(app.id)}>Download Letters</Button>
-                    <Button type="button" variant="secondary" onClick={() => void downloadMarkStatement(app.id)}>Download Mark Statement</Button>
-                  </div>
-                </div>
-              ) : null}
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-100/80 text-left text-xs uppercase tracking-wide text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3">Student</th>
+                    <th className="px-4 py-3">College</th>
+                    <th className="px-4 py-3">Internship</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Controls</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((app) => (
+                    <Fragment key={app.id}>
+                      <tr className="border-t border-slate-100 hover:bg-indigo-50/40">
+                        <td className="px-4 py-3">{app.student_name}</td>
+                        <td className="px-4 py-3">{app.student_college ?? '-'}</td>
+                        <td className="px-4 py-3">{app.internship_title ?? '-'}</td>
+                        <td className="px-4 py-3">{app.status}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end gap-2">
+                            <Button type="button" variant="secondary" onClick={() => void approveApplication(app)}>Approve</Button>
+                            <Button type="button" variant="secondary" onClick={() => void rejectApplication(app)}>Reject</Button>
+                            <Button type="button" variant="secondary" onClick={() => void toggleApplicationDetails(app.id)}>
+                              {expandedApplications[app.id] ? 'Hide Details' : 'View Details'}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                      {expandedApplications[app.id] ? (
+                        <tr className="border-t border-slate-100 bg-slate-50/80">
+                          <td colSpan={5} className="px-4 py-3">
+                            <div className="grid gap-2 md:grid-cols-2">
+                              <p><strong>Email:</strong> {applicationDetails[app.id]?.student_email ?? app.student_email ?? '-'}</p>
+                              <p><strong>Mobile:</strong> {applicationDetails[app.id]?.student_mobile ?? app.student_mobile ?? '-'}</p>
+                              <p><strong>Department:</strong> {applicationDetails[app.id]?.student_department ?? '-'}</p>
+                              <p><strong>Programme:</strong> {applicationDetails[app.id]?.programme ?? app.programme ?? '-'}</p>
+                            </div>
+                            <div className="mt-2 grid gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-3">
+                              <p><strong>Feedback:</strong> {applicationLoading[app.id] ? 'Loading...' : (applicationInsights[app.id]?.feedbackSubmitted ? 'Submitted' : 'Pending')}</p>
+                              <p><strong>Evaluation-I:</strong> {applicationInsights[app.id]?.firstEvaluation ?? 'Pending'}</p>
+                              <p><strong>Evaluation-II:</strong> {applicationInsights[app.id]?.secondEvaluation ?? 'Pending'}</p>
+                              <p><strong>Total Marks:</strong> {applicationInsights[app.id]?.totalMarks ?? 'Pending'}</p>
+                              <p><strong>Outcome Eval:</strong> {applicationInsights[app.id]?.outcomeEvaluation ?? 'Pending'}</p>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button type="button" variant="secondary" onClick={() => void downloadLetters(app.id)}>Download Letters</Button>
+                              <Button type="button" variant="secondary" onClick={() => void downloadMarkStatement(app.id)}>Download Mark Statement</Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </Card>
+          </Card>
+        ))}
       </div>
     </div>
   );
