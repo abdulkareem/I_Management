@@ -248,6 +248,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     || pathname.startsWith('/api/dashboard/college/control-center')
   ) {
     await ensureDepartmentDashboardSchema(env);
+    await ensureCollegeIndustryLinkSchema(env);
   }
   if (
     pathname === '/api/ipo/internship'
@@ -1506,17 +1507,40 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     const actor = requireRole(request, ['COLLEGE']);
     if (actor instanceof Response) return actor;
     const rows = await env.DB.prepare(
-      `SELECT ind.id AS ipo_id, ind.name AS ipo_name,
+      `SELECT cil.id,
+              ind.id AS ipo_id, ind.name AS ipo_name,
+              cil.status, cil.requested_at, cil.updated_at AS decided_at, cil.rejection_reason,
               COUNT(DISTINCT i.id) AS active_internships,
               COUNT(DISTINCT ia.id) AS engagement_count
        FROM industries ind
        INNER JOIN college_industry_links cil ON cil.industry_id = ind.id AND cil.college_id = ?
        LEFT JOIN internships i ON i.industry_id = ind.id AND i.college_id = ?
        LEFT JOIN internship_applications ia ON ia.internship_id = i.id
-       GROUP BY ind.id, ind.name
+       GROUP BY cil.id, ind.id, ind.name, cil.status, cil.requested_at, cil.updated_at, cil.rejection_reason
        ORDER BY ind.name ASC`,
     ).bind(actor.id, actor.id).all();
     return ok('IPO partnerships loaded', rows.results ?? []);
+  }
+
+  const collegeIpoActionMatch = pathname.match(/^\/api\/college\/ipos\/([^/]+)\/(approve|reject)$/);
+  if (collegeIpoActionMatch && request.method === 'PATCH') {
+    const actor = requireRole(request, ['COLLEGE']);
+    if (actor instanceof Response) return actor;
+    const [, ipoId, action] = collegeIpoActionMatch;
+    const body = await readBody(request);
+    const rejectionReason = optional(body, ['reason', 'rejection_reason']) ?? 'Rejected by college coordinator';
+    const nextStatus = action === 'approve' ? 'approved' : 'rejected';
+
+    const result = await env.DB.prepare(
+      `UPDATE college_industry_links
+       SET status = ?,
+           rejection_reason = CASE WHEN ? = 'rejected' THEN ? ELSE NULL END,
+           updated_at = datetime('now')
+       WHERE college_id = ? AND industry_id = ?`,
+    ).bind(nextStatus, nextStatus, rejectionReason, actor.id, ipoId).run();
+    if ((result.meta.changes ?? 0) === 0) return notFound('IPO request not found for this college');
+
+    return ok(`IPO ${action}d successfully`);
   }
 
   if (request.method === 'GET' && pathname === '/api/college/compliance') {
@@ -2352,11 +2376,11 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     await env.DB.prepare('INSERT INTO ipo_connections (id, ipo_id, college_id, department_id) VALUES (?, ?, ?, ?)').bind(id, actor.id, collegeId, departmentId).run();
 
     await env.DB.prepare(
-      `INSERT OR IGNORE INTO college_industry_links (id, college_id, industry_id, status, requested_by, requested_at, created_at)
-       VALUES (?, ?, ?, 'approved', 'industry', datetime('now'), datetime('now'))`,
+      `INSERT OR IGNORE INTO college_industry_links (id, college_id, industry_id, status, requested_by, requested_at, created_at, updated_at)
+       VALUES (?, ?, ?, 'pending', 'industry', datetime('now'), datetime('now'), datetime('now'))`,
     ).bind(crypto.randomUUID(), collegeId, actor.id).run();
 
-    return created('IPO connected successfully', { id, ipo_id: actor.id, college_id: collegeId, department_id: departmentId ?? null });
+    return created('IPO connection requested. Wait till approved by the college admin.', { id, ipo_id: actor.id, college_id: collegeId, department_id: departmentId ?? null });
   }
 
   if (request.method === 'POST' && pathname === '/api/ipo/internship/suggest') {
@@ -2706,6 +2730,14 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!internshipTitle || !college || !category || !vacancyRaw) {
       return badRequest('internship_title, college, category and vacancy are required');
     }
+    const collegeLink = await env.DB.prepare(
+      `SELECT status
+       FROM college_industry_links
+       WHERE college_id = ? AND industry_id = ?`,
+    ).bind(college, actor.id).first<{ status: string }>();
+    if (!collegeLink || !['approved', 'active'].includes(String(collegeLink.status).toLowerCase())) {
+      return forbidden('This college has not approved your IPO yet. Please wait till approved by the admin.');
+    }
     if (department && !programme) return badRequest('programme is required when a department is selected');
     if (!department && programme) return badRequest('programme must be empty when department is no preference');
     if (Number.isNaN(vacancy) || vacancy <= 0) return badRequest('vacancy must be a positive number');
@@ -2782,9 +2814,19 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!internshipId) return badRequest('id is required');
 
     const internship = await env.DB.prepare(
-      'SELECT id, status FROM internships WHERE id = ? AND industry_id = ?',
-    ).bind(internshipId, actor.id).first<{ id: string; status: string }>();
+      'SELECT id, status, college_id FROM internships WHERE id = ? AND industry_id = ?',
+    ).bind(internshipId, actor.id).first<{ id: string; status: string; college_id: string | null }>();
     if (!internship) return errorResponse(404, 'Internship not found');
+    if (internship.college_id) {
+      const collegeLink = await env.DB.prepare(
+        `SELECT status
+         FROM college_industry_links
+         WHERE college_id = ? AND industry_id = ?`,
+      ).bind(internship.college_id, actor.id).first<{ status: string }>();
+      if (!collegeLink || !['approved', 'active'].includes(String(collegeLink.status).toLowerCase())) {
+        return forbidden('College approval is required before publishing internships.');
+      }
+    }
     if (!['SENT_TO_INDUSTRY', INTERNSHIP_STATUS.ACCEPTED].includes(internship.status)) return badRequest('Only sent internships can be published');
     if (!Number.isFinite(vacancy) || vacancy <= 0) return badRequest('vacancy must be greater than 0');
     if (!['GIRLS', 'BOYS', 'BOTH'].includes(genderPreference)) return badRequest('gender_preference must be GIRLS, BOYS or BOTH');
@@ -3036,18 +3078,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
        WHERE industry_id = ? AND college_id = ? AND status IN ('approved', 'active')`,
     ).bind(actor.id, collegeId).first<{ id: string }>();
     if (!linked) {
-      const linkId = crypto.randomUUID();
-      await env.DB.prepare(
-        `INSERT OR IGNORE INTO college_industry_links (
-          id,
-          college_id,
-          industry_id,
-          status,
-          requested_by,
-          created_at,
-          updated_at
-        ) VALUES (?, ?, ?, 'approved', 'industry', datetime('now'), datetime('now'))`,
-      ).bind(linkId, collegeId, actor.id).run();
+      return forbidden('College must approve your IPO before sending internship requests.');
     }
 
     const targetDepartments = departmentId
@@ -5747,9 +5778,10 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).bind(ipo.college_id, industryId).first<{ id: string }>();
     if (!existingLink) {
       await env.DB.prepare(
-        `INSERT INTO college_industry_links (id, college_id, industry_id, status, requested_by)
-         VALUES (?, ?, ?, 'approved', 'college')`,
+        `INSERT INTO college_industry_links (id, college_id, industry_id, status, requested_by, requested_at, created_at, updated_at)
+         VALUES (?, ?, ?, 'pending', 'college', datetime('now'), datetime('now'), datetime('now'))`,
       ).bind(crypto.randomUUID(), ipo.college_id, industryId).run();
+      return forbidden('IPO is not approved by the college yet. Request has been submitted for approval.');
     }
 
     const id = crypto.randomUUID();
@@ -7018,8 +7050,10 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     const isMatch = isPasswordMatch(password, college.password);
     console.log('[AUTH] College password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
-    const status = { status: college.status, is_active: college.is_active };
-    if (status?.status !== 'approved' || Number(status?.is_active) !== 1) return forbidden('Account not available. Please register again.');
+    if (Number(college.is_active) !== 1) return forbidden('Account removed by super admin.');
+    const normalizedStatus = String(college.status || '').toLowerCase();
+    if (normalizedStatus === 'rejected') return forbidden('Your college account was rejected by super admin.');
+    if (normalizedStatus !== 'approved') return forbidden('Wait till approved by the admin.');
     return ok('Login successful', createSession({ id: college.id, email: college.email, role: 'COLLEGE', collegeId: college.id }));
   }
 
@@ -7032,7 +7066,10 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     const isMatch = isPasswordMatch(password, industry.password);
     console.log('[AUTH] Industry password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
-    if (industry.status !== 'approved' || Number(industry.is_active) !== 1) return forbidden('Account not available. Please register again.');
+    if (Number(industry.is_active) !== 1) return forbidden('Account removed by super admin.');
+    const normalizedStatus = String(industry.status || '').toLowerCase();
+    if (normalizedStatus === 'rejected') return forbidden('Your IPO account was rejected by super admin.');
+    if (normalizedStatus !== 'approved') return forbidden('Wait till approved by the admin.');
     return ok('Login successful', createSession({ id: industry.id, email: industry.email, role: 'INDUSTRY' }));
   }
 
@@ -8593,6 +8630,30 @@ async function ensureAcademicPathForUnlistedStudent(
   }
 
   return { collegeId, departmentId, programId };
+}
+
+async function ensureCollegeIndustryLinkSchema(env: EnvBindings): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS college_industry_links (
+      id TEXT PRIMARY KEY,
+      college_id TEXT NOT NULL,
+      industry_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'active', 'rejected')),
+      requested_by TEXT,
+      requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+      rejection_reason TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(college_id, industry_id)
+    )`,
+  ).run();
+
+  const columns = new Set((await getTableColumns(env, 'college_industry_links')).map((column) => column.name));
+  if (!columns.has('status')) await env.DB.prepare("ALTER TABLE college_industry_links ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'").run();
+  if (!columns.has('requested_by')) await env.DB.prepare('ALTER TABLE college_industry_links ADD COLUMN requested_by TEXT').run();
+  if (!columns.has('requested_at')) await env.DB.prepare("ALTER TABLE college_industry_links ADD COLUMN requested_at TEXT NOT NULL DEFAULT (datetime('now'))").run();
+  if (!columns.has('rejection_reason')) await env.DB.prepare('ALTER TABLE college_industry_links ADD COLUMN rejection_reason TEXT').run();
+  if (!columns.has('updated_at')) await env.DB.prepare("ALTER TABLE college_industry_links ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))").run();
 }
 
 
