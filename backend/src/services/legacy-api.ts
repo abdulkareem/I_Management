@@ -52,6 +52,7 @@ type AuthSession = {
       | 'STUDENT';
     collegeId?: string | null;
     departmentId?: string | null;
+    approvalStatus?: string | null;
   };
 };
 
@@ -200,27 +201,6 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   const authToken = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
   const sessionActor = authToken ? parseSessionToken(authToken) : null;
 
-  if (sessionActor?.role === 'COLLEGE_COORDINATOR') {
-    const collegeAccess = await env.DB.prepare('SELECT status, is_active FROM colleges WHERE id = ?')
-      .bind(sessionActor.id)
-      .first<{ status: string; is_active: number }>();
-
-    if (!collegeAccess || Number(collegeAccess.is_active) !== 1) {
-      return forbidden('College access blocked. Contact super admin.');
-    }
-
-    const normalizedCollegeStatus = String(collegeAccess.status || '').toLowerCase();
-    if (normalizedCollegeStatus === 'pending') {
-      return forbidden('Approval is pending for this college. Dashboard access is blocked until super admin approval.');
-    }
-    if (normalizedCollegeStatus === 'rejected') {
-      return forbidden('Your college account is rejected and cannot access the dashboard.');
-    }
-    if (normalizedCollegeStatus !== 'approved') {
-      return forbidden('College account is not approved for dashboard access.');
-    }
-  }
-
   const pathname = (() => {
     if (rawPathname.startsWith('/api/ipo-types')) return rawPathname.replace('/api/ipo-types', '/api/industry-types');
     if (rawPathname.startsWith('/api/ipo-subtypes')) return rawPathname.replace('/api/ipo-subtypes', '/api/industry-subtypes');
@@ -249,6 +229,9 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     }
     return rawPathname;
   })();
+
+  const approvalDenied = await approvalCheckMiddleware(sessionActor, env, pathname, request.method);
+  if (approvalDenied) return approvalDenied;
 
   if (pathname.startsWith('/api/department') || pathname === '/api/college/login' || pathname === '/api/auth/login') {
     await ensureDepartmentCompatibility(env);
@@ -6227,13 +6210,13 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
       .first<{ id: string; coordinator_email: string }>();
     if (!existingCollege) return errorResponse(404, 'College not found');
 
-    await env.DB.prepare('DELETE FROM auth_identities WHERE role = ? AND entity_id = ?').bind('college', collegeId).run();
-    await env.DB.prepare('DELETE FROM auth_identities WHERE lower(email) = lower(?)').bind(existingCollege.coordinator_email).run();
+    await env.DB.prepare("UPDATE auth_identities SET is_active = 0, updated_at = datetime('now') WHERE role = ? AND entity_id = ?").bind('college', collegeId).run();
+    await env.DB.prepare("UPDATE auth_identities SET is_active = 0, updated_at = datetime('now') WHERE lower(email) = lower(?)").bind(existingCollege.coordinator_email).run();
 
-    const result = await env.DB.prepare('DELETE FROM colleges WHERE id = ?').bind(collegeId).run();
+    const result = await env.DB.prepare("UPDATE colleges SET status = 'deleted', is_active = 0, updated_at = datetime('now') WHERE id = ?").bind(collegeId).run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'College not found');
     await insertAuditLog(env, { action: 'DELETE', entity: 'colleges', entityId: collegeId, performedBy: actor.id });
-    return ok('College deleted from database');
+    return ok('College marked as deleted');
   }
 
   const industryDeleteMatch = pathname.match(/^\/api\/industries\/([^/]+)$/);
@@ -6825,9 +6808,13 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
       .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
 
     if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
-    if (row.status !== 'approved' || Number(row.is_active) !== 1) return forbidden('Account not available. Please register again.');
+    const normalizedStatus = String(row.status || '').toLowerCase();
+    if (normalizedStatus === 'pending') return forbidden('Your account is under review by Super Admin. Please wait for approval.');
+    if (normalizedStatus === 'rejected') return forbidden('Your account has been rejected. Contact Super Admin.');
+    if (normalizedStatus === 'deleted' || Number(row.is_active) !== 1) return forbidden('Account does not exist or has been removed.');
+    if (normalizedStatus !== 'approved') return forbidden('Account does not exist or has been removed.');
 
-    return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'COLLEGE', collegeId: row.id }));
+    return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'COLLEGE', collegeId: row.id, approvalStatus: 'APPROVED' }));
   }
 
   if (entity === 'industry') {
@@ -6836,9 +6823,12 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
       .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
 
     if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
-    if (row.status !== 'approved' || Number(row.is_active) !== 1) return forbidden('Account not available. Please register again.');
+    const normalizedStatus = String(row.status || '').toLowerCase();
+    if (normalizedStatus === 'pending') return forbidden('Your IPO registration is under review by College Coordinator.');
+    if (normalizedStatus === 'rejected') return forbidden('Your IPO registration has been rejected.');
+    if (Number(row.is_active) !== 1 || normalizedStatus !== 'approved') return forbidden('Your IPO registration is under review by College Coordinator.');
 
-    return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'INDUSTRY' }));
+    return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'INDUSTRY', approvalStatus: 'APPROVED' }));
   }
 
   const row = await env.DB.prepare('SELECT id, email, password, is_active, college_id, department_id FROM students WHERE lower(email) = lower(?)')
@@ -7083,11 +7073,12 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     const isMatch = isPasswordMatch(password, college.password);
     console.log('[AUTH] College password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
-    if (Number(college.is_active) !== 1) return forbidden('Account removed by super admin.');
     const normalizedStatus = String(college.status || '').toLowerCase();
-    if (normalizedStatus === 'rejected') return forbidden('Your college account was rejected by super admin.');
-    if (normalizedStatus !== 'approved') return forbidden('Wait till approved by the admin.');
-    return ok('Login successful', createSession({ id: college.id, email: college.email, role: 'COLLEGE', collegeId: college.id }));
+    if (normalizedStatus === 'pending') return forbidden('Your account is under review by Super Admin. Please wait for approval.');
+    if (normalizedStatus === 'rejected') return forbidden('Your account has been rejected. Contact Super Admin.');
+    if (normalizedStatus === 'deleted' || Number(college.is_active) !== 1) return forbidden('Account does not exist or has been removed.');
+    if (normalizedStatus !== 'approved') return forbidden('Account does not exist or has been removed.');
+    return ok('Login successful', createSession({ id: college.id, email: college.email, role: 'COLLEGE', collegeId: college.id, approvalStatus: 'APPROVED' }));
   }
 
   const industry = await env.DB.prepare('SELECT id, email, password, status, is_active FROM industries WHERE lower(email) = lower(?)')
@@ -7099,11 +7090,17 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     const isMatch = isPasswordMatch(password, industry.password);
     console.log('[AUTH] Industry password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
-    if (Number(industry.is_active) !== 1) return forbidden('Account removed by super admin.');
     const normalizedStatus = String(industry.status || '').toLowerCase();
-    if (normalizedStatus === 'rejected') return forbidden('Your IPO account was rejected by super admin.');
-    if (normalizedStatus !== 'approved') return forbidden('Wait till approved by the admin.');
-    return ok('Login successful', createSession({ id: industry.id, email: industry.email, role: 'INDUSTRY' }));
+    if (normalizedStatus === 'pending') return forbidden('Your IPO registration is under review by College Coordinator.');
+    if (normalizedStatus === 'rejected') return forbidden('Your IPO registration has been rejected.');
+    if (Number(industry.is_active) !== 1 || normalizedStatus !== 'approved') return forbidden('Your IPO registration is under review by College Coordinator.');
+
+    const approvedLink = await env.DB.prepare(
+      `SELECT college_id FROM college_industry_links WHERE industry_id = ? AND status IN ('approved', 'active') ORDER BY updated_at DESC LIMIT 1`,
+    ).bind(industry.id).first<{ college_id: string | null }>();
+    if (!approvedLink?.college_id) return forbidden('Your IPO registration is under review by College Coordinator.');
+
+    return ok('Login successful', createSession({ id: industry.id, email: industry.email, role: 'INDUSTRY', collegeId: approvedLink.college_id, approvalStatus: 'APPROVED' }));
   }
 
   const student = await env.DB.prepare('SELECT id, email, password, is_active, college_id, department_id FROM students WHERE lower(email) = lower(?)')
@@ -8782,6 +8779,7 @@ function createSession(user: AuthSession['user']): AuthSession {
     role: user.role,
     collegeId: user.collegeId ?? null,
     departmentId: user.departmentId ?? null,
+    approvalStatus: user.approvalStatus ?? null,
     t: Date.now(),
   });
   const token = `session.${btoa(tokenPayload)}`;
@@ -8792,7 +8790,7 @@ function createSession(user: AuthSession['user']): AuthSession {
   };
 }
 
-function parseSessionToken(token: string): { id: string; email: string; role: AuthSession['user']['role']; collegeId: string | null; departmentId: string | null } | null {
+function parseSessionToken(token: string): { id: string; email: string; role: AuthSession['user']['role']; collegeId: string | null; departmentId: string | null; approvalStatus: string | null } | null {
   if (!token.startsWith('session.')) return null;
 
   try {
@@ -8808,10 +8806,59 @@ function parseSessionToken(token: string): { id: string; email: string; role: Au
       role: normalizedRole,
       collegeId: payload.collegeId ? String(payload.collegeId) : null,
       departmentId: payload.departmentId ? String(payload.departmentId) : null,
+      approvalStatus: payload.approvalStatus ? String(payload.approvalStatus) : null,
     };
   } catch {
     return null;
   }
+}
+
+
+async function approvalCheckMiddleware(
+  actor: { id: string; role: AuthSession['user']['role'] } | null,
+  env: EnvBindings,
+  pathname: string,
+  _method: string,
+): Promise<Response | null> {
+  if (!actor) return null;
+
+  const isPublicAuthRoute = (
+    pathname === '/api/health'
+    || pathname === '/api/auth/login'
+    || pathname === '/api/college/login'
+    || pathname === '/api/industry/login'
+    || pathname === '/api/auth/register'
+    || pathname === '/api/college/register'
+    || pathname === '/api/industry/register'
+  );
+  if (isPublicAuthRoute) return null;
+
+  if (actor.role === 'COLLEGE_COORDINATOR') {
+    const college = await env.DB.prepare('SELECT status, is_active FROM colleges WHERE id = ?').bind(actor.id).first<{ status: string; is_active: number }>();
+    if (!college) return forbidden('Account does not exist or has been removed.');
+    const normalizedStatus = String(college.status || '').toLowerCase();
+    if (normalizedStatus === 'pending') return forbidden('Your account is under review by Super Admin. Please wait for approval.');
+    if (normalizedStatus === 'rejected') return forbidden('Your account has been rejected. Contact Super Admin.');
+    if (normalizedStatus === 'deleted' || Number(college.is_active) !== 1) return forbidden('Account does not exist or has been removed.');
+    if (normalizedStatus !== 'approved') return forbidden('Unauthorized Access Error');
+  }
+
+  if (actor.role === 'IPO') {
+    const ipo = await env.DB.prepare('SELECT status, is_active FROM industries WHERE id = ?').bind(actor.id).first<{ status: string; is_active: number }>();
+    if (!ipo) return forbidden('Your IPO registration is under review by College Coordinator.');
+    const normalizedIpoStatus = String(ipo.status || '').toLowerCase();
+    if (normalizedIpoStatus === 'rejected') return forbidden('Your IPO registration has been rejected.');
+    if (Number(ipo.is_active) !== 1 || normalizedIpoStatus !== 'approved') return forbidden('Your IPO registration is under review by College Coordinator.');
+
+    const link = await env.DB.prepare(
+      `SELECT status FROM college_industry_links WHERE industry_id = ? ORDER BY updated_at DESC LIMIT 1`,
+    ).bind(actor.id).first<{ status: string }>();
+    const normalizedLinkStatus = String(link?.status || 'pending').toLowerCase();
+    if (normalizedLinkStatus === 'rejected' || normalizedLinkStatus === 'removed') return forbidden('Your IPO registration has been rejected.');
+    if (!['approved', 'active'].includes(normalizedLinkStatus)) return forbidden('Your IPO registration is under review by College Coordinator.');
+  }
+
+  return null;
 }
 
 async function readBody(request: Request): Promise<JsonMap> {
