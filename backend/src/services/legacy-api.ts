@@ -372,6 +372,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!collegeId || !name || !coordinatorName || !coordinatorEmail) {
       return badRequest('college_id, name, coordinator_name, coordinator_email are required');
     }
+    const collegeApproval = await verifyCollegeApproval(env, collegeId);
+    if (!collegeApproval.approved) return forbidden(collegeApproval.reason || 'Only approved colleges can create departments');
 
     const duplicate = await env.DB.prepare(
       'SELECT id FROM departments WHERE college_id = ? AND lower(name) = lower(?) AND is_active = 1',
@@ -2022,6 +2024,8 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     if (!name || !coordinatorName || !coordinatorEmail) {
       return badRequest('name, coordinator_name, coordinator_email are required');
     }
+    const collegeApproval = await verifyCollegeApproval(env, collegeId);
+    if (!collegeApproval.approved) return forbidden(collegeApproval.reason || 'Only approved colleges can create departments');
 
     const password = generatePassword(10);
 
@@ -6786,6 +6790,17 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
     collegeId: row.college_id ?? null,
     departmentId: row.department_id ?? null,
   }));
+}
+
+async function verifyCollegeApproval(env: EnvBindings, collegeId: string): Promise<{ approved: boolean; reason?: string }> {
+  const college = await env.DB.prepare('SELECT status, is_active FROM colleges WHERE id = ?')
+    .bind(collegeId)
+    .first<{ status: string; is_active: number }>();
+
+  if (!college) return { approved: false, reason: 'College account not found' };
+  if (college.status !== 'approved') return { approved: false, reason: 'College account is pending super admin approval' };
+  if (Number(college.is_active) !== 1) return { approved: false, reason: 'College account is inactive' };
+  return { approved: true };
 }
 
 async function handleCollegeRegistration(body: JsonMap, env: EnvBindings): Promise<Response> {
