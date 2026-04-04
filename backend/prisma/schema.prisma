@@ -20,6 +20,7 @@ enum ApprovalStatus {
   PENDING
   APPROVED
   REJECTED
+  DELETED
 }
 
 enum TargetType {
