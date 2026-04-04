@@ -315,6 +315,15 @@ async function getAuthUser(req: Request): Promise<AuthUser | null> {
   });
 }
 
+async function requireAdminAuth(req: Request, res: Response): Promise<AuthUser | null> {
+  const authUser = await getAuthUser(req);
+  if (!authUser || (authUser.role !== Role.SUPER_ADMIN && authUser.role !== Role.ADMIN)) {
+    apiError(res, 403, 'Only admins can perform this action.');
+    return null;
+  }
+  return authUser;
+}
+
 async function getCollegeIdForCoordinator(user: AuthUser): Promise<string | null> {
   if (user.role !== Role.COLLEGE_COORDINATOR) return null;
   const college = await prisma.college.findFirst({
@@ -939,6 +948,85 @@ app.get('/api/logs', async (_req, res) => {
     apiOk(res, 'Audit logs fetched', logs.slice(0, 100));
   } catch (error) {
     apiError(res, 500, toMessage(error));
+  }
+});
+
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const authUser = await requireAdminAuth(req, res);
+    if (!authUser) return;
+
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        name: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+
+    apiOk(res, 'Admin users fetched', users.map((user) => ({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      display_name: user.name || user.email,
+      is_active: user.isActive ? 1 : 0,
+      created_at: user.createdAt.toISOString(),
+    })));
+  } catch (error) {
+    apiError(res, 500, toMessage(error));
+  }
+});
+
+app.post('/api/admin/user/:id/edit', async (req, res) => {
+  try {
+    const authUser = await requireAdminAuth(req, res);
+    if (!authUser) return;
+
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const rawIsActive = req.body?.is_active;
+    const isActive = rawIsActive === true || rawIsActive === 1 || rawIsActive === '1' || rawIsActive === 'true';
+
+    if (!email) {
+      apiError(res, 400, 'email is required');
+      return;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { email, isActive },
+      select: { id: true, email: true, isActive: true },
+    });
+
+    apiOk(res, 'User updated', {
+      id: updated.id,
+      email: updated.email,
+      is_active: updated.isActive ? 1 : 0,
+    });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
+  }
+});
+
+app.post('/api/admin/user/:id/delete', async (req, res) => {
+  try {
+    const authUser = await requireAdminAuth(req, res);
+    if (!authUser) return;
+
+    if (req.params.id === authUser.id) {
+      apiError(res, 400, 'You cannot delete your own account.');
+      return;
+    }
+
+    await prisma.user.delete({
+      where: { id: req.params.id },
+    });
+    apiOk(res, 'User deleted', { id: req.params.id });
+  } catch (error) {
+    apiError(res, 400, toMessage(error));
   }
 });
 
