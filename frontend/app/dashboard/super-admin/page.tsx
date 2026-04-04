@@ -25,6 +25,7 @@ type Department = { id: string; name: string; coordinator: string; email: string
 type IPOType = { id: string; name: string };
 type IPOSubtype = { id: string; name: string; ipo_type_id: string };
 type LogEntry = { id: string; action: string; entity: string; entity_id: string; performed_by: string; timestamp: string };
+type AdminUser = { id: string; email: string; role: string; display_name: string; is_active: number; created_at: string };
 
 export default function SuperAdminDashboardPage() {
   const [metrics, setMetrics] = useState<KPI | null>(null);
@@ -34,6 +35,10 @@ export default function SuperAdminDashboardPage() {
   const [ipoTypes, setIPOTypes] = useState<IPOType[]>([]);
   const [ipoSubtypes, setIPOSubtypes] = useState<IPOSubtype[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [editingEmail, setEditingEmail] = useState('');
+  const [editingStatus, setEditingStatus] = useState('1');
   const [search, setSearch] = useState('');
   const [departmentCollegeFilter, setDepartmentCollegeFilter] = useState('all');
   const [newTypeName, setNewTypeName] = useState('');
@@ -44,7 +49,7 @@ export default function SuperAdminDashboardPage() {
   const loadDashboard = useCallback(async () => {
     setError(null);
     try {
-      const [metricsRes, collegeRes, ipoRes, departmentRes, typeRes, subtypeRes, logsRes] = await Promise.all([
+      const [metricsRes, collegeRes, ipoRes, departmentRes, typeRes, subtypeRes, logsRes, usersRes] = await Promise.all([
         fetchWithSession<KPI>('/api/dashboard/metrics'),
         fetchWithSession<College[]>('/api/colleges'),
         fetchWithSession<IPO[]>('/api/ipos'),
@@ -52,6 +57,7 @@ export default function SuperAdminDashboardPage() {
         fetchWithSession<IPOType[]>('/api/ipo-types'),
         fetchWithSession<IPOSubtype[]>('/api/ipo-subtypes'),
         fetchWithSession<LogEntry[]>('/api/logs'),
+        fetchWithSession<AdminUser[]>('/api/admin/users'),
       ]);
       setMetrics(metricsRes.data);
       setColleges(collegeRes.data);
@@ -60,6 +66,7 @@ export default function SuperAdminDashboardPage() {
       setIPOTypes(typeRes.data);
       setIPOSubtypes(subtypeRes.data);
       setLogs(logsRes.data);
+      setUsers(usersRes.data);
       if (!selectedType && typeRes.data.length > 0) setSelectedType(typeRes.data[0].id);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load dashboard');
@@ -82,6 +89,7 @@ export default function SuperAdminDashboardPage() {
     () => departments.filter((row) => (departmentCollegeFilter === 'all' || row.college_id === departmentCollegeFilter) && matchesSearch(row as unknown as Record<string, unknown>)),
     [departments, departmentCollegeFilter, search],
   );
+  const visibleUsers = useMemo(() => users.filter(matchesSearch), [users, search]);
 
   const exportRows = (name: string, rows: unknown[]) => {
     const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -97,6 +105,27 @@ export default function SuperAdminDashboardPage() {
 
   const deleteEntity = async (entity: 'colleges' | 'ipos', id: string) => {
     await fetchWithSession(`/api/${entity}/${id}`, { method: 'DELETE' });
+    await loadDashboard();
+  };
+
+  const openEditUser = (user: AdminUser) => {
+    setEditingUser(user);
+    setEditingEmail(user.email);
+    setEditingStatus(String(user.is_active ?? 1));
+  };
+
+  const saveEditUser = async () => {
+    if (!editingUser) return;
+    await fetchWithSession(`/api/admin/user/${editingUser.id}/edit`, {
+      method: 'POST',
+      body: JSON.stringify({ email: editingEmail, is_active: editingStatus }),
+    });
+    setEditingUser(null);
+    await loadDashboard();
+  };
+
+  const deleteUser = async (id: string) => {
+    await fetchWithSession(`/api/admin/user/${id}/delete`, { method: 'POST' });
     await loadDashboard();
   };
 
@@ -218,7 +247,30 @@ export default function SuperAdminDashboardPage() {
           )} />
 
           <EntityTable title="Department Management" rows={visibleDepartments} onExport={() => exportRows('departments', visibleDepartments)} />
+          <EntityTable title="User Management" rows={visibleUsers} onExport={() => exportRows('users', visibleUsers)} renderActions={(row) => (
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => openEditUser(row)}>Edit</Button>
+              <Button variant="secondary" onClick={() => deleteUser(row.id)}>Delete</Button>
+            </div>
+          )} />
           <EntityTable title="Audit Logs" rows={logs.slice(0, 100)} onExport={() => exportRows('logs', logs)} />
+
+          {editingUser ? (
+            <Card className="space-y-3 p-4">
+              <h3 className="font-semibold">Edit User</h3>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Input value={editingEmail} onChange={(event) => setEditingEmail(event.target.value)} placeholder="User email" />
+                <select className="rounded-xl border border-slate-300 bg-white px-3 py-2" value={editingStatus} onChange={(event) => setEditingStatus(event.target.value)}>
+                  <option value="1">Active</option>
+                  <option value="0">Inactive</option>
+                </select>
+                <div className="flex gap-2">
+                  <Button onClick={saveEditUser}>Save</Button>
+                  <Button variant="secondary" onClick={() => setEditingUser(null)}>Cancel</Button>
+                </div>
+              </div>
+            </Card>
+          ) : null}
         </div>
       )}
     </RoleDashboardShell>

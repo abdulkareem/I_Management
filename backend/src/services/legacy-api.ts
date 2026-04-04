@@ -281,6 +281,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   if (
     pathname === '/api/dashboard/metrics'
     || pathname === '/api/logs'
+    || pathname === '/api/admin/users'
     || pathname.startsWith('/api/industry-subtypes')
     || pathname.startsWith('/api/industry-types')
     || pathname === '/api/colleges'
@@ -1188,6 +1189,31 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
     ).all();
 
     return ok('Admin departments fetched', rows.results ?? []);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/admin/users') {
+    const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
+    if (actor instanceof Response) return actor;
+
+    const rows = await env.DB.prepare(
+      `SELECT ai.id,
+              ai.email,
+              ai.role,
+              ai.entity_id,
+              ai.is_active,
+              ai.created_at,
+              ai.updated_at,
+              COALESCE(c.name, d.name, i.name, s.name, a.email, 'Unknown') AS display_name
+       FROM auth_identities ai
+       LEFT JOIN colleges c ON ai.role = 'college' AND c.id = ai.entity_id
+       LEFT JOIN departments d ON ai.role = 'department' AND d.id = ai.entity_id
+       LEFT JOIN industries i ON ai.role = 'industry' AND i.id = ai.entity_id
+       LEFT JOIN students s ON ai.role = 'student' AND s.id = ai.entity_id
+       LEFT JOIN admins a ON ai.role IN ('admin', 'superadmin') AND a.id = ai.entity_id
+       ORDER BY ai.created_at DESC`,
+    ).all();
+
+    return ok('Admin users fetched', rows.results ?? []);
   }
 
   if (request.method === 'GET' && (pathname === '/api/dashboard/college' || pathname === '/college/dashboard')) {
@@ -3480,7 +3506,7 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   }
 
 
-  const actionMatch = pathname.match(/^\/api\/admin\/(college|industry|student|department)\/([^/]+)\/(approve|reject|delete|edit)$/);
+  const actionMatch = pathname.match(/^\/api\/admin\/(college|industry|student|department|user)\/([^/]+)\/(approve|reject|delete|edit)$/);
   if (actionMatch) {
     const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
     if (actor instanceof Response) return actor;
@@ -6565,6 +6591,36 @@ async function rejectAdminEntity(env: EnvBindings, entity: string, entityId: str
 }
 
 async function deleteAdminEntity(env: EnvBindings, entity: string, entityId: string): Promise<Response> {
+  if (entity === 'user') {
+    const identity = await env.DB.prepare(
+      'SELECT id, role, entity_id, email FROM auth_identities WHERE id = ?',
+    ).bind(entityId).first<{ id: string; role: string; entity_id: string; email: string }>();
+    if (!identity) return errorResponse(404, 'user not found');
+    return deleteAdminEntity(env, identity.role, identity.entity_id);
+  }
+
+  if (entity === 'college') {
+    const exists = await env.DB.prepare('SELECT id FROM colleges WHERE id = ?').bind(entityId).first<{ id: string }>();
+    if (!exists) return errorResponse(404, 'college not found');
+
+    await runAtomic(env, null, async () => {
+      await env.DB.prepare('DELETE FROM internship_applications WHERE internship_id IN (SELECT id FROM internships WHERE college_id = ? OR department_id IN (SELECT id FROM departments WHERE college_id = ?))')
+        .bind(entityId, entityId)
+        .run();
+      await env.DB.prepare('DELETE FROM internships WHERE college_id = ? OR department_id IN (SELECT id FROM departments WHERE college_id = ?)')
+        .bind(entityId, entityId)
+        .run();
+      await env.DB.prepare('DELETE FROM auth_identities WHERE role = \'department\' AND entity_id IN (SELECT id FROM departments WHERE college_id = ?)').bind(entityId).run();
+      await env.DB.prepare('DELETE FROM auth_identities WHERE role = \'student\' AND entity_id IN (SELECT id FROM students WHERE college_id = ?)').bind(entityId).run();
+      await env.DB.prepare('DELETE FROM departments WHERE college_id = ?').bind(entityId).run();
+      await env.DB.prepare('DELETE FROM students WHERE college_id = ?').bind(entityId).run();
+      await env.DB.prepare('DELETE FROM colleges WHERE id = ?').bind(entityId).run();
+      await env.DB.prepare('DELETE FROM auth_identities WHERE role = \'college\' AND entity_id = ?').bind(entityId).run();
+    });
+
+    return ok('college deleted');
+  }
+
   const table = entity === 'college'
     ? 'colleges'
     : entity === 'industry'
@@ -6579,11 +6635,28 @@ async function deleteAdminEntity(env: EnvBindings, entity: string, entityId: str
 
   const result = await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(entityId).run();
   if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, `${entity} not found`);
+  await env.DB.prepare('DELETE FROM auth_identities WHERE role = ? AND entity_id = ?').bind(entity, entityId).run();
   return ok(`${entity} deleted`);
 }
 
 async function editAdminEntity(request: Request, env: EnvBindings, entity: string, entityId: string): Promise<Response> {
   const body = await readBody(request);
+
+  if (entity === 'user') {
+    const email = optional(body, ['email']);
+    const isActive = optional(body, ['is_active', 'isActive']);
+    const activeInt = typeof isActive === 'string' ? toBooleanInt(isActive) : null;
+
+    const result = await env.DB.prepare(
+      `UPDATE auth_identities
+       SET email = COALESCE(?, email),
+           is_active = COALESCE(?, is_active),
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    ).bind(email, activeInt, entityId).run();
+    if (!result.success || (result.meta.changes ?? 0) === 0) return errorResponse(404, 'User not found');
+    return ok('User updated');
+  }
 
   if (entity === 'college') {
     const result = await env.DB.prepare(
@@ -6683,7 +6756,7 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
       .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
 
     if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
-    if (row.status !== 'approved' || Number(row.is_active) !== 1) return forbidden('Waiting for approval');
+    if (row.status !== 'approved' || Number(row.is_active) !== 1) return forbidden('Account not available. Please register again.');
 
     return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'COLLEGE', collegeId: row.id }));
   }
@@ -6694,7 +6767,7 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
       .first<{ id: string; email: string; password: string; status: string; is_active: number }>();
 
     if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
-    if (row.status !== 'approved' || Number(row.is_active) !== 1) return forbidden('Waiting for approval');
+    if (row.status !== 'approved' || Number(row.is_active) !== 1) return forbidden('Account not available. Please register again.');
 
     return ok('Login successful', createSession({ id: row.id, email: row.email, role: 'INDUSTRY' }));
   }
@@ -6704,7 +6777,7 @@ async function passwordLogin(request: Request, env: EnvBindings, entity: 'colleg
     .first<{ id: string; email: string; password: string; is_active: number; college_id: string | null; department_id: string | null }>();
 
   if (!row || !isPasswordMatch(password, row.password)) return unauthorized('Invalid credentials');
-  if (Number(row.is_active) !== 1) return forbidden('Account inactive');
+  if (Number(row.is_active) !== 1) return forbidden('Account removed by superadmin. Please register again.');
 
   return ok('Login successful', createSession({
     id: row.id,
@@ -6908,7 +6981,7 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     const isMatch = isPasswordMatch(password, effectivePassword);
     console.log('[AUTH] Department password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
-    if (Number(department.is_active) !== 1) return forbidden('Department account inactive');
+    if (Number(department.is_active) !== 1) return forbidden('Account removed by superadmin. Please register again.');
     return ok('Login successful', {
       ...createSession({
         id: department.id,
@@ -6931,7 +7004,7 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     console.log('[AUTH] College password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
     const status = { status: college.status, is_active: college.is_active };
-    if (status?.status !== 'approved' || Number(status?.is_active) !== 1) return forbidden('Waiting for approval');
+    if (status?.status !== 'approved' || Number(status?.is_active) !== 1) return forbidden('Account not available. Please register again.');
     return ok('Login successful', createSession({ id: college.id, email: college.email, role: 'COLLEGE', collegeId: college.id }));
   }
 
@@ -6944,7 +7017,7 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     const isMatch = isPasswordMatch(password, industry.password);
     console.log('[AUTH] Industry password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
-    if (industry.status !== 'approved' || Number(industry.is_active) !== 1) return forbidden('Waiting for approval');
+    if (industry.status !== 'approved' || Number(industry.is_active) !== 1) return forbidden('Account not available. Please register again.');
     return ok('Login successful', createSession({ id: industry.id, email: industry.email, role: 'INDUSTRY' }));
   }
 
@@ -6957,7 +7030,7 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     const isMatch = isPasswordMatch(password, student.password);
     console.log('[AUTH] Student password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid email or password');
-    if (Number(student.is_active) !== 1) return forbidden('Account inactive');
+    if (Number(student.is_active) !== 1) return forbidden('Account removed by superadmin. Please register again.');
     return ok('Login successful', createSession({
       id: student.id,
       email: student.email,
@@ -6976,7 +7049,7 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     const isMatch = isPasswordMatch(password, externalStudent.password);
     console.log('[AUTH] External password match:', isMatch);
     if (!isMatch) return unauthorized('Invalid credentials');
-    if (Number(externalStudent.is_active) !== 1) return forbidden('Account inactive');
+    if (Number(externalStudent.is_active) !== 1) return forbidden('Account removed by superadmin. Please register again.');
     return ok('Login successful', createSession({ id: externalStudent.id, email: externalStudent.email, role: 'EXTERNAL_STUDENT' }));
   }
 
@@ -6985,15 +7058,13 @@ async function unifiedLogin(request: Request, env: EnvBindings) {
     .first<{ id: string; email: string; password_hash: string; role: string; is_active: number; is_approved: number }>();
   console.log('[AUTH] Prisma-compatible users row exists:', Boolean(user));
 
-  if (!user) {
-    return unauthorized('User not found');
-  }
+  if (!user) return unauthorized('User not registered. Please register.');
 
   if (!isPasswordMatch(password, user.password_hash)) {
     return unauthorized('Invalid credentials');
   }
 
-  if (Number(user.is_active) !== 1) return forbidden('Account inactive');
+  if (Number(user.is_active) !== 1) return forbidden('Account removed by superadmin. Please register again.');
   if (Number(user.is_approved ?? 0) !== 1) return forbidden('Your account is not approved yet');
 
   return ok('Login successful', createSession({ id: user.id, email: user.email, role: String(user.role || 'STUDENT').toUpperCase() as AuthSession['user']['role'] }));
