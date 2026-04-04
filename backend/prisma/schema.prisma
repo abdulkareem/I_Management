@@ -54,6 +54,8 @@ model User {
   phone     String?  @unique
   password  String
   role      Role     @default(STUDENT)
+  status    ApprovalStatus @default(PENDING)
+  collegeId String?
   isApproved Boolean @default(false)
   isTempPassword Boolean @default(false)
   isActive  Boolean  @default(true)

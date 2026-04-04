@@ -49,6 +49,7 @@ const ipoRegistrationSchema = z.object({
   companyName: z.string().trim().min(2),
   email: z.string().trim().email(),
   password: z.string().min(8, 'Password should atleast 8 characters'),
+  collegeId: z.string().trim().min(1),
   businessActivity: z.string().trim().min(2).optional().nullable(),
   ipoTypeId: z.string().trim().optional().nullable(),
   ipoType: z.string().trim().optional().nullable(),
@@ -268,19 +269,44 @@ async function sendDepartmentTemporaryPasswordEmail(email: string, password: str
   }
 }
 
-function buildSessionData(user: { id: string; email: string; role: Role; name: string | null }) {
+function buildSessionData(user: { id: string; email: string; role: Role; name: string | null; collegeId: string | null }) {
+  const tokenPayload = {
+    userId: user.id,
+    role: user.role,
+    collegeId: user.collegeId ?? null,
+    issuedAt: Date.now(),
+  };
+
   return {
-    token: `dev.${Buffer.from(`${user.id}:${Date.now()}`).toString('base64url')}`,
+    token: `dev.${Buffer.from(JSON.stringify(tokenPayload)).toString('base64url')}`,
     user: {
       id: user.id,
       email: user.email,
       role: user.role,
+      collegeId: user.collegeId ?? null,
       name: user.name ?? undefined,
     },
   };
 }
 
-type AuthUser = { id: string; email: string; role: Role };
+function getApprovalBlockMessage(user: { role: Role; status: string; isActive: boolean }): string | null {
+  if (!user.isActive) return 'Account inactive';
+
+  if (user.role === Role.COLLEGE_COORDINATOR) {
+    if (user.status === 'PENDING') return 'Approval pending';
+    if (user.status === 'REJECTED') return 'Account rejected';
+    if (user.status === 'DELETED') return 'Account removed';
+    if (user.status !== 'APPROVED') return 'Account is not approved';
+  }
+
+  if (user.role === Role.IPO && user.status !== 'APPROVED') {
+    return 'IPO not approved';
+  }
+
+  return null;
+}
+
+type AuthUser = { id: string; email: string; role: Role; status: string; isActive: boolean; collegeId: string | null };
 
 type DepartmentCoordinatorUser = {
   id: string;
@@ -298,6 +324,14 @@ function decodeSessionUserId(authorizationHeader: string | undefined): string | 
 
   try {
     const decoded = Buffer.from(token.slice(4), 'base64url').toString('utf8');
+    const parsed = JSON.parse(decoded) as { userId?: string };
+    if (parsed?.userId) return parsed.userId;
+  } catch {
+    // fallback for legacy token format
+  }
+
+  try {
+    const decoded = Buffer.from(token.slice(4), 'base64url').toString('utf8');
     const [userId] = decoded.split(':');
     return userId || null;
   } catch {
@@ -309,10 +343,16 @@ async function getAuthUser(req: Request): Promise<AuthUser | null> {
   const userId = decodeSessionUserId(req.header('authorization'));
   if (!userId) return null;
 
-  return prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, role: true },
+    select: { id: true, email: true, role: true, status: true, isActive: true, collegeId: true },
   });
+
+  if (!user) return null;
+  const blockedReason = getApprovalBlockMessage(user);
+  if (blockedReason) return null;
+
+  return user;
 }
 
 async function requireAdminAuth(req: Request, res: Response): Promise<AuthUser | null> {
@@ -963,6 +1003,8 @@ app.get('/api/admin/users', async (req, res) => {
         email: true,
         role: true,
         name: true,
+        status: true,
+        collegeId: true,
         isActive: true,
         createdAt: true,
       },
@@ -973,6 +1015,8 @@ app.get('/api/admin/users', async (req, res) => {
       email: user.email,
       role: user.role,
       display_name: user.name || user.email,
+      status: user.status,
+      college_id: user.collegeId,
       is_active: user.isActive ? 1 : 0,
       created_at: user.createdAt.toISOString(),
     })));
@@ -998,12 +1042,13 @@ app.post('/api/admin/user/:id/edit', async (req, res) => {
     const updated = await prisma.user.update({
       where: { id: req.params.id },
       data: { email, isActive },
-      select: { id: true, email: true, isActive: true },
+      select: { id: true, email: true, status: true, isActive: true },
     });
 
     apiOk(res, 'User updated', {
       id: updated.id,
       email: updated.email,
+      status: updated.status,
       is_active: updated.isActive ? 1 : 0,
     });
   } catch (error) {
@@ -1097,12 +1142,21 @@ app.delete('/api/ipo-subtypes/:id', async (req, res) => {
 });
 
 app.patch('/api/colleges/:id/:action(approve|reject)', async (req, res) => {
+  const authUser = await requireAdminAuth(req, res);
+  if (!authUser) return;
+
   const status = req.params.action === 'approve' ? 'APPROVED' : 'REJECTED';
   try {
     const college = await prisma.college.update({
       where: { id: req.params.id },
       data: { status },
     });
+
+    await prisma.user.updateMany({
+      where: { role: Role.COLLEGE_COORDINATOR, collegeId: college.id },
+      data: { status, isActive: true },
+    });
+
     apiOk(res, `College ${status.toLowerCase()}`, { id: college.id, status: college.status });
   } catch (error) {
     apiError(res, 400, toMessage(error));
@@ -1110,28 +1164,61 @@ app.patch('/api/colleges/:id/:action(approve|reject)', async (req, res) => {
 });
 
 app.patch('/api/ipos/:id/:action(approve|reject)', async (req, res) => {
-  const action = req.params.action === 'approve' ? 'approved' : 'rejected';
-  const exists = await prisma.ipo.findUnique({ where: { id: req.params.id }, select: { id: true } });
-  if (!exists) {
+  const authUser = await requireAdminAuth(req, res);
+  if (!authUser) return;
+
+  const status = req.params.action === 'approve' ? 'APPROVED' : 'REJECTED';
+  const ipo = await prisma.ipo.findUnique({ where: { id: req.params.id }, select: { id: true, userId: true } });
+  if (!ipo) {
     apiError(res, 404, 'IPO not found');
     return;
   }
-  apiOk(res, `IPO ${action}`, { id: req.params.id, status: action.toUpperCase() });
+
+  await prisma.user.update({
+    where: { id: ipo.userId },
+    data: { status },
+  });
+
+  apiOk(res, `IPO ${status.toLowerCase()}`, { id: req.params.id, status });
 });
 
 app.delete('/api/colleges/:id', async (req, res) => {
+  const authUser = await requireAdminAuth(req, res);
+  if (!authUser) return;
+
   try {
-    await prisma.college.delete({ where: { id: req.params.id } });
-    apiOk(res, 'College deleted', { id: req.params.id });
+    await prisma.$transaction(async (tx) => {
+      await tx.user.updateMany({
+        where: { collegeId: req.params.id, role: { in: [Role.COLLEGE_COORDINATOR, Role.IPO] } },
+        data: { status: 'DELETED', isActive: false },
+      });
+
+      await tx.college.update({ where: { id: req.params.id }, data: { status: 'DELETED' } });
+    });
+
+    apiOk(res, 'College deleted', { id: req.params.id, status: 'DELETED' });
   } catch (error) {
     apiError(res, 400, toMessage(error));
   }
 });
 
 app.delete('/api/ipos/:id', async (req, res) => {
+  const authUser = await requireAdminAuth(req, res);
+  if (!authUser) return;
+
   try {
-    await prisma.ipo.delete({ where: { id: req.params.id } });
-    apiOk(res, 'IPO deleted', { id: req.params.id });
+    const ipo = await prisma.ipo.findUnique({ where: { id: req.params.id }, select: { userId: true } });
+    if (!ipo) {
+      apiError(res, 404, 'IPO not found');
+      return;
+    }
+
+    await prisma.user.update({
+      where: { id: ipo.userId },
+      data: { status: 'DELETED', isActive: false },
+    });
+
+    apiOk(res, 'IPO deleted', { id: req.params.id, status: 'DELETED' });
   } catch (error) {
     apiError(res, 400, toMessage(error));
   }
@@ -1163,8 +1250,9 @@ app.post('/api/auth/login', async (req, res) => {
     apiError(res, 401, 'Invalid email or password');
     return;
   }
-  if (!user.isActive) {
-    apiError(res, 403, 'Account inactive');
+  const blockedReason = getApprovalBlockMessage(user);
+  if (blockedReason) {
+    apiError(res, 403, blockedReason);
     return;
   }
 
@@ -1898,16 +1986,6 @@ app.post(['/api/college/register', '/join/college'], async (req, res) => {
     const passwordHash = await bcrypt.hash(payload.password, 12);
 
     const result = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          name: payload.coordinatorName,
-          email: payload.email.toLowerCase(),
-          phone: payload.mobile ?? null,
-          password: passwordHash,
-          role: Role.COLLEGE_COORDINATOR,
-        },
-      });
-
       const college = await tx.college.create({
         data: {
           name: payload.collegeName,
@@ -1917,6 +1995,18 @@ app.post(['/api/college/register', '/join/college'], async (req, res) => {
           coordinatorName: payload.coordinatorName,
           coordinatorEmail: payload.email.toLowerCase(),
           status: 'PENDING',
+        },
+      });
+
+      const user = await tx.user.create({
+        data: {
+          name: payload.coordinatorName,
+          email: payload.email.toLowerCase(),
+          phone: payload.mobile ?? null,
+          password: passwordHash,
+          role: Role.COLLEGE_COORDINATOR,
+          status: 'PENDING',
+          collegeId: college.id,
         },
       });
 
@@ -1947,6 +2037,28 @@ app.post(['/api/ipo/register', '/join/ipo'], async (req, res) => {
       return;
     }
 
+    const college = await prisma.college.findUnique({
+      where: { id: payload.collegeId },
+      select: { id: true, status: true, coordinatorEmail: true },
+    });
+    if (!college) {
+      apiError(res, 404, 'College not found');
+      return;
+    }
+    if (college.status !== 'APPROVED') {
+      apiError(res, 403, 'IPO must be linked to an approved college');
+      return;
+    }
+
+    const coordinator = await prisma.user.findFirst({
+      where: { email: college.coordinatorEmail ?? '', role: Role.COLLEGE_COORDINATOR, collegeId: college.id },
+      select: { id: true, status: true },
+    });
+    if (!coordinator || coordinator.status !== 'APPROVED') {
+      apiError(res, 403, 'IPO must be created under an approved college coordinator');
+      return;
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -1954,6 +2066,8 @@ app.post(['/api/ipo/register', '/join/ipo'], async (req, res) => {
           email: payload.email.toLowerCase(),
           password: passwordHash,
           role: Role.IPO,
+          status: 'PENDING',
+          collegeId: payload.collegeId,
         },
       });
 
