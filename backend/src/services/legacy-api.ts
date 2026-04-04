@@ -197,6 +197,30 @@ export async function handleLegacyApi(request: Request, env: EnvBindings): Promi
 
 async function routeRequest(request: Request, env: EnvBindings, url: URL): Promise<Response> {
   const rawPathname = url.pathname;
+  const authToken = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  const sessionActor = authToken ? parseSessionToken(authToken) : null;
+
+  if (sessionActor?.role === 'COLLEGE_COORDINATOR') {
+    const collegeAccess = await env.DB.prepare('SELECT status, is_active FROM colleges WHERE id = ?')
+      .bind(sessionActor.id)
+      .first<{ status: string; is_active: number }>();
+
+    if (!collegeAccess || Number(collegeAccess.is_active) !== 1) {
+      return forbidden('College access blocked. Contact super admin.');
+    }
+
+    const normalizedCollegeStatus = String(collegeAccess.status || '').toLowerCase();
+    if (normalizedCollegeStatus === 'pending') {
+      return forbidden('Approval is pending for this college. Dashboard access is blocked until super admin approval.');
+    }
+    if (normalizedCollegeStatus === 'rejected') {
+      return forbidden('Your college account is rejected and cannot access the dashboard.');
+    }
+    if (normalizedCollegeStatus !== 'approved') {
+      return forbidden('College account is not approved for dashboard access.');
+    }
+  }
+
   const pathname = (() => {
     if (rawPathname.startsWith('/api/ipo-types')) return rawPathname.replace('/api/ipo-types', '/api/industry-types');
     if (rawPathname.startsWith('/api/ipo-subtypes')) return rawPathname.replace('/api/ipo-subtypes', '/api/industry-subtypes');
@@ -6196,11 +6220,20 @@ async function routeRequest(request: Request, env: EnvBindings, url: URL): Promi
   if (collegeDeleteMatch && request.method === 'DELETE') {
     const actor = requireRole(request, ['SUPER_ADMIN', 'ADMIN']);
     if (actor instanceof Response) return actor;
-    const result = await env.DB.prepare("UPDATE colleges SET is_active = 0, status = 'rejected', updated_at = datetime('now') WHERE id = ?")
-      .bind(collegeDeleteMatch[1]).run();
+    const collegeId = collegeDeleteMatch[1];
+
+    const existingCollege = await env.DB.prepare('SELECT id, coordinator_email FROM colleges WHERE id = ?')
+      .bind(collegeId)
+      .first<{ id: string; coordinator_email: string }>();
+    if (!existingCollege) return errorResponse(404, 'College not found');
+
+    await env.DB.prepare('DELETE FROM auth_identities WHERE role = ? AND entity_id = ?').bind('college', collegeId).run();
+    await env.DB.prepare('DELETE FROM auth_identities WHERE lower(email) = lower(?)').bind(existingCollege.coordinator_email).run();
+
+    const result = await env.DB.prepare('DELETE FROM colleges WHERE id = ?').bind(collegeId).run();
     if ((result.meta.changes ?? 0) === 0) return errorResponse(404, 'College not found');
-    await insertAuditLog(env, { action: 'DELETE', entity: 'colleges', entityId: collegeDeleteMatch[1], performedBy: actor.id });
-    return ok('College deleted');
+    await insertAuditLog(env, { action: 'DELETE', entity: 'colleges', entityId: collegeId, performedBy: actor.id });
+    return ok('College deleted from database');
   }
 
   const industryDeleteMatch = pathname.match(/^\/api\/industries\/([^/]+)$/);

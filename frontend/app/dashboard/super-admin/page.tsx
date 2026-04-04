@@ -19,7 +19,7 @@ type KPI = {
   activeInternships: number;
 };
 
-type College = { id: string; name: string; coordinator: string; email: string; status: string };
+type College = { id: string; name: string; coordinator: string; email: string; status: string; approval_note?: string };
 type IPO = { id: string; name: string; email: string; status: string; ipo_type_name?: string; ipo_subtype_name?: string };
 type Department = { id: string; name: string; coordinator: string; email: string; college_id: string; college_name: string };
 type IPOType = { id: string; name: string };
@@ -83,7 +83,24 @@ export default function SuperAdminDashboardPage() {
 
   const matchesSearch = (row: Record<string, unknown>) => JSON.stringify(row).toLowerCase().includes(search.toLowerCase());
 
-  const visibleColleges = useMemo(() => colleges.filter(matchesSearch), [colleges, search]);
+  const visibleColleges = useMemo(
+    () => colleges
+      .map((college) => {
+        const status = String(college.status || '').toLowerCase();
+        if (status === 'pending') {
+          return { ...college, approval_note: 'Approval pending. College dashboard login is blocked until super admin approves.' };
+        }
+        if (status === 'rejected') {
+          return { ...college, approval_note: 'Rejected. College dashboard login is permanently blocked.' };
+        }
+        if (status === 'approved') {
+          return { ...college, approval_note: 'Approved. College can access dashboard.' };
+        }
+        return { ...college, approval_note: 'Unknown status. Access remains blocked until approved.' };
+      })
+      .filter(matchesSearch),
+    [colleges, search],
+  );
   const visibleIPOs = useMemo(() => ipos.filter(matchesSearch), [ipos, search]);
   const visibleDepartments = useMemo(
     () => departments.filter((row) => (departmentCollegeFilter === 'all' || row.college_id === departmentCollegeFilter) && matchesSearch(row as unknown as Record<string, unknown>)),
@@ -230,13 +247,16 @@ export default function SuperAdminDashboardPage() {
             </div>
           </Card>
 
-          <EntityTable title="College Management" rows={visibleColleges} onExport={() => exportRows('colleges', visibleColleges)} renderActions={(row) => (
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => updateStatus('colleges', row.id, 'approve')}>Approve</Button>
-              <Button variant="secondary" onClick={() => updateStatus('colleges', row.id, 'reject')}>Reject</Button>
-              <Button variant="secondary" onClick={() => deleteEntity('colleges', row.id)}>Delete</Button>
-            </div>
-          )} />
+          <EntityTable title="College Management" rows={visibleColleges} onExport={() => exportRows('colleges', visibleColleges)} renderActions={(row) => {
+            const status = String(row.status || '').toLowerCase();
+            return (
+              <div className="flex gap-2">
+                <Button variant="secondary" disabled={status === 'approved'} onClick={() => updateStatus('colleges', row.id, 'approve')}>Approve</Button>
+                <Button variant="secondary" disabled={status === 'rejected'} onClick={() => updateStatus('colleges', row.id, 'reject')}>Reject</Button>
+                <Button variant="secondary" onClick={() => deleteEntity('colleges', row.id)}>Delete</Button>
+              </div>
+            );
+          }} />
 
           <EntityTable title="IPO Management" rows={visibleIPOs} onExport={() => exportRows('ipos', visibleIPOs)} renderActions={(row) => (
             <div className="flex gap-2">
